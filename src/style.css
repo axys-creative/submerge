@@ -1118,3 +1118,62 @@ textarea:focus {
   flex-wrap: wrap;
   gap: 10px;
 }
+
+/* ---- Touch screens: smaller gauges and map, no upgrade tester ---- */
+
+.is-touch .debug-upgrades {
+  display: none;
+}
+
+.is-touch .dial {
+  width: 42px;
+  height: 42px;
+}
+
+.is-touch .dial.big {
+  width: 58px;
+  height: 58px;
+}
+
+.is-touch .dial > svg:not(.ring) {
+  width: 14px;
+  height: 14px;
+}
+
+.is-touch .depth b {
+  font-size: 17px;
+}
+
+.is-touch .depth span {
+  font-size: 10px;
+}
+
+.is-touch .depth small {
+  font-size: 9px;
+}
+
+.is-touch .vitals {
+  width: 112px;
+  padding: 6px 8px;
+}
+
+.is-touch .hull-row {
+  height: 16px;
+}
+
+.is-touch .hull-row svg {
+  width: 16px;
+  height: 16px;
+}
+
+.is-touch .minimap {
+  width: 150px;
+  height: 75px;
+  border-width: 2px;
+}
+
+.is-touch .minimap-tab {
+  bottom: 85px;
+  font-size: 9px;
+  padding: 1px 8px 2px;
+}
