@@ -24,3 +24,9 @@ export const SONAR_RING_SPEED = 1.8;
 export const MAX_FPS = 60;
 /** The canvas is drawn with at most this many pixels, so very large or high-density screens do not overload the GPU. */
 export const MAX_CANVAS_PIXELS = 2_800_000;
+/** Depth in meters below which the spotlight and the sonar switch on, by day and at night (or on a moon). A few meters of slack stop them flickering at the edge. */
+export const LAMP_ON_DEPTH_DAY = 50;
+export const LAMP_ON_DEPTH_NIGHT = 15;
+export const SONAR_ON_DEPTH_DAY = 75;
+export const SONAR_ON_DEPTH_NIGHT = 50;
+export const SWITCH_SLACK = 7;

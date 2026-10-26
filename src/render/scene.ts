@@ -10,7 +10,7 @@ import { drawItem, drawSparkle } from '../art/items';
 import { waveY, mixColor, lerp, clamp } from '../util';
 import { BACK_LAYERS } from '../game/world';
 import { daylight, STARS } from './daylight';
-import type { Light } from './lighting';
+import { lightCover, type Light } from './lighting';
 
 const DEG = Math.PI / 180;
 /** Highest angle of each spotlight cone below the sub's heading; each then sweeps further down by BEAM_SWEEP. */
@@ -71,6 +71,9 @@ function crater(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, 
 
 /** Height of the sky above the waterline, in world px; matches the view at the surface. */
 const SKY_HEIGHT = 400;
+
+/** How strong the water's wash is at each depth in px (10 px is 1 m); it reaches zero at the deepest sea floor. */
+const WASH_STOPS: [number, number][] = [[0, 0.55], [30, 0.4], [100, 0.3], [300, 0.2], [1000, 0.1]];
 
 const SHIP_BEAM_RANGE = 190;
 const SHIP_BEAM_SPREAD = 0.5;
@@ -192,15 +195,23 @@ export function renderScene(g: Game) {
   ctx.fill();
 
   if (top < 500 && !space) {
-    ctx.fillStyle = `rgba(255,255,255,${0.05 * (1 - night)})`;
+    const shaft = 0.05 * (1 - night);
+    const rays = ctx.createLinearGradient(0, 0, 0, 520);
+    rays.addColorStop(0, `rgba(255,255,255,${shaft})`);
+    rays.addColorStop(0.5, `rgba(255,255,255,${shaft * 0.6})`);
+    rays.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = rays;
     const step = 260;
-    for (let x0 = Math.floor(left / step) * step - step; x0 < right + step; x0 += step) {
+    /** How far the rays lean over their length: toward the right when the sun is in the left of the sky, straight down at noon, toward the left when it is in the right. */
+    const lean = Math.cos(sunAngle) * 300;
+    const margin = step + Math.abs(lean);
+    for (let x0 = Math.floor((left - margin) / step) * step; x0 < right + margin; x0 += step) {
       const sway = Math.sin(t * 0.4 + x0) * 30;
       ctx.beginPath();
       ctx.moveTo(x0 + sway, 0);
       ctx.lineTo(x0 + 60 + sway, 0);
-      ctx.lineTo(x0 + 200, 520);
-      ctx.lineTo(x0 + 80, 520);
+      ctx.lineTo(x0 + 120 + lean + sway * 0.4, 520);
+      ctx.lineTo(x0 + lean + sway * 0.4, 520);
       ctx.closePath();
       ctx.fill();
     }
@@ -469,17 +480,20 @@ export function renderScene(g: Game) {
     ctx.fillRect(left - 20, top - 20, W + 40, 50 - top);
   }
 
-  // Front wave band so hulls sit in the water
-  if (top < 60) {
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = water0;
+  // Front wave band: water washes over everything, strongest at the surface and thinning out all the way to the sea floor
+  {
+    const wash = world.floorMax;
+    const [wr, wg, wb] = water0.match(/\d+/g)!.map(Number);
+    const haze = ctx.createLinearGradient(0, 0, 0, wash);
+    for (const [px, a] of WASH_STOPS) if (px < wash) haze.addColorStop(px / wash, `rgba(${wr},${wg},${wb},${a})`);
+    haze.addColorStop(1, `rgba(${wr},${wg},${wb},0)`);
+    ctx.fillStyle = haze;
     ctx.beginPath();
-    ctx.moveTo(left - 20, 30);
+    ctx.moveTo(left - 20, bottom + 30);
     for (let x = left - 20; x <= right + 20; x += 16) ctx.lineTo(x, waveY(x, t + 0.7) + 5);
-    ctx.lineTo(right + 20, 30);
+    ctx.lineTo(right + 20, bottom + 30);
     ctx.closePath();
     ctx.fill();
-    ctx.globalAlpha = 1;
     ctx.strokeStyle = 'rgba(255,255,255,0.55)';
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -497,9 +511,9 @@ export function renderScene(g: Game) {
   const dip = g.flicker > 0 && ((elapsed > 0.05 && elapsed < 0.15) || (elapsed > 0.27 && elapsed < 0.37));
   const a = dip ? 0.25 : 1;
   const power = g.lightPower;
-  const lit = !!spot && power > 0.02;
+  const lit = !!spot && power > 0.02 && g.lampLevel > 0.02;
   const reach = 0.35 + 0.65 * power;
-  const fade = Math.min(1, power * 2.5);
+  const fade = Math.min(1, power * 2.5) * g.lampLevel;
   const frontDown = FRONT_BEAM_DOWN + FRONT_BEAM_SWEEP * sweep(t, FRONT_SWEEP_SECONDS);
   const rearDown = REAR_BEAM_DOWN + BEAM_SWEEP * sweep(t, REAR_SWEEP_SECONDS, Math.PI / 2);
   const cockpitPower = Math.max(
@@ -509,7 +523,7 @@ export function renderScene(g: Game) {
   );
   if (diving) {
     if (spot && lit) {
-      lights.push({ x: s.x, y: subY, r: spot.glow * reach, a: fade });
+      lights.push({ x: s.x, y: subY, r: spot.glow * reach, a: fade, sub: true });
       const cos = Math.cos(s.tilt);
       const sin = Math.sin(s.tilt);
       lamp = {
@@ -517,7 +531,7 @@ export function renderScene(g: Game) {
         y: subY + LAMP.x * sin + LAMP.y * cos,
         angle: s.facing > 0 ? s.tilt + frontDown : Math.PI - (s.tilt + frontDown),
       };
-      lights.push({ x: lamp.x, y: lamp.y, r: spot.range * reach, angle: lamp.angle, spread: spot.spread, a: a * fade });
+      lights.push({ x: lamp.x, y: lamp.y, r: spot.range * reach, angle: lamp.angle, spread: spot.spread, a: a * fade, sub: true });
       if (g.up.light === 3) {
         lights.push({
           x: s.x + s.facing * (REAR_LAMP.x * cos - REAR_LAMP.y * sin),
@@ -526,6 +540,7 @@ export function renderScene(g: Game) {
           angle: s.facing > 0 ? Math.PI + s.tilt - rearDown : rearDown - s.tilt,
           spread: 0.5,
           a: a * fade,
+          sub: true,
         });
       }
     } else {
@@ -536,6 +551,7 @@ export function renderScene(g: Game) {
         y: subY + COCKPIT.x * sin + COCKPIT.y * cos,
         r: 48,
         a: 0.6 * cockpitPower,
+        sub: true,
       });
     }
   }
@@ -642,8 +658,10 @@ export function renderScene(g: Game) {
     const a = Math.min(1, b.life / 0.6);
     const color = b.danger ? '255,90,95' : b.shape ? '150,245,170' : '255,211,77';
     if (b.shape) {
+      const open = 1 - lightCover(lights, b.x, b.y);
+      if (open <= 0.02) continue;
       b.sprite ??= g.sonarShape.sprite(k, b.shape, color);
-      g.sonarShape.draw(ctx, k, b.x * k + ox, b.y * k + oy, b.sprite, a);
+      g.sonarShape.draw(ctx, k, b.x * k + ox, b.y * k + oy, b.sprite, a * open);
       continue;
     }
     const pulse = (b.max - b.life) * 14;

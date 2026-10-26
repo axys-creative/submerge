@@ -19,6 +19,8 @@ const FILES = {
   music: ["sound-music-1.m4a"],
   whaleFar: ["sound-whale-far.m4a"],
   whaleNear: ["sound-whale-near.m4a"],
+  lightSwitch: ["sound-spotlight-toggle-soft.m4a"],
+  menuTick: ["sound-menu-tick.m4a"],
 } as const;
 
 type Sound = keyof typeof FILES;
@@ -45,6 +47,8 @@ const VOLUME: Record<Sound, number> = {
   music: 0.5,
   whaleFar: 0.7,
   whaleNear: 0.9,
+  lightSwitch: 0.8,
+  menuTick: 0.5,
 };
 
 /** Which looping beds play in each scene. */

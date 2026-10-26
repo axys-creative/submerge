@@ -12,6 +12,11 @@ import { routesFrom, type Endpoint, type Side } from "../data/routes";
 import {
   BREATH_TIME,
   FLICKER_TIME,
+  LAMP_ON_DEPTH_DAY,
+  LAMP_ON_DEPTH_NIGHT,
+  SONAR_ON_DEPTH_DAY,
+  SONAR_ON_DEPTH_NIGHT,
+  SWITCH_SLACK,
   MAX_CANVAS_PIXELS,
   MAX_FPS,
   SPEECH_TIME,
@@ -167,6 +172,10 @@ export class Game {
   /** 0..1, how strongly the ship's mast light signals valuable treasure below. */
   treasureAlert = 0;
   /** The dive weights are strapped on, and whether they were let go this dive. */
+  /** Whether the spotlight is switched on right now, and how bright it is (it eases in and out). */
+  lampOn = false;
+  lampLevel = 0;
+  private sonarOnline = false;
   weightsOn = false;
   weightsDropped = false;
   /** Weights that have been dropped and are sinking or resting on the bottom. */
@@ -440,6 +449,7 @@ export class Game {
     if (this.input.pressed("menu")) this.ui.onMenuKey();
     this.t += dt;
     this.underwater = this.mode === "diving" && this.sub.y > (this.underwater ? 16 : 30);
+    this.updateGear(dt);
     this.audio.setScene(this.underwater ? "dive" : "surface");
     this.flicker = Math.max(0, this.flicker - dt);
     if (this.speech.length) {
@@ -776,6 +786,11 @@ export class Game {
   }
 
   /** Returns true when the hit wrecked the sub. */
+  /** Shows a speech bubble over the sub. */
+  private say(text: string, color: string) {
+    this.speech.unshift({ text, color, life: SPEECH_TIME, age: 0 });
+  }
+
   /** Posts a message the first time `frac` drops to `level`; returns the new "already said" flag. */
   private sayAtLevel(frac: number, level: number, said: boolean, text: string, color: string) {
     if (frac > level) return false;
@@ -1001,16 +1016,45 @@ export class Game {
     this.emitBubbles(it.x, it.y, 6, 20);
   }
 
+  /** True when it is dark at the surface: night, or always on a moon. */
+  private get surfaceDark() {
+    return !!this.world.def.space || daylight(this.day).night > 0.5;
+  }
+
+  /** The spotlight and sonar switch on by themselves once the sub is deep enough; the depth is shallower at night. */
+  private updateGear(dt: number) {
+    const depth = this.mode === "diving" ? this.depthM : 0;
+    const diving = this.mode === "diving";
+    const lampWanted = diving && this.up.light > 0 && depth > (this.surfaceDark ? LAMP_ON_DEPTH_NIGHT : LAMP_ON_DEPTH_DAY) - (this.lampOn ? SWITCH_SLACK : 0);
+    if (lampWanted !== this.lampOn) {
+      this.lampOn = lampWanted;
+      this.audio.play("lightSwitch");
+      if (diving) {
+        if (lampWanted) this.flicker = FLICKER_TIME * 0.8;
+        this.say(lampWanted ? "Spotlight activated!" : "Spotlight disabled", lampWanted ? "#F7C948" : "#9AA7C2");
+      }
+    }
+    this.lampLevel += ((this.lampOn ? 1 : 0) - this.lampLevel) * damp(14, dt);
+    const sonarDepth = this.surfaceDark ? SONAR_ON_DEPTH_NIGHT : SONAR_ON_DEPTH_DAY;
+    const online = diving && this.up.sonar > 0 && depth > sonarDepth - (this.sonarOnline ? SWITCH_SLACK : 0);
+    if (online && !this.sonarOnline) {
+      this.sonar.timer = Math.min(this.sonar.timer, 0.6);
+      this.say("Sonar activated!", "#4FC98E");
+    } else if (!online && this.sonarOnline && diving) {
+      this.say("Sonar disabled", "#9AA7C2");
+    }
+    this.sonarOnline = online;
+  }
+
   private updateSonar(dt: number) {
     const level = this.up.sonar;
-    if (!level) {
+    this.sonarPings = this.sonarPings.filter((p) => this.t - p.start < 1 / SONAR_RING_SPEED + p.linger);
+    if (!level || !this.sonarOnline) {
       this.sonar.ring = -1;
-      this.sonarPings = [];
-      this.blips = [];
+      if (!level) this.blips = [];
       return;
     }
     const range = STATS.sonarRange[level];
-    this.sonarPings = this.sonarPings.filter((p) => this.t - p.start < 1 / SONAR_RING_SPEED + p.linger);
     if (this.sonar.ring >= 0) {
       this.sonar.ring += range * dt * SONAR_RING_SPEED;
       this.markSonarContacts();

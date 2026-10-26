@@ -117,6 +117,14 @@ export class UI {
     };
 
     $(this.root, '#btn-menu').addEventListener('click', () => this.openMenu());
+    let tickTarget: Element | null = null;
+    this.root.addEventListener('pointerover', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      const el = (e.target as HTMLElement).closest('button, [data-act], .upg, input[type="range"], label.sound-row');
+      if (el === tickTarget) return;
+      tickTarget = el;
+      if (el && !(el as HTMLButtonElement).disabled && !el.closest('#debug-up')) this.game.audio.play('menuTick');
+    });
     new ResizeObserver(() => {
       this.trackHeight = $(this.root, '#dm-track').clientHeight;
       this.cache.delete('dm-ppm');
