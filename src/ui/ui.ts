@@ -1,7 +1,9 @@
 import type { Game } from '../game/game';
 import type { Action } from '../game/input';
-import { exportCode, importCode } from '../game/save';
-import { UPGRADES, UPGRADE_ORDER, WEIGHTS, type Loadout, type UpgradeId } from '../data/upgrades';
+import { exportCode, importCode, type SwitchMode } from '../game/save';
+import { CELL } from '../game/explored';
+import { BREATH_TIME, CRUSH_DEPTH_SHOWN, DEPTH_WARN_RANGE, MAP_SURFACE_FADE, PX_PER_M } from '../config';
+import { GEAR, STATS, UPGRADES, UPGRADE_FIRST_ZONE, UPGRADE_ORDER, WEIGHTS, type GearId, type Loadout, type UpgradeId } from '../data/upgrades';
 import { ZONES } from '../data/zones';
 import { DEPTH_ZONES, METER_WINDOW, zoneIndexAt } from '../data/depthZones';
 import { ROUTES, routesFrom, type Endpoint } from '../data/routes';
@@ -38,6 +40,7 @@ export class UI {
   private toastTimer = 0;
   private shopRaf = 0;
   private shopPreview: UpgradeId | null = null;
+  private shopIsland = '';
 
   constructor(private game: Game) {
     this.root = document.getElementById('ui')!;
@@ -46,8 +49,16 @@ export class UI {
         <div class="panel vitals">
           <div class="vitals-top"><div class="hull-row" id="hud-hull"></div><button class="dim-switch" id="btn-dim" role="switch" tabindex="-1" aria-label="Dim the interface" aria-checked="false" title="Dim the interface"><span class="dim-knob"></span></button></div>
           <div class="dials">
-            <div class="dial-col"><div class="dial air" id="hud-air">${RING}${ICON.air}</div><span class="pct" id="pct-air">100%</span></div>
-            <div class="dial-col"><div class="dial batt" id="hud-batt">${RING}${ICON.bolt}</div><span class="pct" id="pct-batt">100%</span></div>
+            <div class="dial-col"><div class="dial air" id="hud-air">${RING}${ICON.air}</div><span class="pct" id="pct-air">100%</span><div class="dial-pop" id="pop-air"></div></div>
+            <div class="dial-col"><div class="dial batt" id="hud-batt">${RING}${ICON.bolt}</div><span class="pct" id="pct-batt">100%</span><div class="dial-pop" id="pop-batt"></div></div>
+          </div>
+          <div class="seg" id="lamp-seg" data-switch="lamp" role="group" aria-label="Spotlight" hidden>
+            <span>Light</span>
+            <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
+          </div>
+          <div class="seg" id="sonar-seg" data-switch="sonar" role="group" aria-label="Sonar" hidden>
+            <span>Sonar</span>
+            <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
           </div>
         </div>
         <div class="panel purse"><div class="money" id="hud-money">$0</div><div class="cargo" id="hud-cargo">Hold empty</div></div>
@@ -69,11 +80,11 @@ export class UI {
       <div class="depth-meter" id="depth-meter" hidden>
         <div class="panel dm-tag" id="dm-current"></div>
         <div class="dm-track" id="dm-track">
-          <div class="dm-frame"><div class="dm-scale" id="dm-scale">${this.depthMeterBands()}<div class="dm-limit" id="dm-limit"></div></div></div>
+          <div class="dm-frame"><div class="dm-scale" id="dm-scale">${this.depthMeterBands()}<div class="dm-warn" id="dm-warn"></div><div class="dm-crush" id="dm-crush"></div><div class="dm-limit" id="dm-limit"></div></div></div>
           <div class="dm-labels" id="dm-labels">${this.depthMeterLabels()}</div>
-          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b></div>
+          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b><div class="panel dm-tag dm-safe" id="dm-limit-tag"></div></div>
         </div>
-        <div class="dm-foot"><div class="panel dm-tag" id="dm-next"></div><div class="panel dm-tag" id="dm-limit-tag"></div></div>
+        <div class="dm-foot"><div class="panel dm-tag" id="dm-next"></div></div>
       </div>
       <canvas class="minimap" id="minimap" width="440" height="220"></canvas>
       <div class="minimap-tab" id="map-zone"></div>
@@ -82,11 +93,16 @@ export class UI {
     this.modal = $(this.root, '#modal');
 
     $(this.root, '#debug-up').onclick = (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-dbg], [data-zone], [data-all], [data-weights]');
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-dbg], [data-zone], [data-all], [data-weights], [data-gear]');
       if (!btn) return;
       btn.blur();
       if (btn.dataset.weights) {
         this.game.setWeights(btn.dataset.weights === '1');
+        return;
+      }
+      if (btn.dataset.gear) {
+        const [id, step] = btn.dataset.gear.split(':');
+        this.game.setGear(id as GearId, Number(step));
         return;
       }
       if (btn.dataset.all) {
@@ -94,6 +110,7 @@ export class UI {
         const level = Math.max(0, Math.min(MAX_TEST_LEVEL, this.masterLevel() + Number(btn.dataset.all)));
         for (const id of UPGRADE_ORDER) g.save.upgrades[id] = Math.min(level, UPGRADES[id].levels.length - 1);
         g.setWeights(level === MAX_TEST_LEVEL);
+        for (const id of Object.keys(GEAR) as GearId[]) g.setGear(id, level === MAX_TEST_LEVEL ? 1 : -1, true);
         g.audio.play('chime1');
         g.sub.hull = g.maxHull;
         g.sub.oxygen = g.maxOxygen;
@@ -117,12 +134,16 @@ export class UI {
     };
 
     $(this.root, '#btn-menu').addEventListener('click', () => this.openMenu());
-    let tickTarget: Element | null = null;
-    this.root.addEventListener('pointerover', (e) => {
-      if (e.pointerType !== 'mouse') return;
+    this.root.querySelectorAll<HTMLElement>('.seg').forEach((seg) =>
+      seg.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-mode]');
+        if (!btn) return;
+        this.game.setSwitch(seg.dataset.switch as 'lamp' | 'sonar', btn.dataset.mode as SwitchMode);
+        btn.blur();
+      }),
+    );
+    this.root.addEventListener('click', (e) => {
       const el = (e.target as HTMLElement).closest('button, [data-act], .upg, input[type="range"], label.sound-row');
-      if (el === tickTarget) return;
-      tickTarget = el;
       if (el && !(el as HTMLButtonElement).disabled && !el.closest('#debug-up')) this.game.audio.play('menuTick');
     });
     new ResizeObserver(() => {
@@ -132,6 +153,7 @@ export class UI {
     const dimBtn = $(this.root, '#btn-dim');
     dimBtn.addEventListener('click', () => {
       this.setDim(!this.dim);
+      this.toast(this.dim ? 'Zen mode on: hover a panel to reveal it' : 'Zen mode off');
       dimBtn.blur();
     });
     try {
@@ -203,6 +225,13 @@ export class UI {
     this.set('dm-ppm', `${ppm.toFixed(3)}|${g.depthRating}`, () => {
       track.style.setProperty('--ppm', `${ppm}px`);
       $(this.root, '#dm-limit').style.top = `${g.depthRating * ppm}px`;
+      const warn = $(this.root, '#dm-warn');
+      const from = Math.max(0, g.depthRating - DEPTH_WARN_RANGE);
+      warn.style.top = `${from * ppm}px`;
+      warn.style.height = `${(g.depthRating - from) * ppm}px`;
+      const crush = $(this.root, '#dm-crush');
+      crush.style.top = `${g.depthRating * ppm}px`;
+      crush.style.height = `${CRUSH_DEPTH_SHOWN * ppm}px`;
     });
     const shift = `translateY(${(height / 2 - depth * ppm).toFixed(1)}px)`;
     $(this.root, '#dm-scale').style.transform = shift;
@@ -239,7 +268,7 @@ export class UI {
         ICON.hull.replace('<svg', `<svg class="${i < s.hull ? '' : 'empty'}"`),
       ).join('');
     });
-    this.set('dbg', UPGRADE_ORDER.map((id) => g.save.upgrades[id]).join() + `|${g.save.zone}|${g.mode}|${g.save.weights}`, () => {
+    this.set('dbg', UPGRADE_ORDER.map((id) => g.save.upgrades[id]).join() + `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}`, () => {
       const zone = g.save.zone;
       const master = this.masterLevel();
       const off = (ok: boolean) => (ok && g.mode === 'docked' ? '' : ' disabled');
@@ -253,7 +282,15 @@ export class UI {
           const lv = g.save.upgrades[id];
           return `<div class="dbg-row"><button tabindex="-1" data-dbg="${id}:-1">−</button><span><b>${def.title} ${lv + 1}/${def.levels.length}</b><small>${def.levels[lv].name}</small></span><button tabindex="-1" data-dbg="${id}:1">+</button></div>`;
         }).join('') +
-        `<div class="dbg-row"><button tabindex="-1" data-weights="0"${g.save.weights ? '' : ' disabled'}>−</button><span><b>${WEIGHTS.name}</b><small>${g.save.weights ? 'Owned' : 'Not owned'}</small></span><button tabindex="-1" data-weights="1"${g.save.weights ? ' disabled' : ''}>+</button></div>`;
+        `<div class="dbg-row"><button tabindex="-1" data-weights="0"${g.save.weights ? '' : ' disabled'}>−</button><span><b>${WEIGHTS.name}</b><small>${g.save.weights ? 'Owned' : 'Not owned'}</small></span><button tabindex="-1" data-weights="1"${g.save.weights ? ' disabled' : ''}>+</button></div>` +
+        (Object.keys(GEAR) as GearId[])
+          .map((id) => {
+            const have = id === 'candles' ? g.save.candles : Number(g.save[id]);
+            const max = id === 'candles' ? GEAR.candles.max : 1;
+            const label = id === 'candles' ? `Carries ${have}/${max}` : have ? 'Owned' : 'Not owned';
+            return `<div class="dbg-row"><button tabindex="-1" data-gear="${id}:-1"${have > 0 ? '' : ' disabled'}>−</button><span><b>${GEAR[id].name}</b><small>${label}</small></span><button tabindex="-1" data-gear="${id}:1"${have < max ? '' : ' disabled'}>+</button></div>`;
+          })
+          .join('');
     });
     this.drawMap();
     this.set("zone", String(g.save.zone), () => {
@@ -262,6 +299,14 @@ export class UI {
     this.set("theme", String(g.uiDark > 0.5), () => this.root.classList.toggle("ui-dark", g.uiDark > 0.5));
     this.meter('air', s.oxygen / g.maxOxygen);
     this.meter('batt', s.battery / g.maxBattery);
+    this.set('switches', `${g.up.light}|${g.up.sonar}|${g.save.lamp}|${g.save.sonar}`, () => {
+      for (const [key, owned] of [['lamp', g.up.light], ['sonar', g.up.sonar]] as const) {
+        const seg = $(this.root, `#${key}-seg`);
+        seg.hidden = owned < 1;
+        seg.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === g.save[key]));
+      }
+    });
+    this.updatePopovers();
 
     this.updateDepthMeter(g.depthM);
     this.set('money', money(g.save.money), (v) => ($(this.root, '#hud-money').textContent = v));
@@ -317,6 +362,38 @@ export class UI {
 
   private mapBg: { world: Game['world']; canvas: HTMLCanvasElement } | null = null;
   private mapScroll = 0;
+  private mapFog: { explored: NonNullable<Game['explored']>; version: number; canvas: HTMLCanvasElement } | null = null;
+
+  private fogLayer(W: number, fullH: number, sy: number) {
+    const ex = this.game.explored;
+    if (!ex) return null;
+    if (this.mapFog?.explored === ex && this.mapFog.version === ex.version) return this.mapFog.canvas;
+    const mask = document.createElement('canvas');
+    mask.width = ex.cols;
+    mask.height = ex.rows;
+    const mctx = mask.getContext('2d')!;
+    const img = mctx.createImageData(ex.cols, ex.rows);
+    for (let i = 0; i < ex.cells.length; i++) img.data[i * 4 + 3] = ex.cells[i] ? 255 : 0;
+    mctx.putImageData(img, 0, 0);
+    const c = this.mapFog?.explored === ex ? this.mapFog.canvas : document.createElement('canvas');
+    c.width = W;
+    c.height = fullH;
+    const f = c.getContext('2d')!;
+    f.fillStyle = '#060a1a';
+    f.fillRect(0, 0, W, fullH);
+    f.globalCompositeOperation = 'destination-out';
+    f.imageSmoothingEnabled = true;
+    f.drawImage(mask, 0, 24, W, ex.rows * CELL * sy);
+    const skyEdge = 24 + MAP_SURFACE_FADE;
+    const open = f.createLinearGradient(0, 0, 0, skyEdge);
+    open.addColorStop(0, 'rgba(0,0,0,1)');
+    open.addColorStop(24 / skyEdge, 'rgba(0,0,0,1)');
+    open.addColorStop(1, 'rgba(0,0,0,0)');
+    f.fillStyle = open;
+    f.fillRect(0, 0, W, skyEdge);
+    this.mapFog = { explored: ex, version: ex.version, canvas: c };
+    return c;
+  }
 
   private drawMap() {
     const g = this.game;
@@ -351,13 +428,27 @@ export class UI {
       b.lineTo(W, fullH);
       b.closePath();
       b.fill();
+      b.save();
+      b.beginPath();
+      b.moveTo(0, fullH);
+      for (let px = 0; px <= W; px += 2) b.lineTo(px, my(w.floorAt(px / sx)));
+      b.lineTo(W, fullH);
+      b.closePath();
+      b.clip();
       b.fillStyle = mixColor(w.def.ground[1], '#050A1E', 0.7);
       b.beginPath();
       for (const c of w.caveBlobs) {
         b.moveTo(mx(c.x + c.r), my(c.y));
         b.ellipse(mx(c.x), my(c.y), Math.max(1, c.r * sx), Math.max(1, c.r * sy), 0, 0, Math.PI * 2);
       }
+      if (w.abyss) {
+        b.moveTo(0, fullH);
+        for (let px = 0; px <= W; px += 2) b.lineTo(px, my(w.abyssTop(px / sx)));
+        b.lineTo(W, fullH);
+        b.closePath();
+      }
       b.fill();
+      b.restore();
       for (const isl of w.def.islands) {
         const ix = mx(isl.x);
         b.fillStyle = '#F5D58A';
@@ -384,6 +475,8 @@ export class UI {
     this.mapScroll += (scroll - this.mapScroll) * 0.12;
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(this.mapBg.canvas, 0, this.mapScroll, W, H, 0, 0, W, H);
+    const fog = this.fogLayer(W, fullH, sy);
+    if (fog) ctx.drawImage(fog, 0, this.mapScroll, W, H, 0, 0, W, H);
     ctx.save();
     ctx.translate(0, -this.mapScroll);
 
@@ -404,6 +497,43 @@ export class UI {
       ctx.stroke();
     }
     ctx.restore();
+  }
+
+  private updatePopovers() {
+    const g = this.game;
+    const s = g.sub;
+    const save = g.save;
+    const row = (text: string) => `<p>${text}</p>`;
+    const tank = UPGRADES.oxygen.levels[g.up.oxygen];
+    const stretch = save.scrubbers ? 1 / GEAR.scrubbers.drain : 1;
+    const air = Math.ceil(s.oxygen * stretch);
+    const total = Math.round(g.maxOxygen * stretch);
+    this.set('pop-air', `${air}|${total}|${g.candlesLeft}|${save.candles}|${save.scrubbers}|${save.electrolysis}|${s.battery > 0}|${g.up.oxygen}`, () => {
+      const lines = [
+        `<h4>Oxygen · ${esc(tank.name)}</h4>`,
+        row(`<b>${air} s</b> of air left, out of ${total} s.`),
+        row((save.scrubbers ? 'Air runs down more slowly than the clock thanks to the scrubbers, and' : 'Air runs down by a second every second you are underwater, and') + ' surfacing refills it. With an empty tank you can hold your breath for ' + BREATH_TIME + ' s before the air gives out.'),
+        row('A sealed sub has no endless air: as oxygen runs out, carbon dioxide (CO₂) builds up to toxic levels.'),
+      ];
+      if (save.scrubbers) lines.push(row(`<b>${GEAR.scrubbers.name}</b> filter the CO₂, so air lasts ${Math.round((1 / GEAR.scrubbers.drain - 1) * 100)}% longer.`));
+      if (save.electrolysis) lines.push(row(`<b>${GEAR.electrolysis.name}</b> ${s.battery > 0 ? 'is making fresh oxygen from seawater, drawing on the battery.' : 'is offline: the battery is empty.'}`));
+      if (save.candles) lines.push(row(`<b>${g.candlesLeft} of ${save.candles}</b> oxygen ${save.candles === 1 ? 'candle' : 'candles'} left. One lights itself for ${GEAR.candles.seconds} s of air when the tank runs dry, and docking restocks them.`));
+      $(this.root, '#pop-air').innerHTML = lines.join('');
+    });
+    const cell = UPGRADES.battery.levels[g.up.battery];
+    const range = Math.round(s.battery / PX_PER_M);
+    this.set('pop-batt', `${Math.round(range / 10)}|${g.maxBattery}|${save.electrolysis}|${g.up.battery}|${g.up.light}|${g.up.sonar}`, () => {
+      const lines = [
+        `<h4>Battery · ${esc(cell.name)}</h4>`,
+        row(`About <b>${range.toLocaleString()} m</b> of driving left, out of ${Math.round(g.maxBattery / PX_PER_M).toLocaleString()} m.`),
+        row('The <b>motor</b> drains the battery as the sub moves, and docking with the ship recharges it.'),
+        row(this.touch ? 'If it runs out, tap the two crank buttons back and forth to turn the rudders by hand.' : 'If it runs out, press <kbd>E</kbd> and <kbd>R</kbd> back and forth to turn the rudders by hand.'),
+      ];
+      if (g.up.light > 0) lines.push(row(`The <b>spotlight</b> draws about ${STATS.lampDrain[g.up.light]} a second while it is lit. Turn it off to save charge.`));
+      if (g.up.sonar > 0) lines.push(row(`Each <b>sonar</b> ping costs ${STATS.sonarPingCost[g.up.sonar]}, and it stops pinging when the battery is dead.`));
+      if (save.electrolysis) lines.push(row(`The <b>${GEAR.electrolysis.name}</b> also draws power, even when you are sitting still.`));
+      $(this.root, '#pop-batt').innerHTML = lines.join('');
+    });
   }
 
   private meter(id: string, frac: number) {
@@ -768,6 +898,7 @@ export class UI {
   // ---- Shop --------------------------------------------------------------
 
   openShop(island: string) {
+    this.shopIsland = island;
     this.shopPreview = null;
     this.open(
       'shop',
@@ -798,6 +929,13 @@ export class UI {
         if (v) this.toast(`Sold your haul for ${money(v)}`);
         this.renderShop();
       }
+      if (act === 'buyGear') {
+        const id = btn.dataset.id as GearId;
+        if (this.game.buyGear(id)) {
+          this.toast(`Bought ${GEAR[id].name}`);
+          this.renderShop();
+        }
+      }
       if (act === 'buyWeights' && this.game.buyWeights()) {
         this.toast(`Strapped on the ${WEIGHTS.name}`);
         this.renderShop();
@@ -824,6 +962,7 @@ export class UI {
 
   private renderShop() {
     const g = this.game;
+    const sells = g.world.def.islands.find((i) => i.name === this.shopIsland)?.sells;
     $(this.modal, '#shop-wallet').textContent = money(g.save.money);
 
     const kinds = ITEM_KINDS.filter((k) => g.save.cargo[k]);
@@ -846,7 +985,7 @@ export class UI {
       });
     }
 
-    $(this.modal, '#shop-upgrades').innerHTML = UPGRADE_ORDER.map((id) => {
+    $(this.modal, '#shop-upgrades').innerHTML = UPGRADE_ORDER.filter((id) => (!sells || sells.includes(id)) && g.save.zone >= (UPGRADE_FIRST_ZONE[id] ?? 0)).map((id) => {
       const def = UPGRADES[id];
       const lvl = g.up[id];
       const now = def.levels[lvl];
@@ -861,7 +1000,30 @@ export class UI {
         ${next ? `<p class="upg-next">Next: <b>${esc(next.name)}</b> · ${esc(next.effect)}</p>` : `<p class="upg-next">${esc(def.blurb)}</p>`}
         <div class="upg-buy">${action}</div>
       </div>`;
-    }).join('') + (g.world.def.sellsWeights ? this.weightsCard() : '');
+    }).join('') + (sells ? '' : this.gearCards()) + (g.world.def.sellsWeights ? this.weightsCard() : '');
+  }
+
+  private gearCards() {
+    const g = this.game;
+    return (Object.keys(GEAR) as GearId[])
+      .filter((id) => g.save.zone >= GEAR[id].firstZone)
+      .map((id) => {
+        const gear = GEAR[id];
+        const cost = g.gearCost(id);
+        const full = cost === null;
+        const count = g.save.candles;
+        const now = id === 'candles' ? `Carries ${count} of ${GEAR.candles.max}` : full ? 'Installed' : 'One-time purchase';
+        const action = full
+          ? `<span class="maxed-tag">${id === 'candles' ? 'Maxed out' : 'Owned'}</span>`
+          : `<button class="btn small" data-act="buyGear" data-id="${id}" ${g.save.money < cost ? 'disabled' : ''}>Buy ${money(cost)}</button>`;
+        return `<div class="upg ${full ? 'maxed' : ''}" data-id="${id}" tabindex="-1">
+        <div class="upg-head"><h3>${gear.name}</h3></div>
+        <p class="upg-now">${now}</p>
+        <p class="upg-next">${gear.blurb}</p>
+        <div class="upg-buy">${action}</div>
+      </div>`;
+      })
+      .join('');
   }
 
   private weightsCard() {
@@ -910,7 +1072,7 @@ export class UI {
       const scale = Math.min(w / 190, h / 130);
       ctx.translate(w / 2, h / 2 + 6 + Math.sin(t * 1.6) * 4);
       ctx.scale(scale, scale);
-      drawSub(ctx, up, t, t * 6);
+      drawSub(ctx, up, t, t * 6, false, false, 0, this.game.save);
       this.shopRaf = requestAnimationFrame(frame);
     };
     this.shopRaf = requestAnimationFrame(frame);

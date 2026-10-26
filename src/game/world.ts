@@ -48,6 +48,8 @@ export interface CaveBlob {
 
 /** Distance in px between blobs along a tunnel. */
 const BLOB_SPACING = 22;
+/** Tunnels (not round rooms) are drawn this many times wider than their listed radius. */
+const TUNNEL_WIDEN = 1.5;
 
 /**
  * Replaces each bend with either a diagonal cut or a curve, keeping the ends fixed.
@@ -102,6 +104,12 @@ export interface Creature {
   timer: number;
   phase: number;
   tint: number;
+  /** Seconds until a sperm whale's next dive. */
+  nextDive: number;
+  /** A sperm whale's dive in progress: how deep, whether it is going down, holding or coming up, and how long it stays down. */
+  plan: { y: number; stage: 'down' | 'hold' | 'up'; hold: number } | null;
+  /** Where the leviathan's head has been, newest first, which its body follows. */
+  trail?: { x: number; y: number }[];
 }
 
 export interface Deco {
@@ -119,8 +127,10 @@ export interface Deco {
 export class World {
   readonly def: ZoneDef;
   readonly width: number;
-  /** Deepest point of the sea floor and of any tunnel. */
+  /** Deepest point of the sea floor and of any tunnel or cavern. */
   readonly maxFloor: number;
+  /** An open cavern below the tunnels, in px, if the zone has one. */
+  readonly abyss: { from: number; to: number; zoom: number } | null;
   /** Deepest point of the sea floor alone. */
   readonly floorMax: number;
   readonly items: ItemInst[] = [];
@@ -139,11 +149,16 @@ export class World {
     this.rng = mulberry32((Date.now() ^ (index * 7919)) >>> 0);
 
     this.buildCave();
+    const cave = this.def.caves?.find((c) => c.abyss);
+    this.abyss = cave?.abyss
+      ? { from: cave.abyss.from * PX_PER_M, to: cave.abyss.to * PX_PER_M, zoom: cave.abyss.zoom }
+      : null;
 
     let max = 0;
     for (let x = 0; x <= this.width; x += 20) max = Math.max(max, this.floorAt(x));
     this.floorMax = max;
     for (const b of this.caveBlobs) max = Math.max(max, b.y + b.r);
+    if (this.abyss) max = Math.max(max, this.abyss.to);
     this.maxFloor = max;
 
     this.buildDeco(layout);
@@ -179,6 +194,12 @@ export class World {
     return MIN_FLOOR + FLOOR_SOFTNESS * Math.log(1 + Math.exp((y - MIN_FLOOR) / FLOOR_SOFTNESS));
   }
 
+  /** Height of the abyss ceiling at x: a smooth, bumpy line like the sea floor. */
+  abyssTop(x: number): number {
+    const [a, b, c] = this.shape;
+    return this.abyss!.from + Math.sin(x * 0.0037 + a) * 55 + Math.sin(x * 0.0101 + b) * 30 + Math.sin(x * 0.027 + c) * 12;
+  }
+
   /** True when x is inside the headland where collision follows the tunnels. */
   inCave(x: number): boolean {
     return !!this.def.caves?.some((c) => x >= c.x0 && x <= c.x1);
@@ -188,6 +209,7 @@ export class World {
   caveSolid(x: number, y: number): boolean {
     if (y <= this.floorAt(x)) return false;
     if (!this.inCave(x)) return true;
+    if (this.abyss && y > this.abyssTop(x)) return y > this.abyss.to;
     for (const b of this.caveBlobs) {
       const dx = x - b.x;
       const dy = y - b.y;
@@ -223,6 +245,7 @@ export class World {
         }
         return;
       }
+      const r = p.r * TUNNEL_WIDEN;
       const path = smoothBends(pts, sharpTurns);
       let dist = 0;
       let next = 0;
@@ -232,12 +255,12 @@ export class World {
         const len = Math.hypot(bx - ax, by - ay);
         for (; next <= dist + len; next += BLOB_SPACING) {
           const u = len ? (next - dist) / len : 0;
-          this.caveBlobs.push({ x: ax + (bx - ax) * u, y: ay + (by - ay) * u, r: p.r * (1 + 0.17 * wobble(next, seed)) });
+          this.caveBlobs.push({ x: ax + (bx - ax) * u, y: ay + (by - ay) * u, r: r * (1 + 0.17 * wobble(next, seed)) });
         }
         dist += len;
       }
       const [lx, ly] = path[path.length - 1];
-      this.caveBlobs.push({ x: lx, y: ly, r: p.r });
+      this.caveBlobs.push({ x: lx, y: ly, r });
     });
   }
 
@@ -250,7 +273,8 @@ export class World {
         const it = this.blankItem();
         const kind = this.pickKind(low[1], true);
         if (!kind) continue;
-        const reach = p.r * (p.pts.length === 1 ? 0.6 : 0.3);
+        const width = p.pts.length === 1 ? p.r : p.r * TUNNEL_WIDEN;
+        const reach = width * (p.pts.length === 1 ? 0.6 : 0.3);
         const cy = low[1] * PX_PER_M;
         let x = 0;
         let y = cy;
@@ -258,7 +282,7 @@ export class World {
         for (let tries = 0; tries < 60 && !landed; tries++) {
           x = low[0] + rand(r, -reach, reach);
           y = cy;
-          while (y < cy + p.r * 2.2 && !this.caveSolid(x, y + 4)) y += 4;
+          while (y < cy + width * 2.2 && !this.caveSolid(x, y + 4)) y += 4;
           landed = !this.caveSolid(x, cy) && this.caveSolid(x, y + 4);
         }
         if (!landed) continue;
@@ -423,6 +447,8 @@ export class World {
           timer: rand(r, 0, 2),
           phase: r() * 10,
           tint,
+          nextDive: rand(r, 15, 70),
+          plan: null,
         });
       }
       return;

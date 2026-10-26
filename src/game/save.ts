@@ -4,6 +4,8 @@ import { ITEM_KINDS, type ItemKind } from '../data/items';
 import { ZONES } from '../data/zones';
 import { START_DAY } from '../render/daylight';
 
+export type SwitchMode = 'off' | 'on' | 'auto';
+
 export interface SaveData {
   v: 1;
   money: number;
@@ -14,6 +16,14 @@ export interface SaveData {
   cargo: Partial<Record<ItemKind, number>>;
   /** Whether the one-time dive weights have been bought. */
   weights: boolean;
+  /** The spotlight and sonar switches: auto turns each on once the water is dark enough. */
+  lamp: SwitchMode;
+  sonar: SwitchMode;
+  candles: number;
+  scrubbers: boolean;
+  electrolysis: boolean;
+  /** Explored map cells per zone index, as base64 bitsets. */
+  explored: Record<number, string>;
   stats: { dives: number; earned: number; deepest: number };
 }
 
@@ -27,6 +37,12 @@ export function newSave(): SaveData {
     day: START_DAY,
     cargo: {},
     weights: false,
+    lamp: 'auto',
+    sonar: 'auto',
+    candles: 0,
+    scrubbers: false,
+    electrolysis: false,
+    explored: {},
     stats: { dives: 0, earned: 0, deepest: 0 },
   };
 }
@@ -50,6 +66,15 @@ export function sanitize(raw: any): SaveData | null {
     if (c) s.cargo[k] = c;
   }
   s.weights = raw.weights === true;
+  if (raw.lamp === 'off' || raw.lamp === 'on') s.lamp = raw.lamp;
+  if (raw.sonar === 'off' || raw.sonar === 'on') s.sonar = raw.sonar;
+  s.candles = Math.floor(num(raw.candles, 0, 3, 0));
+  s.scrubbers = raw.scrubbers === true;
+  s.electrolysis = raw.electrolysis === true;
+  for (let z = 0; z < ZONES.length; z++) {
+    const e = raw.explored?.[z];
+    if (typeof e === 'string' && e.length < 40000 && /^[A-Za-z0-9+/=]*$/.test(e)) s.explored[z] = e;
+  }
   s.stats.dives = Math.floor(num(raw.stats?.dives, 0, 1e9, 0));
   s.stats.earned = Math.floor(num(raw.stats?.earned, 0, 1e12, 0));
   s.stats.deepest = Math.floor(num(raw.stats?.deepest, 0, 1e5, 0));

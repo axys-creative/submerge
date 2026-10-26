@@ -1,16 +1,31 @@
+import { Explored } from "./explored";
+import { debrisColors } from "../art/sub";
 import { Input } from "./input";
 import { World, MAX_SLOPE, type Creature, type ItemInst } from "./world";
 import { updateCreature } from "./creatures";
 import { DAY_SECONDS, START_DAY, daylight } from "../render/daylight";
 import { AudioManager } from "./audio";
-import { loadSave, newSave, writeSave, type SaveData } from "./save";
-import { STATS, UPGRADES, WEIGHTS, type UpgradeId } from "../data/upgrades";
+import { loadSave, newSave, writeSave, type SaveData, type SwitchMode } from "./save";
+import { GEAR, STATS, UPGRADES, WEIGHTS, type GearId, type UpgradeId } from "../data/upgrades";
 import { WEIGHT_MOUNTS, WEIGHT_Y } from "../art/sub";
 import { ITEMS, ITEM_KINDS } from "../data/items";
-import { CREATURES, type CreatureKind } from "../data/creatures";
+import { CREATURES, CREATURE_EXTENT, whalePitch, type CreatureKind } from "../data/creatures";
 import { routesFrom, type Endpoint, type Side } from "../data/routes";
 import {
   BREATH_TIME,
+  MAP_REVEAL_RADIUS,
+  MONSTER_DEPTH,
+  MONSTER_SCALE,
+  MONSTER_TRAIL,
+  MONSTER_FACE_TIME,
+  MONSTER_WAIT,
+  WEIGHT_HEARING_MARGIN,
+  SINK_FAST,
+  SINK_RAMP_M,
+  SINK_SLOW,
+  IMPLODE_COLLAPSE,
+  IMPLODE_MESSAGE,
+  LOW_AIR,
   FLICKER_TIME,
   LAMP_ON_DEPTH_DAY,
   LAMP_ON_DEPTH_NIGHT,
@@ -22,6 +37,7 @@ import {
   SPEECH_TIME,
   PX_PER_M,
   SUB_DOCK_OFFSET,
+  DOCK_RANGE,
   SUB_RADIUS,
   SONAR_RAYS,
   SONAR_RING_SPEED,
@@ -92,6 +108,8 @@ export interface Blip {
   max: number;
   /** How the creature looked when pinged, drawn as an outline instead of a dot. */
   shape?: Creature;
+  /** A dropped dive weight, drawn as an outline at this tilt. */
+  weight?: number;
   /** The outline image for `shape`, drawn the first time it is needed. */
   sprite?: ShapeSprite;
 }
@@ -100,6 +118,16 @@ export type DockSpot =
   | { kind: "shop"; name: string }
   | { kind: "sail"; side: Side; name: string }
   | null;
+
+const SPOT_NOTES: Partial<Record<CreatureKind, { key: string; text: string; color: string }>> = {
+  bluewhale: { key: "bluewhale", text: "Wow, a blue whale! These gentle giants won't hurt us.", color: "#6CC5F0" },
+  bigfin: { key: "bigfin", text: "A bigfin squid! Those long arms are harmless.", color: "#6CC5F0" },
+  shark: { key: "shark", text: "A shark! Avoid it and keep your distance.", color: "#E5484D" },
+  hammerhead: { key: "shark", text: "A shark! Avoid it and keep your distance.", color: "#E5484D" },
+  whale: { key: "whale", text: "A sperm whale! Steer clear and don't make contact.", color: "#E5484D" },
+  squid: { key: "squid", text: "A giant squid! Avoid it and don't get close.", color: "#E5484D" },
+  colossal: { key: "squid", text: "A colossal squid! Avoid it and don't get close.", color: "#E5484D" },
+};
 
 type WreckReason = CreatureKind | "pressure" | "oxygen";
 
@@ -152,6 +180,8 @@ export class Game {
   private driving = false;
   private lastBump = 0;
   atSurface = false;
+  private airLow = false;
+  private holdingBreath = false;
   /** The grabber arm: t is seconds since it was fired (-1 when stowed), dir is its world direction. */
   claw = { t: -1, dirX: 0, dirY: 1, grabbed: false };
   dust: Dust[] = [];
@@ -175,6 +205,8 @@ export class Game {
   /** Whether the spotlight is switched on right now, and how bright it is (it eases in and out). */
   lampOn = false;
   lampLevel = 0;
+  /** Seconds the spotlight has been on, which times its beam sweeps. */
+  lampClock = 0;
   private sonarOnline = false;
   weightsOn = false;
   weightsDropped = false;
@@ -198,9 +230,25 @@ export class Game {
   sonarPings: { x: number; y: number; start: number; range: number; linger: number; hits: number[]; scanned: number }[] = [];
   sonar = { timer: 1, ring: -1 };
   shake = 0;
+  implode: { t: number; x: number; y: number } | null = null;
+  debris: { x: number; y: number; vx: number; vy: number; rot: number; vr: number; w: number; h: number; color: string; life: number }[] = [];
+  private electrolysisOn = false;
+  private spotted = new Set<string>();
+  /** Remarks made once per game session, not once per dive. */
+  private said = new Set<string>();
+  /** The Crimson Sea monster: its face shows deep in the cavern, then the real thing rises from below and chases. */
+  private monster: { stage: "idle" | "face" | "wait" | "chase"; t: number } = { stage: "idle", t: 0 };
+  private growlTimer = 0;
+  private switchStash: { lamp: SwitchMode; sonar: SwitchMode } | null = null;
+  /** Candles left this dive; docking restocks them to what the upgrade allows. */
+  candlesLeft = 0;
+  private sinkSpeed: number | null = null;
+  private implodeMessage: (() => void) | null = null;
   hitFlash = 0;
   travel: { to: Endpoint; t: number; switched: boolean } | null = null;
   private saveTimer = 0;
+  explored: Explored | null = null;
+  private exploredZone = -1;
   private batteryWarned = false;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -210,6 +258,7 @@ export class Game {
     this.hasSave = !!loaded;
     this.save = loaded ?? newSave();
     this.world = new World(this.save.zone);
+    this.applyZoneSwitches(true);
     this.ship.x = clamp(this.save.shipX, SHIP_MARGIN, this.world.width - SHIP_MARGIN);
     this.day = this.save.day;
     this.resetSub();
@@ -323,7 +372,23 @@ export class Game {
 
   // ---- Saves -------------------------------------------------------------
 
+  private updateExplored() {
+    const w = this.world;
+    if (this.exploredZone !== w.index) {
+      this.syncExplored();
+      this.exploredZone = w.index;
+      this.explored = new Explored(w.width, w.maxFloor + 100, this.save.explored[w.index]);
+    }
+    const diving = this.mode === "diving";
+    this.explored!.reveal(diving ? this.sub.x : this.ship.x, diving ? this.sub.y : 0, MAP_REVEAL_RADIUS);
+  }
+
+  private syncExplored() {
+    if (this.explored) this.save.explored[this.exploredZone] = this.explored.encode();
+  }
+
   persist() {
+    this.syncExplored();
     this.save.shipX = this.ship.x;
     this.save.day = this.day;
     writeSave(this.save);
@@ -332,7 +397,16 @@ export class Game {
 
   loadGame(s: SaveData) {
     this.save = s;
+    this.implode = null;
+    this.sinkSpeed = null;
+    this.electrolysisOn = false;
+    this.debris = [];
+    this.implodeMessage = null;
+    this.explored = null;
+    this.exploredZone = -1;
     this.world = new World(s.zone);
+    this.switchStash = null;
+    this.applyZoneSwitches(true);
     this.ship.x = clamp(s.shipX, SHIP_MARGIN, this.world.width - SHIP_MARGIN);
     this.day = s.day;
     this.ship.vx = 0;
@@ -372,6 +446,54 @@ export class Game {
     this.save.cargo = {};
     this.persist();
     return v;
+  }
+
+  /** Price of the next purchase of an item, or null when it is fully bought. */
+  gearCost(id: GearId) {
+    if (id === "candles") return this.save.candles >= GEAR.candles.max ? null : GEAR.candles.costs[this.save.candles];
+    return this.save[id] ? null : GEAR[id].cost;
+  }
+
+  buyGear(id: GearId) {
+    const cost = this.gearCost(id);
+    if (cost === null || this.save.money < cost) return false;
+    this.save.money -= cost;
+    if (id === "candles") this.save.candles++;
+    else this.save[id] = true;
+    this.candlesLeft = this.save.candles;
+    this.audio.play("chime1");
+    this.persist();
+    return true;
+  }
+
+  /** Adds or removes air gear without a purchase (for the test panel); `all` sets the whole range instead of one step. */
+  setGear(id: GearId, step: number, all = false) {
+    if (id === "candles") this.save.candles = clamp(all ? (step > 0 ? GEAR.candles.max : 0) : this.save.candles + step, 0, GEAR.candles.max);
+    else this.save[id] = step > 0;
+    this.candlesLeft = this.save.candles;
+    this.persist();
+  }
+
+  /**
+   * The airless Crimson Sea starts with the spotlight and sonar off every time you arrive, whatever you chose before;
+   * leaving it puts your choices back. `fresh` is a game load, where the saved values may be this zone's own and are not trusted.
+   */
+  private applyZoneSwitches(fresh: boolean) {
+    const space = !!this.world.def.space;
+    if (space && !this.switchStash) {
+      this.switchStash = fresh ? { lamp: "auto", sonar: "auto" } : { lamp: this.save.lamp, sonar: this.save.sonar };
+      this.save.lamp = "off";
+      this.save.sonar = "off";
+    } else if (!space && this.switchStash) {
+      this.save.lamp = this.switchStash.lamp;
+      this.save.sonar = this.switchStash.sonar;
+      this.switchStash = null;
+    }
+  }
+
+  setSwitch(key: "lamp" | "sonar", mode: SwitchMode) {
+    this.save[key] = mode;
+    this.persist();
   }
 
   buyWeights() {
@@ -451,7 +573,11 @@ export class Game {
     this.underwater = this.mode === "diving" && this.sub.y > (this.underwater ? 16 : 30);
     this.updateGear(dt);
     this.audio.setScene(this.underwater ? "dive" : "surface");
+    this.audio.setMusicOff(!!this.world.def.space);
+    this.audio.setCrimson(!!this.world.def.space && this.underwater);
     this.flicker = Math.max(0, this.flicker - dt);
+    if (this.implode) this.tickImplode(dt);
+    if (this.sinkSpeed !== null) this.tickSink(dt);
     if (this.speech.length) {
       for (const b of this.speech) {
         b.life -= dt;
@@ -470,12 +596,13 @@ export class Game {
     const wantDark = this.world.def.space || daylight(this.day).night > 0.5 || deep;
     this.uiDark += ((wantDark ? 1 : 0) - this.uiDark) * damp(2.5, dt);
     this.audio.setPropeller(this.driving);
+    this.audio.setHeartbeat(this.mode === "diving" && !this.paused && (this.holdingBreath || this.monster.stage === "chase"));
     this.audio.tick(dt, this.warning && !this.paused);
     let whaleDist = Infinity;
     let whaleDx = 0;
     if (this.mode === "diving" && !this.paused) {
       for (const c of this.world.creatures) {
-        if (c.kind !== "whale") continue;
+        if (c.kind !== "whale" && c.kind !== "bluewhale") continue;
         const d = Math.hypot(c.x - this.sub.x, c.y - this.sub.y);
         if (d < whaleDist) {
           whaleDist = d;
@@ -484,11 +611,17 @@ export class Game {
       }
     }
     this.audio.whales(dt, whaleDist, whaleDx);
+    if (this.mode === "diving" && !this.paused) {
+      this.spotCreatures();
+      this.updateMonster(dt);
+    }
     this.driving = false;
     this.warning = false;
     if (!this.paused) this.day = (this.day + dt / DAY_SECONDS) % 1;
     const live = !this.paused && !this.travel;
-    const zoomTarget = this.mode === "diving" ? this.world.def.diveZoom : 1;
+    const cavern = this.world.abyss?.zoom;
+    const inAbyss = cavern !== undefined && this.sub.y > this.world.abyssTop(this.sub.x);
+    const zoomTarget = this.mode === "diving" ? (inAbyss ? cavern : this.world.def.diveZoom) : 1;
     if (Math.abs(zoomTarget - this.zoom) > 0.001) {
       this.zoom += (zoomTarget - this.zoom) * damp(1.6, dt);
       this.applyView();
@@ -509,6 +642,7 @@ export class Game {
       if (creatures[i].state === "dead" && creatures[i].dying > DEATH_FADE_END) creatures.splice(i, 1);
     }
     this.world.update(this.t);
+    this.updateExplored();
     this.updateEffects(dt);
     this.updateCamera(dt);
   }
@@ -575,12 +709,22 @@ export class Game {
     this.batteryWarned = false;
     this.sonar = { timer: 0.6, ring: -1 };
     this.sonarPings = [];
+    this.airLow = false;
+    this.holdingBreath = false;
+    this.electrolysisOn = false;
+    this.spotted.clear();
+    if (this.world.def.space && !this.said.has("blood")) {
+      this.said.add("blood");
+      this.say("Is this... blood?", "#E5484D");
+    }
     this.save.stats.dives++;
     this.emitBubbles(s.x, s.y + 10, 14, 40);
   }
 
   private dock() {
     this.audio.play("clank1");
+    if (this.airLow) this.audio.play("breathResurface");
+    this.airLow = false;
     this.mode = "docked";
     this.resetSub();
     this.blips = [];
@@ -708,12 +852,31 @@ export class Game {
       this.emitBubbles(s.x - s.facing * 72, s.y, 1, 8);
 
     this.driving = moving && s.battery > 0;
+    const wasSurfaced = this.atSurface;
     this.atSurface = s.y < (this.atSurface ? SURFACE_STAY : SURFACE_ENTER);
     this.shipHint = s.y < (this.shipHint ? SHIP_HINT_STAY : SHIP_HINT_ENTER);
     const surfaced = this.atSurface;
+    if (surfaced && !wasSurfaced && this.airLow) this.audio.play("breathResurface");
+    if (surfaced) this.airLow = false;
+    else if (s.oxygen <= this.maxOxygen * LOW_AIR) this.airLow = true;
+    if (this.lampOn) s.battery = Math.max(0, s.battery - STATS.lampDrain[this.up.light] * dt);
+    const electrolysis = this.save.electrolysis && s.battery > 0;
+    if (this.electrolysisOn && !electrolysis && !surfaced) this.say("Electrolysis offline: out of battery", "#E5484D");
+    this.electrolysisOn = electrolysis;
     if (surfaced) s.oxygen = Math.min(this.maxOxygen, s.oxygen + 30 * dt);
-    else s.oxygen = Math.max(0, s.oxygen - dt);
+    else if (electrolysis) {
+      s.battery = Math.max(0, s.battery - GEAR.electrolysis.drain * dt);
+      s.oxygen = Math.min(this.maxOxygen, s.oxygen + GEAR.electrolysis.rate * dt);
+    } else s.oxygen = Math.max(0, s.oxygen - dt * (this.save.scrubbers ? GEAR.scrubbers.drain : 1));
+    if (s.oxygen <= 0 && !surfaced && this.candlesLeft > 0) {
+      this.candlesLeft--;
+      s.oxygen = GEAR.candles.seconds;
+      this.audio.play("chime2");
+      this.say("Lit an oxygen candle!", "#F6C445");
+    }
     const holding = s.oxygen <= 0 && !surfaced;
+    if (holding && !this.holdingBreath) this.audio.play("holdBreath");
+    this.holdingBreath = holding;
     if (holding) {
       s.breath -= dt;
       this.shake = Math.max(this.shake, 0.08);
@@ -726,7 +889,7 @@ export class Game {
     this.warning =
       (!surfaced && s.oxygen < Math.min(20, this.maxOxygen * 0.25)) ||
       depth > this.depthRating - 10;
-    this.audio.depthSounds(depth / this.depthRating, s.y, dt);
+    this.audio.depthSounds(depth / this.depthRating, s.y, dt, this.up.plating === UPGRADES.plating.levels.length - 1);
     this.pinSpeech(
       "rudders",
       s.battery <= 0,
@@ -763,10 +926,23 @@ export class Game {
 
     s.invuln = Math.max(0, s.invuln - dt);
     for (const c of this.world.creatures) {
-      if (c.state === "dead" || !CREATURES[c.kind].harmful || s.invuln > 0) continue;
+      if (c.state === "dead" || !CREATURES[c.kind].harmful) continue;
+      if (c.kind === "leviathan") {
+        if (Math.hypot(c.x - s.x, c.y - s.y) < CREATURES.leviathan.radius + SUB_RADIUS) {
+          s.hull = 1;
+          if (this.damage(c)) return;
+        } else if (s.invuln <= 0 && c.trail?.some((p, k) => k >= 4 && k % 3 === 0 && Math.hypot(p.x - s.x, p.y - s.y) < (8 + 80 * (1 - k / MONSTER_TRAIL) ** 0.8) * MONSTER_SCALE + SUB_RADIUS)) {
+          if (this.damage(c)) return;
+        }
+        continue;
+      }
+      if (s.invuln > 0) continue;
       const def = CREATURES[c.kind];
-      const circles = def.body ? def.body.map(([dx, r]) => [c.x + c.facing * dx, r] as const) : [[c.x, def.radius] as const];
-      if (circles.some(([x, r]) => (x - s.x) ** 2 + (c.y - s.y) ** 2 < (r + SUB_RADIUS) ** 2)) {
+      const pitch = c.kind === "whale" ? whalePitch(c) : 0;
+      const circles = def.body
+        ? def.body.map(([dx, r]) => [c.x + c.facing * dx * Math.cos(pitch), c.y + dx * Math.sin(pitch), r] as const)
+        : [[c.x, c.y, def.radius] as const];
+      if (circles.some(([x, y, r]) => (x - s.x) ** 2 + (y - s.y) ** 2 < (r + SUB_RADIUS) ** 2)) {
         if (this.damage(c)) return;
       }
     }
@@ -782,7 +958,7 @@ export class Game {
 
     this.updateSonar(dt);
 
-    if (s.diveTime > 1.5 && s.y < 50 && Math.abs(s.x - this.ship.x) < 230) this.dock();
+    if (s.diveTime > 1.5 && s.y < 50 && Math.abs(s.x - (this.ship.x + SUB_DOCK_OFFSET * this.ship.facing)) < DOCK_RANGE) this.dock();
   }
 
   /** Returns true when the hit wrecked the sub. */
@@ -943,8 +1119,154 @@ export class Game {
     return false;
   }
 
+  /** After suffocating, the wrecked sub drifts down behind the message: it rests on the bottom or implodes once past its depth rating. */
+  /** The first time each kind of big animal comes on screen in a dive, or the cavern is entered, the sub says something about it. */
+  private spotCreatures() {
+    const ab = this.world.abyss;
+    if (ab && !this.spotted.has("cavern") && this.sub.y > this.world.abyssTop(this.sub.x)) {
+      this.spotted.add("cavern");
+      this.say("Whoa, a huge underground cavern!", "#6CC5F0");
+    }
+    for (const c of this.world.creatures) {
+      const note = SPOT_NOTES[c.kind];
+      if (!note || c.state === "dead" || this.spotted.has(note.key)) continue;
+      const reach = CREATURE_EXTENT[c.kind];
+      if (Math.abs(c.x - this.cam.x) > this.view.w / 2 + reach * 0.5 || Math.abs(c.y - this.cam.y) > this.view.h / 2) continue;
+      this.spotted.add(note.key);
+      this.say(note.text, note.color);
+    }
+  }
+
+  /** How visible the monster's face is, 0..1, and how far through its showing (0..1). */
+  get monsterFace() {
+    const m = this.monster;
+    if (m.stage !== "face") return { alpha: 0, p: 0 };
+    const p = m.t / MONSTER_FACE_TIME;
+    return { alpha: Math.min(p / 0.25, (1 - p) / 0.25, 1) * (0.9 + 0.1 * Math.sin(m.t * 37)), p };
+  }
+
+  private updateMonster(dt: number) {
+    const m = this.monster;
+    if (!this.world.abyss) return;
+    if (m.stage === "idle") {
+      if (this.depthM >= MONSTER_DEPTH) {
+        this.monster = { stage: "face", t: 0 };
+        this.audio.play("monster");
+      }
+      return;
+    }
+    m.t += dt;
+    if (m.stage === "face" && m.t >= MONSTER_FACE_TIME) this.monster = { stage: "wait", t: 0 };
+    else if (m.stage === "wait" && m.t >= MONSTER_WAIT) {
+      const x = clamp(this.sub.x + (Math.random() - 0.5) * 1000, 300, this.world.width - 300);
+      const y = Math.min(this.sub.y + 1600, this.world.abyss.to - 200);
+      this.world.creatures.push({
+        kind: "leviathan",
+        x,
+        y,
+        vx: 0,
+        vy: 0,
+        facing: 1,
+        heading: 1,
+        angle: -Math.PI / 2,
+        homeY: y,
+        minY: 0,
+        maxY: 1e9,
+        speed: 0,
+        state: "idle",
+        dying: 0,
+        timer: 0,
+        phase: 0,
+        tint: 0.5,
+        nextDive: 0,
+        plan: null,
+        trail: Array.from({ length: MONSTER_TRAIL }, (_, k) => ({ x, y: y + k * 16 })),
+      });
+      this.monster = { stage: "chase", t: 0 };
+      this.growlTimer = 2;
+    } else if (m.stage === "chase") {
+      this.growlTimer -= dt;
+      const beast = this.world.creatures.find((c) => c.kind === "leviathan");
+      if (this.growlTimer <= 0 && beast) {
+        const dx = beast.x - this.sub.x;
+        const near = 1 - clamp(Math.hypot(dx, beast.y - this.sub.y) / 3000, 0, 0.75);
+        this.audio.play("monster", near, clamp(dx / 1500, -1, 1) * 0.7, 0.85 + Math.random() * 0.15);
+        this.growlTimer = 7 + Math.random() * 6;
+      }
+    }
+  }
+
+  private tickSink(dt: number) {
+    const s = this.sub;
+    const w = this.world;
+    const py = s.y;
+    const ease = clamp(this.depthM / SINK_RAMP_M, 0, 1);
+    const target = SINK_SLOW + (SINK_FAST - SINK_SLOW) * ease * ease * (3 - 2 * ease);
+    this.sinkSpeed = this.sinkSpeed! + clamp(target - this.sinkSpeed!, -40 * dt, 12 * dt);
+    s.vx *= Math.exp(-1.5 * dt);
+    s.x += s.vx * dt;
+    s.y += this.sinkSpeed * dt;
+    s.tilt += (0.35 - s.tilt) * damp(1, dt);
+    if (Math.random() < dt * 5) this.emitBubbles(s.x, s.y - 20, 1, 10);
+    const landed = w.inCave(s.x) ? w.caveHit(s.x, s.y, SUB_HALF_WIDTH) : s.y > w.clearFloorAt(s.x, SUB_HALF_WIDTH) - 26;
+    if (landed) {
+      s.y = py;
+      this.sinkSpeed = null;
+      this.audio.hit(0.5);
+    } else if (this.depthM > this.depthRating) {
+      this.sinkSpeed = null;
+      this.audio.play("implosion", 1, 0, 1.5);
+      this.implode = { t: 0, x: s.x, y: s.y };
+    }
+  }
+
+  private tickImplode(dt: number) {
+    const im = this.implode!;
+    const before = im.t;
+    im.t += dt;
+    if (before < IMPLODE_COLLAPSE && im.t >= IMPLODE_COLLAPSE) {
+      this.shake = 0.6;
+      this.emitBubbles(im.x, im.y, 40, 140);
+      const colors = debrisColors(this.up.plating);
+      this.debris = Array.from({ length: 9 }, (_, i) => {
+        const a = (i / 9) * Math.PI * 2 + Math.random() * 0.6;
+        const v = 90 + Math.random() * 170;
+        return {
+          x: im.x,
+          y: im.y,
+          vx: Math.cos(a) * v,
+          vy: Math.sin(a) * v * 0.6,
+          rot: Math.random() * 6,
+          vr: (Math.random() - 0.5) * 8,
+          w: 10 + Math.random() * 14,
+          h: 7 + Math.random() * 10,
+          color: colors[i % colors.length],
+          life: 3.5 + Math.random() * 1.5,
+        };
+      });
+    }
+    for (const d of this.debris) {
+      const drag = Math.exp(-1.8 * dt);
+      d.vx *= drag;
+      d.vy = d.vy * drag + 70 * dt;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.rot += d.vr * dt;
+      d.life -= dt;
+    }
+    this.debris = this.debris.filter((d) => d.life > 0);
+    if (this.implodeMessage && im.t >= IMPLODE_MESSAGE) {
+      this.implodeMessage();
+      this.implodeMessage = null;
+    }
+  }
+
   private wreck(reason: WreckReason) {
-    if (reason === "pressure") this.audio.play("implosion");
+    if (reason === "pressure") this.audio.play("implosion", 1, 0, 1.5);
+    if (reason === "oxygen") {
+      this.audio.play("wheeze");
+      this.sinkSpeed = 0;
+    }
     const lostValue = this.cargoValue();
     const lostCount = this.cargoCount();
     this.save.cargo = {};
@@ -957,11 +1279,15 @@ export class Game {
       whale: "Hit by a whale!",
       stingray: "",
       manta: "",
+      turtle: "",
+      bluewhale: "",
+      bigfin: "",
+      leviathan: "Swallowed whole!",
       colossal: "Caught by a colossal squid!",
       fish: "Bonked by a fish!",
       jelly: "Stung!",
       pressure: "Hull crushed!",
-      oxygen: "Out of air!",
+      oxygen: "Ran out of oxygen!",
     };
     const tips: Record<WreckReason, string> = {
       shark: "Great whites give chase, but even a stock propeller outswims them. Bumper upgrades help you survive a hit.",
@@ -970,30 +1296,43 @@ export class Game {
       angler: "Anglerfish hunt by their glowing lure. Sonar spots them early.",
       stingray: "",
       manta: "",
+      turtle: "",
+      bluewhale: "",
+      bigfin: "",
+      leviathan: "Something enormous lives at the bottom of the Crimson Sea. When it shows itself, run for the surface.",
       colossal: "Colossal squid ambush from the dark and lunge from far away. Sonar spots them early; give them a wide berth.",
       whale: "Sperm whales ignore you, but they are enormous and slow to turn. Keep clear of them.",
       fish: "",
       jelly: "",
       pressure: `Your plating is only safe to ${this.depthRating} m. Upgrade it to go deeper.`,
-      oxygen: "Head back up to the surface to refill your air.",
+      oxygen: "A sealed sub has no endless air. Once the oxygen runs out, carbon dioxide (CO₂) builds up to toxic levels and the cabin becomes unbreathable. Head back up to refill your air.",
     };
     const lost = lostCount
       ? `You lost ${lostCount} ${lostCount === 1 ? "item" : "items"} worth ${money(lostValue)}.`
       : "Luckily your hold was empty.";
-    this.ui.showMessage(
-      titles[reason],
-      `A rescue crew towed your sub back to the ship. ${lost}`,
-      tips[reason],
-      () => this.recover(),
-      () => {
-        this.recover();
-        this.ui.showTitle();
-      },
-    );
+    const show = () =>
+      this.ui.showMessage(
+        titles[reason],
+        `Return to the ship. ${lost}`,
+        tips[reason],
+        () => this.recover(),
+        () => {
+          this.recover();
+          this.ui.showTitle();
+        },
+      );
+    if (reason === "pressure") {
+      this.paused = true;
+      this.implode = { t: 0, x: this.sub.x, y: this.sub.y };
+      this.implodeMessage = show;
+    } else show();
   }
 
   /** Moves the wrecked sub back to the ship once the player dismisses the wreck message. */
   private recover() {
+    this.implode = null;
+    this.sinkSpeed = null;
+    this.debris = [];
     this.mode = "docked";
     this.resetSub();
     this.blips = [];
@@ -1025,7 +1364,9 @@ export class Game {
   private updateGear(dt: number) {
     const depth = this.mode === "diving" ? this.depthM : 0;
     const diving = this.mode === "diving";
-    const lampWanted = diving && this.up.light > 0 && depth > (this.surfaceDark ? LAMP_ON_DEPTH_NIGHT : LAMP_ON_DEPTH_DAY) - (this.lampOn ? SWITCH_SLACK : 0);
+    const auto = depth > (this.surfaceDark ? LAMP_ON_DEPTH_NIGHT : LAMP_ON_DEPTH_DAY) - (this.lampOn ? SWITCH_SLACK : 0);
+    const mode = this.save.lamp;
+    const lampWanted = diving && this.up.light > 0 && (mode === "auto" ? auto : mode === "on");
     if (lampWanted !== this.lampOn) {
       this.lampOn = lampWanted;
       this.audio.play("lightSwitch");
@@ -1034,9 +1375,12 @@ export class Game {
         this.say(lampWanted ? "Spotlight activated!" : "Spotlight disabled", lampWanted ? "#F7C948" : "#9AA7C2");
       }
     }
+    this.lampClock = this.lampOn ? this.lampClock + (this.paused ? 0 : dt) : 0;
     this.lampLevel += ((this.lampOn ? 1 : 0) - this.lampLevel) * damp(14, dt);
     const sonarDepth = this.surfaceDark ? SONAR_ON_DEPTH_NIGHT : SONAR_ON_DEPTH_DAY;
-    const online = diving && this.up.sonar > 0 && depth > sonarDepth - (this.sonarOnline ? SWITCH_SLACK : 0);
+    const sonarAuto = depth > sonarDepth - (this.sonarOnline ? SWITCH_SLACK : 0);
+    const sonarMode = this.save.sonar;
+    const online = diving && this.up.sonar > 0 && (sonarMode === "auto" ? sonarAuto : sonarMode === "on");
     if (online && !this.sonarOnline) {
       this.sonar.timer = Math.min(this.sonar.timer, 0.6);
       this.say("Sonar activated!", "#4FC98E");
@@ -1063,6 +1407,12 @@ export class Game {
     }
     this.sonar.timer -= dt;
     if (this.sonar.timer > 0) return;
+    const cost = STATS.sonarPingCost[level];
+    if (this.sub.battery < cost) {
+      this.sonar.timer = 1;
+      return;
+    }
+    this.sub.battery -= cost;
     this.sonar.timer = STATS.sonarInterval[level];
     this.sonar.ring = 0;
     this.sonarPings.push({
@@ -1132,9 +1482,14 @@ export class Game {
           danger: harmful,
           life: ping.linger,
           max: ping.linger,
-          shape: this.up.sonar >= 3 ? { ...c } : undefined,
+          shape: this.up.sonar >= 3 || c.kind === "leviathan" ? { ...c, trail: c.trail?.map((p) => ({ ...p })) } : undefined,
         });
       }
+    }
+    for (const w of this.weightFx) {
+      if (this.pinged.has(w) || !hit(w.x, w.y, 10)) continue;
+      this.pinged.add(w);
+      this.blips.push({ x: w.x, y: w.y, danger: false, life: ping.linger, max: ping.linger, weight: w.rot });
     }
     for (const it of this.world.items) {
       if (this.pinged.has(it) || !it.alive || !ITEMS[it.kind].treasure) continue;
@@ -1152,6 +1507,7 @@ export class Game {
       tr.switched = true;
       this.save.zone = tr.to.zone;
       this.world = new World(this.save.zone);
+      this.applyZoneSwitches(false);
       this.ship.x = tr.to.side === "west" ? SHIP_MARGIN + 40 : this.world.width - SHIP_MARGIN - 40;
       this.ship.facing = tr.to.side === "west" ? 1 : -1;
       this.ship.vx = 0;
@@ -1161,6 +1517,10 @@ export class Game {
       this.snapCamera();
       this.persist();
       this.ui.toast(`Welcome to ${this.world.def.name}`);
+      if (this.world.def.space && !this.said.has("arrive")) {
+        this.said.add("arrive");
+        this.say("What is this place? Where are we?", "#E5484D");
+      }
     }
     if (tr.t >= 1) this.travel = null;
   }
@@ -1200,7 +1560,11 @@ export class Game {
         w.rest = true;
         w.vr = 0;
         this.emitBubbles(w.x, w.y, 6, 20);
-        this.audio.play("clank1", 0.4);
+        const dx = w.x - this.cam.x;
+        const away = Math.hypot(Math.max(0, Math.abs(dx) - this.view.w / 2), Math.max(0, Math.abs(w.y - this.cam.y) - this.view.h / 2));
+        if (away < WEIGHT_HEARING_MARGIN) {
+          this.audio.play("clank1", 0.4 * (1 - 0.7 * (away / WEIGHT_HEARING_MARGIN)), clamp(dx / (this.view.w / 2), -1, 1) * 0.6);
+        }
       }
     }
     const drag = Math.exp(-2.5 * dt);
@@ -1258,6 +1622,10 @@ export class Game {
   private resetSub() {
     this.deepWarned = false;
     this.weightsOn = this.save.weights;
+    this.candlesLeft = this.save.candles;
+    this.monster = { stage: "idle", t: 0 };
+    const beasts = this.world.creatures;
+    for (let i = beasts.length - 1; i >= 0; i--) if (beasts[i].kind === "leviathan") beasts.splice(i, 1);
     this.weightsDropped = false;
     this.weightFx = [];
     this.halfAir = false;

@@ -1,7 +1,7 @@
 import type { Creature, World } from '../game/world';
 import { drawCreature } from '../art/creatures';
-import { WHALE_SCALE } from '../data/creatures';
-import type { WorldTransform } from './lighting';
+import { CREATURE_EXTENT } from '../data/creatures';
+import type { Light, WorldTransform } from './lighting';
 
 /** Width in px of the glowing edge along rock. */
 const EDGE = 7;
@@ -28,6 +28,7 @@ export class SonarOutline {
     range: number,
     trail: number,
     alpha: number,
+    lights: Light[],
   ) {
     const c = this.ctx;
     const w = Math.ceil(main.canvas.width * RES);
@@ -49,6 +50,14 @@ export class SonarOutline {
     };
     const blobs = world.caveBlobs.filter((b) => b.x + b.r + EDGE > left && b.x - b.r - EDGE < right);
 
+    const ab = world.abyss;
+    const cavern = (extra: number) => {
+      const x0 = Math.floor(left / 12) * 12;
+      c.moveTo(x0, ab!.to + extra);
+      for (let x = x0; x <= right; x += 12) c.lineTo(x, world.abyssTop(x) - extra);
+      c.lineTo(right, ab!.to + extra);
+      c.closePath();
+    };
     c.fillStyle = '#78FFD2';
     c.strokeStyle = '#78FFD2';
     c.save();
@@ -63,6 +72,7 @@ export class SonarOutline {
       c.moveTo(b.x + b.r + EDGE, b.y);
       c.arc(b.x, b.y, b.r + EDGE, 0, Math.PI * 2);
     }
+    if (ab) cavern(EDGE);
     c.fill();
     c.restore();
     c.lineWidth = EDGE;
@@ -77,6 +87,7 @@ export class SonarOutline {
       c.moveTo(b.x + b.r, b.y);
       c.arc(b.x, b.y, b.r, 0, Math.PI * 2);
     }
+    if (ab) cavern(0);
     c.fill();
 
     c.globalCompositeOperation = 'destination-in';
@@ -102,6 +113,34 @@ export class SonarOutline {
     c.fillStyle = fade;
     c.fillRect(left, tf.top - 30, right - left, bottom - tf.top + 30);
 
+    c.globalCompositeOperation = 'destination-out';
+    for (const l of lights) {
+      if (!l.sub) continue;
+      const reach = l.r * 1.1;
+      const strength = Math.min(1, (l.a ?? 1) * 1.6);
+      const glow = c.createRadialGradient(l.x, l.y, 0, l.x, l.y, reach);
+      glow.addColorStop(0, `rgba(0,0,0,${strength})`);
+      glow.addColorStop(0.88, `rgba(0,0,0,${strength})`);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = glow;
+      if (l.angle === undefined) {
+        c.beginPath();
+        c.arc(l.x, l.y, reach, 0, Math.PI * 2);
+        c.fill();
+        continue;
+      }
+      const spread = (l.spread ?? 0.4) * 1.2;
+      for (const [f, a] of [[1, 0.25], [0.93, 0.35], [0.86, 0.5], [0.8, 1]]) {
+        c.beginPath();
+        c.moveTo(l.x, l.y);
+        c.arc(l.x, l.y, reach, l.angle - spread * f, l.angle + spread * f);
+        c.closePath();
+        c.globalAlpha = a;
+        c.fill();
+      }
+      c.globalAlpha = 1;
+    }
+
     main.save();
     main.setTransform(1, 0, 0, 1, 0, 0);
     main.globalAlpha = alpha;
@@ -110,21 +149,10 @@ export class SonarOutline {
   }
 }
 
-/** Half the width in world px each kind needs, which sizes its outline image. */
-const KIND_EXTENT: Record<Creature['kind'], number> = {
-  fish: 36,
-  jelly: 70,
-  shark: 110,
-  hammerhead: 110,
-  squid: 140,
-  angler: 80,
-  whale: 270 * WHALE_SCALE,
-  stingray: 130,
-  manta: 170,
-  colossal: 360,
-};
 /** Outline thickness in world px. */
 const SHAPE_EDGE = 2.5;
+/** The longest side in px an outline image is drawn at; huge animals are drawn smaller and scaled up. */
+const SPRITE_MAX_SIDE = 1400;
 /** Outline images kept for reuse before the cache is emptied. */
 const SPRITE_LIMIT = 160;
 
@@ -140,14 +168,27 @@ export class SonarShape {
   private cache = new Map<string, ShapeSprite>();
 
   sprite(k: number, shape: Creature, rgb: string): ShapeSprite {
-    const pose = { ...shape, x: 0, y: 0, phase: (Math.round(shape.phase * 2) / 2) % 4 };
-    const key = [shape.kind, shape.tint.toFixed(1), shape.facing, shape.state, pose.phase, Math.round(shape.vx / 30), Math.round(shape.vy / 30), Math.round(shape.angle * 4), rgb, k.toFixed(2)].join('|');
+    const pose = {
+      ...shape,
+      x: 0,
+      y: 0,
+      phase: (Math.round(shape.phase * 2) / 2) % 4,
+      trail: shape.trail?.map((p) => ({ x: p.x - shape.x, y: p.y - shape.y })),
+    };
+    const bend = shape.trail ? [10, 30, 60, 100, 140].map((i) => shape.trail![Math.min(i, shape.trail!.length - 1)]).map((p) => `${Math.round((p.x - shape.x) / 40)},${Math.round((p.y - shape.y) / 40)}`).join(';') : '';
+    const key = [shape.kind, shape.tint.toFixed(1), shape.facing, shape.state, pose.phase, Math.round(shape.vx / 30), Math.round(shape.vy / 30), Math.round(shape.angle * 4), bend, rgb, k.toFixed(2)].join('|');
+    return this.outline(key, CREATURE_EXTENT[shape.kind], k, rgb, (f) => drawCreature(f, pose));
+  }
+
+  /** Outline of an object drawn by `draw` around the origin, reaching at most `extent` px from it. */
+  outline(key: string, extent: number, k: number, rgb: string, draw: (ctx: CanvasRenderingContext2D) => void): ShapeSprite {
     const hit = this.cache.get(key);
     if (hit) return hit;
     if (this.cache.size >= SPRITE_LIMIT) this.cache.clear();
 
+    k *= Math.min(1, SPRITE_MAX_SIDE / (extent * 2 * k));
     const r = SHAPE_EDGE * k;
-    const side = Math.ceil(KIND_EXTENT[shape.kind] * 2 * k + r * 2);
+    const side = Math.ceil(extent * 2 * k + r * 2);
     if (this.scratch.width < side) {
       this.scratch.width = side;
       this.scratch.height = side;
@@ -157,7 +198,7 @@ export class SonarShape {
     f.setTransform(1, 0, 0, 1, 0, 0);
     f.clearRect(0, 0, side, side);
     f.setTransform(k, 0, 0, k, side / 2, side / 2);
-    drawCreature(f, pose);
+    draw(f);
     f.setTransform(1, 0, 0, 1, 0, 0);
     f.globalCompositeOperation = 'source-in';
     f.fillStyle = `rgb(${rgb})`;

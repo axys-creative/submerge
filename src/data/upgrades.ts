@@ -1,4 +1,4 @@
-export type UpgradeId = 'plating' | 'oxygen' | 'battery' | 'hull' | 'light' | 'sonar' | 'propeller';
+export type UpgradeId = "plating" | "oxygen" | "battery" | "hull" | "light" | "sonar" | "propeller";
 export type Loadout = Record<UpgradeId, number>;
 
 export interface UpgradeLevel {
@@ -20,88 +20,115 @@ export interface LightSpec {
   rgb: string;
 }
 
-export const UPGRADE_ORDER: UpgradeId[] = ['plating', 'oxygen', 'battery', 'propeller', 'hull', 'light', 'sonar'];
+export const UPGRADE_ORDER: UpgradeId[] = [
+  "plating",
+  "oxygen",
+  "battery",
+  "propeller",
+  "hull",
+  "light",
+  "sonar",
+];
+
+/** First zone (0-based) whose shop sells each upgrade; unlisted upgrades are sold everywhere. */
+export const UPGRADE_FIRST_ZONE: Partial<Record<UpgradeId, number>> = {
+  hull: 1,
+  light: 1,
+  sonar: 2,
+};
 
 // Level 0 is what a new sub starts with.
 export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   plating: {
-    title: 'Plating',
-    blurb: 'Dive deeper before the hull starts to buckle.',
+    title: "Plating",
+    blurb: "Dive deeper before the hull starts to buckle.",
     levels: [
-      { name: 'Silver Shell', cost: 0, effect: 'Safe to 120 m' },
-      { name: 'Graphite Steel', cost: 300, effect: 'Safe to 240 m' },
-      { name: 'Rescue Orange', cost: 1100, effect: 'Safe to 420 m' },
-      { name: 'Abyssal Black', cost: 3200, effect: 'Safe to 5000 m' },
+      { name: "Silver Shell", cost: 0, effect: "Safe to 120 m" },
+      { name: "Graphite Steel", cost: 300, effect: "Safe to 240 m" },
+      { name: "Rescue Orange", cost: 1100, effect: "Safe to 420 m" },
+      { name: "Abyssal Black", cost: 3200, effect: "Safe to 5000 m" },
     ],
   },
   oxygen: {
-    title: 'Oxygen Tank',
-    blurb: 'Stay under longer. Surfacing refills it.',
+    title: "Oxygen Tank",
+    blurb: "Stay under longer. Surfacing refills it.",
     levels: [
-      { name: 'Silver Tank', cost: 0, effect: '30 seconds of air' },
-      { name: 'Graphite Tank', cost: 250, effect: '60 seconds of air' },
-      { name: 'Orange Tank', cost: 900, effect: '120 seconds of air' },
-      { name: 'Black Tank', cost: 2000, effect: '480 seconds of air' },
+      { name: "Silver Tank", cost: 0, effect: "30 seconds of air" },
+      { name: "Graphite Tank", cost: 250, effect: "60 seconds of air" },
+      { name: "Orange Tank", cost: 900, effect: "120 seconds of air" },
+      { name: "Black Tank", cost: 2000, effect: "480 seconds of air" },
     ],
   },
   battery: {
-    title: 'Battery',
-    blurb: 'Drive farther before you have to hand-crank. Docking recharges it.',
+    title: "Battery",
+    blurb: "Drive farther before you have to hand-crank. Docking recharges it.",
     levels: [
-      { name: 'Starter Cell', cost: 0, effect: 'Short range' },
-      { name: 'Twin Cells', cost: 200, effect: '1.8× range' },
-      { name: 'Triple Pack', cost: 650, effect: '2.9× range' },
-      { name: 'Gold Core', cost: 1800, effect: '22× range' },
+      { name: "Starter Cell", cost: 0, effect: "Short range" },
+      { name: "Twin Cells", cost: 200, effect: "1.8× range" },
+      { name: "Triple Pack", cost: 650, effect: "2.9× range" },
+      { name: "Gold Core", cost: 1800, effect: "22× range" },
     ],
   },
   propeller: {
-    title: 'Propeller',
-    blurb: 'Sail faster and cover more ocean per charge of air.',
+    title: "Propeller",
+    blurb: "Sail faster and cover more ocean per charge of air.",
     levels: [
-      { name: 'Stock Prop', cost: 0, effect: 'Standard speed' },
-      { name: 'Twin Blade', cost: 300, effect: '1.3× speed' },
-      { name: 'Turbo Screw', cost: 1000, effect: '1.6× speed' },
+      { name: "Stock Prop", cost: 0, effect: "Standard speed" },
+      { name: "Twin Blade", cost: 300, effect: "1.3× speed" },
+      { name: "Turbo Screw", cost: 1000, effect: "1.6× speed" },
     ],
   },
   hull: {
-    title: 'Bumpers',
-    blurb: 'Take more bumps from sharks and squid. Docking repairs them.',
+    title: "Bumpers",
+    blurb: "Take more bumps from sharks and squid. Docking repairs them.",
     levels: [
-      { name: 'Bare Hull', cost: 0, effect: 'Survives 1 hit' },
-      { name: 'Bow Bumper', cost: 400, effect: 'Survives 2 hits' },
-      { name: 'Full Fenders', cost: 1400, effect: 'Survives 3 hits' },
+      { name: "Bare Hull", cost: 0, effect: "Survives 1 hit" },
+      { name: "Bow Bumper", cost: 400, effect: "Survives 2 hits" },
+      { name: "Full Fenders", cost: 1400, effect: "Survives 3 hits" },
     ],
   },
   light: {
-    title: 'Spotlight',
-    blurb: 'See in the dark water of the deep.',
+    title: "Spotlight",
+    blurb: "See in the dark water of the deep.",
     levels: [
-      { name: 'Running Lights', cost: 0, effect: 'Decorative only' },
-      { name: 'Amber Lamp', cost: 180, effect: 'Short yellow beam' },
-      { name: 'White Floodlight', cost: 600, effect: 'Long white beam' },
-      { name: 'White Beam', cost: 1600, effect: 'Long, wide white beam plus a rear light' },
+      { name: "Running Lights", cost: 0, effect: "Decorative only" },
+      { name: "Amber Lamp", cost: 180, effect: "Short yellow beam" },
+      { name: "White Floodlight", cost: 600, effect: "Long white beam" },
+      { name: "White Beam", cost: 1600, effect: "Long, wide white beam plus a rear light" },
     ],
   },
   sonar: {
-    title: 'Sonar',
-    blurb: 'Pings reveal what is hiding in the dark.',
+    title: "Sonar",
+    blurb: "Pings reveal what is hiding in the dark.",
     levels: [
-      { name: 'No Sonar', cost: 0, effect: 'Nothing detected' },
-      { name: 'Basic Sonar', cost: 350, effect: '90 m range, pings every 5 s, readings last 2 s' },
-      { name: 'Long-Range Sonar', cost: 1000, effect: '140 m range, pings every 4.25 s, readings last 2.5 s' },
-      { name: 'Deep Array', cost: 2600, effect: '200 m range, pings every 3.5 s, readings last 3 s' },
+      { name: "No Sonar", cost: 0, effect: "Nothing detected" },
+      { name: "Basic Sonar", cost: 350, effect: "90 m range, pings every 5 s, readings last 2 s" },
+      {
+        name: "Long-Range Sonar",
+        cost: 1000,
+        effect: "140 m range, pings every 4.25 s, readings last 2.5 s",
+      },
+      {
+        name: "Deep Array",
+        cost: 2600,
+        effect: "200 m range, pings every 3.5 s, readings last 3 s",
+      },
     ],
   },
 };
 
 export const STATS = {
-  depthRating: [120, 240, 420, 5000],
+  depthRating: [250, 700, 1500, 5000],
   /** Meters before the depth rating where the first "too deep" warning appears, per plating level. */
   deepWarning: [20, 40, 60, 250],
   oxygen: [30, 60, 120, 480],
   battery: [9000, 16000, 26000, 200000],
   maxHull: [1, 2, 3],
   speed: [1, 1.3, 1.6],
+  /** Battery spent per second while the spotlight is lit, per lamp level. */
+  lampDrain: [0, 6, 10, 14],
+  /** Battery spent per sonar ping, per sonar level. */
+  sonarPingCost: [0, 40, 60, 80],
   sonarRange: [0, 900, 1400, 2000],
   /** Seconds between sonar pings (also the ping sound). */
   sonarInterval: [0, 5, 4.25, 3.5],
@@ -109,17 +136,18 @@ export const STATS = {
   sonarLinger: [0, 2, 2.5, 3],
   light: [
     null,
-    { range: 300, spread: 0.4, glow: 170, rgb: '255,205,90' },
-    { range: 440, spread: 0.48, glow: 220, rgb: '240,248,255' },
-    { range: 580, spread: 0.56, glow: 280, rgb: '235,245,255' },
+    { range: 300, spread: 0.4, glow: 170, rgb: "255,205,90" },
+    { range: 440, spread: 0.48, glow: 220, rgb: "240,248,255" },
+    { range: 580, spread: 0.56, glow: 280, rgb: "235,245,255" },
   ] as (LightSpec | null)[],
 };
 
 /** One-time purchase sold in zone 5: strapped on at every launch, dropped with a key for a fast ride back up. */
 export const WEIGHTS = {
-  name: 'Dive Weights',
+  name: "Dive Weights",
   cost: 1500,
-  blurb: 'Lead weights that drag you down fast. Drop them for a quick ride back up. They are strapped back on every time you dock.',
+  blurb:
+    "Lead weights that drag you down fast. Drop them for a quick ride back up. They are strapped back on every time you dock.",
   /** Speed multiplier for going down while the weights are on. */
   descent: 1.8,
   /** Speed multiplier for going up once they are dropped. */
@@ -128,4 +156,42 @@ export const WEIGHTS = {
   pull: 90,
   /** Upward kick in px/s when they are let go. */
   kick: 170,
+};
+
+export type GearId = "candles" | "scrubbers" | "electrolysis";
+
+/** Air gear sold in the island shops from `firstZone` (0-based) onward. */
+export const GEAR = {
+  candles: {
+    name: "Oxygen Candles",
+    /** Price of carrying 1, 2 and 3 candles. */
+    costs: [150, 300, 600],
+    cost: 150,
+    max: 3,
+    firstZone: 1,
+    /** Seconds of air one candle gives. */
+    seconds: 20,
+    blurb:
+      "Chemical candles that burn out a fresh breath of air. One lights itself when your tank runs dry. Each upgrade carries one more, and docking restocks them all.",
+  },
+  scrubbers: {
+    name: "CO₂ Scrubbers",
+    cost: 1400,
+    firstZone: 2,
+    /** Fraction of the normal air use while they run. */
+    drain: 0.65,
+    blurb:
+      "Filters out the carbon dioxide that makes stale air toxic, so your tank lasts about half again as long.",
+  },
+  electrolysis: {
+    name: "Electrolysis Unit",
+    cost: 6000,
+    firstZone: 4,
+    /** Battery spent per second to make air. */
+    drain: 30,
+    /** Air made per second. */
+    rate: 6,
+    blurb:
+      "Splits seawater into fresh oxygen, so you never run out of air below the surface. It runs on the battery: when the battery is empty, you are back to your tank.",
+  },
 };

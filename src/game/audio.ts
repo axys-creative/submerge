@@ -21,6 +21,12 @@ const FILES = {
   whaleNear: ["sound-whale-near.m4a"],
   lightSwitch: ["sound-spotlight-toggle-soft.m4a"],
   menuTick: ["sound-menu-tick.m4a"],
+  breathResurface: ["sound-breathing-resurface.m4a"],
+  holdBreath: ["sound-breathing-holding-breath.m4a"],
+  heartbeat: ["sound-heartbeat.m4a"],
+  wheeze: ["sound-breathing-wheezing.m4a"],
+  crimson: ["sound-crimson-sea-vibration.m4a"],
+  monster: ["sound-crimson-sea-monster.m4a"],
 } as const;
 
 type Sound = keyof typeof FILES;
@@ -49,11 +55,17 @@ const VOLUME: Record<Sound, number> = {
   whaleNear: 0.9,
   lightSwitch: 0.8,
   menuTick: 0.5,
+  breathResurface: 0.5,
+  holdBreath: 0.5,
+  heartbeat: 0.5,
+  wheeze: 0.5,
+  crimson: 0.6,
+  monster: 0.9,
 };
 
 /** Which looping beds play in each scene. */
 const BEDS: Record<Scene, Sound[]> = { surface: ["surface"], dive: ["depths"] };
-const LOOPS: Sound[] = ["surface", "depths", "propeller", "sailing"];
+const LOOPS: Sound[] = ["surface", "depths", "propeller", "sailing", "heartbeat", "crimson"];
 
 
 const HORN_GAP = 0.5;
@@ -85,6 +97,7 @@ export class AudioManager {
   private musicFilter: BiquadFilterNode | null = null;
   private musicDepth: GainNode | null = null;
   private muffle = 0;
+  private musicOff = false;
   private scene: Scene = "surface";
   private propeller = false;
   private hornTimer = 0;
@@ -126,10 +139,32 @@ export class AudioManager {
     this.applyBeds();
   }
 
+  /** Fades the music out (or back in) without touching the volume setting, for zones that should only have ambient sound. */
+  setMusicOff(off: boolean) {
+    if (off === this.musicOff) return;
+    this.musicOff = off;
+    if (this.ctx && this.musicBus) {
+      this.musicBus.gain.setTargetAtTime(off ? 0 : this.musicVolume * VOLUME.music, this.ctx.currentTime, 1.2);
+    }
+  }
+
   setPropeller(on: boolean) {
     if (on === this.propeller) return;
     this.propeller = on;
     this.applyBeds();
+  }
+
+  /** The Crimson Sea's low vibration, which fades in once the sub is under the surface there. */
+  setCrimson(on: boolean) {
+    const gain = this.beds.get("crimson");
+    if (!this.ctx || !gain) return;
+    gain.gain.setTargetAtTime(on ? VOLUME.crimson : 0, this.ctx.currentTime, 1.5);
+  }
+
+  setHeartbeat(on: boolean) {
+    const gain = this.beds.get("heartbeat");
+    if (!this.ctx || !gain) return;
+    gain.gain.setTargetAtTime(on ? VOLUME.heartbeat : 0, this.ctx.currentTime, on ? 0.1 : 0.3);
   }
 
   /** Fades the ship's engine loop with its speed, 0 (still) to 1 (full speed). */
@@ -215,8 +250,8 @@ export class AudioManager {
     this.play(this.hitIndex++ % 2 ? "clank2" : "clank1", volume);
   }
 
-  /** Depth sounds (hull creaks) while moving through the pressure zones, at irregular distances rather than fixed depths. */
-  depthSounds(depthFrac: number, y: number, dt: number) {
+  /** Depth sounds (hull creaks) while moving through the pressure zones, at irregular distances rather than fixed depths; the final plating is rarer, every 200 to 300 m. */
+  depthSounds(depthFrac: number, y: number, dt: number, final = false) {
     this.depthTimer -= dt;
     const moved = Math.abs(y - this.depthY);
     this.depthY = y;
@@ -228,7 +263,7 @@ export class AudioManager {
     if (this.depthTravel < this.depthNext || this.depthTimer > 0) return;
     this.play(depthFrac >= DEPTH_2_FROM ? "depth2" : "depth1", 0.7 + Math.random() * 0.3);
     this.depthTravel = 0;
-    this.depthNext = 80 + Math.random() * 200;
+    this.depthNext = final ? 2000 + Math.random() * 1000 : 80 + Math.random() * 200;
     this.depthTimer = 2.5;
   }
 
@@ -271,16 +306,17 @@ export class AudioManager {
   private applyMaster() {
     if (this.out) this.out.gain.value = this.muted ? 0 : 1;
     if (this.master) this.master.gain.value = this.volume;
-    if (this.musicBus) this.musicBus.gain.value = this.musicVolume * VOLUME.music;
+    if (this.musicBus) this.musicBus.gain.value = this.musicOff ? 0 : this.musicVolume * VOLUME.music;
   }
 
-  play(name: Sound, volume = 1, pan = 0) {
+  play(name: Sound, volume = 1, pan = 0, rate = 1) {
     const buf = this.buffers.get(name);
     if (!this.ctx || !this.master || !buf) return;
     const src = this.ctx.createBufferSource();
     const gain = this.ctx.createGain();
     gain.gain.value = VOLUME[name] * volume;
     src.buffer = buf;
+    src.playbackRate.value = rate;
     if (pan) {
       const panner = this.ctx.createStereoPanner();
       panner.pan.value = pan;
@@ -349,7 +385,7 @@ export class AudioManager {
   private applyBeds() {
     if (!this.ctx) return;
     for (const [name, gain] of this.beds) {
-      if (name === "sailing") continue;
+      if (name === "sailing" || name === "heartbeat" || name === "crimson") continue;
       const on = name === "propeller" ? this.propeller : BEDS[this.scene].includes(name);
       gain.gain.setTargetAtTime(
         on ? VOLUME[name] : 0,

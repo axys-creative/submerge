@@ -4,7 +4,8 @@ Canvas 2D submarine game (Vite + TypeScript). Zone data is in `src/data/zones.ts
 
 ## Design guidelines
 
-- Caves should feel open, big and majestic, never confined. Follow Echo Caverns in Sunny Shallows (`cave` in `src/data/zones.ts`): tunnels around 190 px in radius, chambers 250 px or more, no tight squeezes.
+- Caves should feel open, big and majestic, never confined. Follow Echo Caverns in Sunny Shallows (`cave` in `src/data/zones.ts`): tunnels around 190 px in radius as listed (drawn 1.5 times wider by `TUNNEL_WIDEN` in `src/game/world.ts`), chambers 250 px or more, no tight squeezes.
+- The exception is a few thin side tunnels (listed radius around 105 px) kept as deliberate tight squeezes, like the one running west from Echo Caverns.
 - Cave bends alternate between diagonal cuts and smooth curves, and walls waver. This is automatic in `buildCave` (`src/game/world.ts`).
 - Keep the headland above a cave tall enough that wide tunnels do not break through the sea floor.
 - Items are sparse: each zone has about half the items it once did. Most rest on the floor; only bottles float, sometimes.

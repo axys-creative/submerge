@@ -1,4 +1,5 @@
 import type { CreatureKind } from './creatures';
+import type { UpgradeId } from './upgrades';
 
 export interface CreatureSpawn {
   kind: CreatureKind;
@@ -25,6 +26,8 @@ export interface CaveDef {
   /** Raises the sea floor into a headland with steep sides, so the first tunnel can enter its side horizontally. */
   hill: { x: number; half: number; ramp: number; height: number };
   passages: CavePassage[];
+  /** An open cavern with no rock in it, from a bumpy ceiling around `from` meters deep down to `to`, running the whole width of the cave region with no side walls; the view zooms out to `zoom` inside it. */
+  abyss?: { from: number; to: number; zoom: number };
 }
 
 export interface ZoneDef {
@@ -44,7 +47,8 @@ export interface ZoneDef {
   darkness: [number, number];
   items: number;
   creatures: CreatureSpawn[];
-  islands: { x: number; name: string }[];
+  /** `sells` limits the island shop to those upgrades; without it the shop sells everything this zone offers. */
+  islands: { x: number; name: string; sells?: UpgradeId[] }[];
   wrecks: { x: number; kind: 'sloop' | 'galleon' }[];
   /** Vertical cave shafts cut into the sea floor; width in px, depth in meters. */
   shafts?: { name: string; x: number; width: number; depth: number }[];
@@ -92,17 +96,18 @@ export const ZONES: ZoneDef[] = [
       { kind: 'jelly', count: 5, minDepth: 25, maxDepth: 80 },
       { kind: 'hammerhead', count: 4, minDepth: 20, maxDepth: 80 },
       { kind: 'stingray', count: 3, minDepth: 10, maxDepth: 80 },
+      { kind: 'turtle', count: 3, minDepth: 5, maxDepth: 80 },
     ],
     islands: [
-      { x: 650, name: 'Coral Cove' },
-      { x: 6100, name: 'Gull Rock' },
+      { x: 650, name: 'Coral Cove', sells: ['plating', 'oxygen'] },
+      { x: 6100, name: 'Gull Rock', sells: ['battery', 'propeller'] },
     ],
     wrecks: [{ x: 4400, kind: 'sloop' }],
     caves: [{
       name: 'Echo Caverns',
-      x0: 6000,
+      x0: 5000,
       x1: 8600,
-      hill: { x: 7300, half: 620, ramp: 220, height: 45 },
+      hill: { x: 7300, half: 620, ramp: 220, height: 55 },
       passages: [
         { pts: [[6300, 55], [6700, 55], [6950, 58]], r: 190 },
         { pts: [[6950, 58], [6950, 120], [7100, 160], [7100, 205]], r: 190 },
@@ -117,6 +122,44 @@ export const ZONES: ZoneDef[] = [
         { pts: [[7900, 215]], r: 300, loot: 1 },
         { pts: [[7000, 335]], r: 350, loot: 2 },
         { pts: [[7850, 335]], r: 250, loot: 2 },
+        { pts: [[6450, 262], [6050, 275], [5650, 272], [5250, 266], [4800, 262]], r: 105 },
+      ],
+    }, {
+      name: 'Tidewater Grotto',
+      x0: 2700,
+      x1: 5200,
+      hill: { x: 3900, half: 0, ramp: 1, height: 0 },
+      passages: [
+        { pts: [[3900, 75], [3900, 130], [3700, 170], [3500, 200]], r: 190 },
+        { pts: [[3500, 200], [3200, 215], [3050, 250]], r: 190 },
+        { pts: [[3700, 170], [4100, 200], [4450, 230], [4800, 260]], r: 190 },
+        { pts: [[3500, 205]], r: 290, loot: 1 },
+        { pts: [[3050, 255]], r: 270, loot: 2 },
+        { pts: [[4800, 262]], r: 260, loot: 1 },
+      ],
+    }, {
+      name: 'Sunken Vaults',
+      x0: 250,
+      x1: 3300,
+      hill: { x: 1500, half: 0, ramp: 1, height: 0 },
+      passages: [
+        { pts: [[1500, 50], [1450, 110], [1700, 160], [2000, 180]], r: 190 },
+        { pts: [[2000, 180], [2400, 180], [2700, 215], [2700, 260]], r: 190 },
+        { pts: [[2000, 180], [1700, 230], [1500, 255]], r: 190 },
+        { pts: [[2050, 182]], r: 260, loot: 1 },
+        { pts: [[1500, 258]], r: 300, loot: 1 },
+        { pts: [[2700, 265]], r: 280, loot: 2 },
+        { pts: [[1500, 258], [1100, 265], [800, 285]], r: 105 },
+        { pts: [[650, 290]], r: 240, loot: 2 },
+      ],
+    }, {
+      name: 'Drowned Hall',
+      x0: 8350,
+      x1: 8950,
+      hill: { x: 8600, half: 0, ramp: 1, height: 0 },
+      passages: [
+        { pts: [[8600, 45], [8600, 110], [8550, 170], [8600, 230]], r: 190 },
+        { pts: [[8600, 235]], r: 300, loot: 2 },
       ],
     }],
     kelp: 60,
@@ -139,6 +182,7 @@ export const ZONES: ZoneDef[] = [
       { kind: 'jelly', count: 4, minDepth: 40, maxDepth: 220 },
       { kind: 'hammerhead', count: 3, minDepth: 25, maxDepth: 220 },
       { kind: 'shark', count: 1, minDepth: 40, maxDepth: 220 },
+      { kind: 'turtle', count: 3, minDepth: 8, maxDepth: 150 },
     ],
     islands: [{ x: 5000, name: 'Pearl Atoll' }],
     wrecks: [{ x: 2800, kind: 'sloop' }],
@@ -234,9 +278,8 @@ export const ZONES: ZoneDef[] = [
       { kind: 'hammerhead', count: 3, minDepth: 25, maxDepth: 350 },
       { kind: 'shark', count: 3, minDepth: 40, maxDepth: 350 },
       { kind: 'squid', count: 6, minDepth: 220, maxDepth: 700 },
-      { kind: 'angler', count: 8, minDepth: 320, maxDepth: 800 },
       { kind: 'manta', count: 2, minDepth: 80, maxDepth: 500 },
-      { kind: 'colossal', count: 2, minDepth: 450, maxDepth: 720 },
+      { kind: 'bluewhale', count: 2, minDepth: 25, maxDepth: 160 },
     ],
     islands: [{ x: 650, name: 'Last Light Atoll' }],
     wrecks: [
@@ -263,10 +306,12 @@ export const ZONES: ZoneDef[] = [
       { kind: 'fish', count: 2, minDepth: 20, maxDepth: 400 },
       { kind: 'jelly', count: 5, minDepth: 300, maxDepth: 1300 },
       { kind: 'squid', count: 3, minDepth: 500, maxDepth: 1300 },
-      { kind: 'angler', count: 4, minDepth: 700, maxDepth: 1450 },
+      { kind: 'angler', count: 8, minDepth: 1000, maxDepth: 2500 },
       { kind: 'whale', count: 2, minDepth: 400, maxDepth: 1100 },
       { kind: 'manta', count: 2, minDepth: 100, maxDepth: 800 },
-      { kind: 'colossal', count: 2, minDepth: 900, maxDepth: 1400 },
+      { kind: 'bluewhale', count: 2, minDepth: 25, maxDepth: 160 },
+      { kind: 'colossal', count: 2, minDepth: 1000, maxDepth: 1450 },
+      { kind: 'bigfin', count: 3, minDepth: 1050, maxDepth: 1300 },
     ],
     islands: [{ x: 700, name: 'Palm Atoll' }],
     wrecks: [],
@@ -277,7 +322,7 @@ export const ZONES: ZoneDef[] = [
   {
     name: 'Crimson Sea',
     space: true,
-    diveZoom: 1,
+    diveZoom: 0.75,
     map: { x: 336, y: 75 },
     width: 9000,
     floor: [120, 140, 180, 210, 250, 230, 200, 240, 270, 250, 220, 190, 170, 150, 130, 110],
@@ -286,12 +331,47 @@ export const ZONES: ZoneDef[] = [
     ground: ['#E6E2DC', '#8C857E'],
     darkness: [5, 90],
     items: 0,
+    caves: [{
+      name: 'Crimson Warrens',
+      x0: 0,
+      x1: 9000,
+      hill: { x: 4500, half: 0, ramp: 1, height: 0 },
+      abyss: { from: 560, to: 5250, zoom: 0.5 },
+      passages: [
+        { pts: [[700, 150], [700, 215], [950, 265]], r: 190 },
+        { pts: [[3300, 222], [3300, 290], [3100, 330]], r: 190 },
+        { pts: [[5700, 238], [5700, 300], [5900, 350]], r: 190 },
+        { pts: [[8000, 155], [8000, 225], [7800, 275]], r: 190 },
+        { pts: [[950, 265], [1500, 300], [2100, 340], [2700, 350], [3100, 330], [3700, 345], [4300, 380], [4900, 400], [5400, 380], [5900, 350], [6500, 320], [7100, 300], [7800, 275]], r: 190 },
+        { pts: [[7800, 275], [8300, 260], [8600, 240]], r: 190 },
+        { pts: [[950, 265], [600, 290], [400, 322]], r: 190 },
+        { pts: [[1500, 300], [1500, 380], [1700, 430]], r: 190 },
+        { pts: [[1700, 430], [2300, 470], [2900, 450], [3100, 330]], r: 190 },
+        { pts: [[400, 322], [500, 400], [900, 450], [1700, 430]], r: 190 },
+        { pts: [[4300, 380], [4300, 450], [4700, 490], [5100, 470], [5400, 380]], r: 190 },
+        { pts: [[6500, 320], [6700, 400], [7100, 430], [7500, 400], [7800, 275]], r: 190 },
+        { pts: [[3700, 345], [3700, 420], [3400, 470]], r: 105 },
+        { pts: [[5900, 350], [6100, 420], [6400, 480]], r: 105 },
+        { pts: [[2100, 340], [2200, 285]], r: 170 },
+        { pts: [[8600, 240]], r: 300 },
+        { pts: [[400, 325]], r: 280 },
+        { pts: [[2300, 475]], r: 330 },
+        { pts: [[4700, 495]], r: 340 },
+        { pts: [[7100, 435]], r: 300 },
+        { pts: [[3400, 475]], r: 250 },
+        { pts: [[6450, 485]], r: 280 },
+        { pts: [[900, 455]], r: 260 },
+        { pts: [[4700, 495], [4700, 575]], r: 260 },
+        { pts: [[2300, 475], [2300, 575]], r: 250 },
+        { pts: [[7100, 435], [7100, 575]], r: 240 },
+      ],
+    }],
     creatures: [],
     islands: [],
     wrecks: [],
     kelp: 0,
     coral: 0,
     rocks: 40,
-    bones: 60,
+    bones: 30,
   },
 ];

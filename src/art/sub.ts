@@ -53,62 +53,192 @@ export function drawWeight(ctx: CanvasRenderingContext2D) {
   ctx.fillRect(-8, 3, 16, 4);
 }
 
-export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, prop: number, alarm = false, weights = false) {
+/** Where each separable part of the sub sits, when it starts to crumple (0..1 of the collapse), and how it tumbles. */
+const PIECES: Record<string, { x: number; y: number; delay: number; spin: number; squash: number }> = {
+  weightL: { x: WEIGHT_MOUNTS[0], y: WEIGHT_Y, delay: 0, spin: -1.6, squash: 0 },
+  weightR: { x: WEIGHT_MOUNTS[1], y: WEIGHT_Y, delay: 0.05, spin: 1.4, squash: 0 },
+  prop: { x: -70, y: 0, delay: 0.1, spin: 2.2, squash: 0.3 },
+  battery: { x: -28, y: 24, delay: 0.15, spin: -1.3, squash: 0.2 },
+  tower: { x: 0, y: -34, delay: 0, spin: -0.9, squash: 0.4 },
+  tank: { x: -35, y: -26, delay: 0.05, spin: 1.5, squash: 0.2 },
+  hull: { x: 0, y: 0, delay: 0.3, spin: 0.15, squash: 0.45 },
+  cabin: { x: 0, y: 0, delay: 0.25, spin: -0.4, squash: 0.35 },
+  glass: { x: 20, y: 0, delay: 0.2, spin: 0.7, squash: 0.3 },
+  bumpers: { x: 0, y: 0, delay: 0.2, spin: -0.2, squash: 0.3 },
+  lamp: { x: 17, y: 26, delay: 0.1, spin: 2.6, squash: 0 },
+  rearLamp: { x: -50, y: 22, delay: 0.1, spin: -2.4, squash: 0 },
+  sonar: { x: 17, y: -34, delay: 0, spin: 3, squash: 0 },
+  scrubber: { x: -40, y: -1, delay: 0.1, spin: 1.8, squash: 0.2 },
+  electro: { x: 28, y: -26, delay: 0.05, spin: -2, squash: 0.2 },
+  candles: { x: 5, y: -19, delay: 0.1, spin: 2.4, squash: 0.2 },
+};
+
+export type PieceId = keyof typeof PIECES;
+
+/** How much of its original size a piece still has, 1 (whole) to 0.12 (crushed). */
+export function pieceScale(id: PieceId, crush: number) {
+  const P = PIECES[id];
+  const u = Math.min(1, Math.max(0, (crush - P.delay) / (1 - P.delay)));
+  return 1 - 0.88 * u * u * (3 - 2 * u);
+}
+
+/** Moves, spins, squashes and shrinks one part of the sub toward its center as `crush` goes 0..1. */
+export function crumplePiece(ctx: CanvasRenderingContext2D, id: PieceId, crush: number) {
+  if (crush <= 0) return;
+  const P = PIECES[id];
+  const u = Math.min(1, Math.max(0, (crush - P.delay) / (1 - P.delay)));
+  const f = pieceScale(id, crush);
+  ctx.translate(P.x * f, P.y * f);
+  ctx.rotate(P.spin * u * u * (3 - 2 * u));
+  ctx.scale(f, f * (1 - P.squash * Math.sin(Math.PI * u)));
+  ctx.translate(-P.x, -P.y);
+}
+
+/** Colors of the sub's parts, for the chunks that fly off when it implodes. */
+export function debrisColors(plating: number) {
+  const p = PLATING[plating];
+  return [p.body, p.cabin, p.band, p.tower, p.shade, GLASS];
+}
+
+export interface AirGear {
+  candles: number;
+  scrubbers: boolean;
+  electrolysis: boolean;
+}
+
+/** The CO2 scrubber: a small labeled box on the hull behind the cabin. */
+function drawScrubber(ctx: CanvasRenderingContext2D, facing: number) {
+  ctx.fillStyle = '#2D3A4D';
+  rrect(ctx, -48, -8, 16, 14, 2.5);
+  ctx.fill();
+  ctx.fillStyle = '#E8EEF5';
+  rrect(ctx, -46.5, -6.5, 13, 11, 1.5);
+  ctx.fill();
+  ctx.fillStyle = '#2D3A4D';
+  ctx.font = '700 6px Fredoka, Nunito, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.save();
+  ctx.translate(-40, -0.5);
+  ctx.scale(facing, 1);
+  ctx.fillText('CO₂', 0, 0);
+  ctx.restore();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+/** The electrolysis unit: a small box on the hull top with a green O2 light. */
+function drawElectrolysis(ctx: CanvasRenderingContext2D, t: number, facing: number) {
+  ctx.fillStyle = '#2D3A4D';
+  rrect(ctx, 22, -31, 13, 10, 2.5);
+  ctx.fill();
+  ctx.fillStyle = '#6BE38A';
+  ctx.globalAlpha = 0.65 + 0.35 * Math.sin(t * 3);
+  ctx.beginPath();
+  ctx.arc(25.5, -26, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#E8EEF5';
+  ctx.font = '700 5px Fredoka, Nunito, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.save();
+  ctx.translate(30, -25.5);
+  ctx.scale(facing, 1);
+  ctx.fillText('O₂', 0, 0);
+  ctx.restore();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+/** Up to three oxygen candles racked on the cabin, above the porthole. */
+function drawCandles(ctx: CanvasRenderingContext2D, count: number) {
+  ctx.fillStyle = '#2D3A4D';
+  rrect(ctx, -2, -23, 14, 8, 2);
+  ctx.fill();
+  for (let i = 0; i < count; i++) {
+    const x = -0.5 + i * 4;
+    ctx.fillStyle = '#F1E4C8';
+    rrect(ctx, x, -22, 3, 6, 1);
+    ctx.fill();
+    ctx.fillStyle = '#E5484D';
+    ctx.fillRect(x, -22, 3, 1.8);
+  }
+}
+
+export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, prop: number, alarm = false, weights = false, crush = 0, gear?: AirGear, facing = 1) {
   const p = PLATING[up.plating];
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-
-  if (weights) for (const x of WEIGHT_MOUNTS) {
+  const part = (id: PieceId, draw: () => void) => {
     ctx.save();
-    ctx.translate(x, WEIGHT_Y);
-    drawWeight(ctx);
+    crumplePiece(ctx, id, crush);
+    draw();
     ctx.restore();
+  };
+
+  if (weights) {
+    WEIGHT_MOUNTS.forEach((x, i) =>
+      part(i ? 'weightR' : 'weightL', () => {
+        ctx.translate(x, WEIGHT_Y);
+        drawWeight(ctx);
+      }),
+    );
   }
-  drawPropeller(ctx, p, prop, up.propeller);
-  drawBattery(ctx, up.battery, t, p);
-  drawTower(ctx, p);
-  drawTank(ctx, up.oxygen, p);
+  part('prop', () => drawPropeller(ctx, p, prop, up.propeller));
+  part('battery', () => drawBattery(ctx, up.battery, t, p));
+  part('tower', () => drawTower(ctx, p));
+  part('tank', () => drawTank(ctx, up.oxygen, p));
 
-  ctx.fillStyle = p.body;
-  rrect(ctx, -56, -22, 112, 44, 22);
-  ctx.fill();
-  ctx.save();
-  ctx.clip();
-  ctx.fillStyle = p.shade;
-  ctx.fillRect(-60, 9, 120, 16);
-  ctx.restore();
+  part('hull', () => {
+    ctx.fillStyle = p.body;
+    rrect(ctx, -56, -22, 112, 44, 22);
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = p.shade;
+    ctx.fillRect(-60, 9, 120, 16);
+    ctx.restore();
+    drawPlatingDetail(ctx, up.plating, p, t);
+  });
 
-  drawPlatingDetail(ctx, up.plating, p, t);
+  part('cabin', () => {
+    ctx.fillStyle = p.cabin;
+    rrect(ctx, -20, -26, 40, 52, 6);
+    ctx.fill();
+    ctx.fillStyle = p.band;
+    rrect(ctx, -30, -25, 8, 50, 4);
+    ctx.fill();
+    rrect(ctx, 22, -25, 8, 50, 4);
+    ctx.fill();
+  });
 
-  ctx.fillStyle = p.cabin;
-  rrect(ctx, -20, -26, 40, 52, 6);
-  ctx.fill();
-  ctx.fillStyle = p.band;
-  rrect(ctx, -30, -25, 8, 50, 4);
-  ctx.fill();
-  rrect(ctx, 22, -25, 8, 50, 4);
-  ctx.fill();
+  part('glass', () => {
+    porthole(ctx, 0, 0, 12, p.band);
+    drawNoseGlass(ctx, p);
+  });
 
-  porthole(ctx, 0, 0, 12, p.band);
-  drawNoseGlass(ctx, p);
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(-46, -12);
-  ctx.quadraticCurveTo(-42, -18, -34, -18);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(-14, -20);
-  ctx.lineTo(-6, -20);
-  ctx.stroke();
-
-  runningLights(ctx, t, alarm);
-  drawBumpers(ctx, up.hull);
-  drawLamp(ctx, up.light);
-  if (up.light === 3) drawRearLamp(ctx);
-  drawSonar(ctx, up.sonar);
+  part('hull', () => {
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-46, -12);
+    ctx.quadraticCurveTo(-42, -18, -34, -18);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-14, -20);
+    ctx.lineTo(-6, -20);
+    ctx.stroke();
+    runningLights(ctx, t, alarm);
+  });
+  part('bumpers', () => drawBumpers(ctx, up.hull));
+  part('lamp', () => drawLamp(ctx, up.light));
+  if (up.light === 3) part('rearLamp', () => drawRearLamp(ctx));
+  part('sonar', () => drawSonar(ctx, up.sonar));
+  if (gear?.scrubbers) part('scrubber', () => drawScrubber(ctx, facing));
+  if (gear?.electrolysis) part('electro', () => drawElectrolysis(ctx, t, facing));
+  if (gear?.candles) part('candles', () => drawCandles(ctx, gear.candles));
   ctx.restore();
 }
 

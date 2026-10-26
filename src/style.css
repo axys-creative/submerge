@@ -94,10 +94,11 @@ kbd {
 }
 
 .vitals {
+  position: relative;
   grid-area: vitals;
   display: grid;
   gap: 6px;
-  width: 150px;
+  width: 172px;
 }
 
 .vitals-top {
@@ -1201,7 +1202,7 @@ textarea:focus {
 }
 
 .is-touch .vitals {
-  width: 112px;
+  width: 128px;
   padding: 6px 8px;
 }
 
@@ -1303,6 +1304,21 @@ textarea:focus {
   right: 0;
 }
 
+.dm-warn,
+.dm-crush {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.dm-warn {
+  background: rgba(255, 211, 77, 0.5);
+}
+
+.dm-crush {
+  background: rgba(229, 72, 77, 0.55);
+}
+
 .dm-limit {
   position: absolute;
   left: 0;
@@ -1379,11 +1395,11 @@ textarea:focus {
 #ui.ui-dim .minimap-tab,
 #ui.ui-dim .depth-meter,
 #ui.ui-dim .debug-upgrades {
-  opacity: 0.3;
+  opacity: 0.15;
 }
 
 #ui.ui-dim .icon-btn {
-  opacity: 0.45;
+  opacity: 0.25;
 }
 
 /* With a mouse the panels can be hovered; on touch screens they stay click-through so they never block steering. */
@@ -1479,7 +1495,134 @@ body:not(.is-touch) #ui .depth-meter {
   background: var(--danger);
 }
 
+#ui .dm-tag.dm-safe {
+  position: absolute;
+  left: 44px;
+  top: 16px;
+  background: #3fa05a;
+  color: #fff;
+  z-index: 1;
+}
+
 #ui .dm-tag.danger {
   background: var(--danger);
   color: #fff;
+}
+
+/* ---- Dial popovers: hover details for the air and battery dials (mouse only) ---- */
+
+.dial-pop {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 5;
+  width: 250px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.97);
+  color: var(--ink);
+  box-shadow: 0 3px 0 rgba(20, 36, 90, 0.28);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  pointer-events: none;
+}
+
+.dial-pop h4 {
+  margin: 0 0 4px;
+  font-family: var(--display);
+  font-size: 13px;
+}
+
+.dial-pop p {
+  margin: 0 0 5px;
+  color: var(--ink-soft);
+}
+
+.dial-pop p:last-child {
+  margin-bottom: 0;
+}
+
+.dial-pop b {
+  color: var(--ink);
+}
+
+.dial-pop kbd {
+  background: #dde5ff;
+  color: #14245a;
+  box-shadow: 0 2px 0 rgba(20, 36, 90, 0.35);
+}
+
+body:not(.is-touch) .dial-col:hover .dial-pop {
+  display: block;
+}
+
+#ui.ui-dark .dial-pop {
+  background: rgba(14, 24, 56, 0.97);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+}
+
+#ui.ui-dark .dial-pop kbd {
+  background: #2f4080;
+  color: #fff;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* ---- Spotlight switch under the dials: Off / Auto / On ---- */
+
+.seg {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.seg[hidden] {
+  display: none;
+}
+
+.seg span {
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.seg button {
+  flex: 1 1 auto;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg button.on {
+  background: var(--sun);
+  color: #14245a;
+}
+
+.is-touch .seg {
+  flex-wrap: wrap;
+}
+
+.is-touch .seg span {
+  flex: 0 0 100%;
+  padding: 0 4px;
+  font-size: 9px;
+}
+
+.is-touch .seg button {
+  padding: 3px 5px;
 }

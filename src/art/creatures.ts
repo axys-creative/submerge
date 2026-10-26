@@ -1,5 +1,6 @@
 import type { Creature } from '../game/world';
-import { COLOSSAL_SCALE, WHALE_SCALE } from '../data/creatures';
+import { MONSTER_SCALE as MS, MONSTER_TRAIL } from '../config';
+import { BLUE_WHALE_SCALE, COLOSSAL_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
 
 const FISH = ['#FFB547', '#FF7A6B', '#7BDFF2', '#B9F18C'];
 
@@ -57,6 +58,22 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature) {
       if (c.kind === 'manta') manta(ctx, c);
       else stingray(ctx, c);
       break;
+    case 'bigfin':
+      bigfin(ctx, c);
+      break;
+    case 'leviathan':
+      leviathan(ctx, c);
+      break;
+    case 'bluewhale':
+      ctx.scale(c.facing * BLUE_WHALE_SCALE, BLUE_WHALE_SCALE);
+      ctx.rotate(Math.max(-0.12, Math.min(0.12, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 30)))));
+      blueWhale(ctx, c);
+      break;
+    case 'turtle':
+      ctx.scale(c.facing, 1);
+      ctx.rotate(Math.max(-0.3, Math.min(0.3, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 25)))));
+      turtle(ctx, c);
+      break;
     case 'colossal':
       ctx.rotate(c.angle + Math.PI / 2);
       ctx.scale(COLOSSAL_SCALE, COLOSSAL_SCALE);
@@ -64,7 +81,7 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature) {
       break;
     case 'whale':
       ctx.scale(c.facing * WHALE_SCALE, WHALE_SCALE);
-      ctx.rotate(Math.max(-0.2, Math.min(0.2, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 30)))));
+      ctx.rotate(whalePitch(c));
       whale(ctx, c);
       break;
   }
@@ -239,6 +256,387 @@ function manta(ctx: CanvasRenderingContext2D, c: Creature) {
   }
 }
 
+/**
+ * The Crimson Sea leviathan: a huge ridged worm whose body follows the path of its head, with a gaping mouth ringed in fine teeth
+ * and pale root-like tendrils streaming from its neck.
+ */
+function leviathan(ctx: CanvasRenderingContext2D, c: Creature) {
+  const t = c.phase;
+  /** The body's points, spaced evenly along the head's path starting at the head itself, so they glide instead of stepping as new path points are recorded. */
+  const path = [{ x: c.x, y: c.y }, ...(c.trail ?? [])];
+  const trail: { x: number; y: number }[] = [];
+  let walked = 0;
+  let from = 0;
+  for (let k = 0; k < MONSTER_TRAIL; k++) {
+    const want = k * 16;
+    while (from < path.length - 1) {
+      const len = Math.hypot(path[from + 1].x - path[from].x, path[from + 1].y - path[from].y);
+      if (walked + len >= want) break;
+      walked += len;
+      from++;
+    }
+    if (from >= path.length - 1) break;
+    const a = path[from];
+    const b = path[from + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const u = (want - walked) / len;
+    trail.push({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
+  }
+  const n = trail.length;
+  const at = (k: number) => {
+    const p = trail[Math.min(k, n - 1)];
+    const a = trail[Math.min(k + 1, n - 1)];
+    const b = trail[Math.max(k - 1, 0)];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const nx = -(b.y - a.y) / len;
+    const ny = (b.x - a.x) / len;
+    const sway = Math.sin(t * 2 - k * 0.3) * 7 * MS * Math.min(1, k / 12);
+    return { x: p.x - c.x + nx * sway, y: p.y - c.y + ny * sway, nx, ny };
+  };
+  const radius = (k: number) => (8 + 80 * (1 - k / MONSTER_TRAIL) ** 0.8) * MS;
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let k = n - 1; k >= 3; k--) {
+    const p = at(k);
+    const r = radius(k);
+    ctx.fillStyle = k % 4 < 2 ? '#5D626C' : '#484C55';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    if (k % 2 === 0) {
+      ctx.strokeStyle = 'rgba(15,16,20,0.45)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(p.x + p.nx * r, p.y + p.ny * r);
+      ctx.lineTo(p.x - p.nx * r, p.y - p.ny * r);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(190,196,206,0.12)';
+    ctx.beginPath();
+    ctx.arc(p.x - p.nx * r * 0.35, p.y - p.ny * r * 0.35, r * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = 'rgba(236,236,226,0.8)';
+  for (let j = 6; j < 40; j += 3) {
+    if (j >= n) break;
+    const p = at(j);
+    const side = j % 2 ? 1 : -1;
+    const len = (110 + ((j * 53) % 120)) * MS;
+    const sx = p.x + p.nx * side * radius(j) * 0.8;
+    const sy = p.y + p.ny * side * radius(j) * 0.8;
+    const sway = Math.sin(t * 1.4 + j) * 22;
+    const ex = sx + p.nx * side * len * 0.8 + sway;
+    const ey = sy + p.ny * side * len * 0.8 + len * 0.7;
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(sx + p.nx * side * len * 0.7, sy + len * 0.2, ex, ey);
+    ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo((sx + ex) / 2, (sy + ey) / 2);
+    ctx.quadraticCurveTo(ex + 20 * side, ey - 10, ex + side * 50 + sway, ey + 50);
+    ctx.stroke();
+  }
+
+  ctx.save();
+  ctx.rotate(c.angle);
+  if (Math.cos(c.angle) < 0) ctx.scale(1, -1);
+  ctx.scale(MS, MS);
+  ctx.fillStyle = '#656B76';
+  ctx.beginPath();
+  ctx.ellipse(-8, 0, 104, 84, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(190,196,206,0.14)';
+  ctx.beginPath();
+  ctx.ellipse(-20, -30, 70, 28, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const open = 0.85 + 0.15 * Math.sin(t * 3);
+  const up = { x0: 6, y0: -4, cx: 80, cy: -92 * open, x1: 142, y1: -66 * open };
+  const down = { x0: 6, y0: 4, cx: 80, cy: 92 * open, x1: 142, y1: 66 * open };
+  ctx.fillStyle = '#090A0D';
+  ctx.beginPath();
+  ctx.moveTo(up.x0, up.y0);
+  ctx.quadraticCurveTo(up.cx, up.cy, up.x1, up.y1);
+  ctx.quadraticCurveTo(168, 0, down.x1, down.y1);
+  ctx.quadraticCurveTo(down.cx, down.cy, down.x0, down.y0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#8A909B';
+  ctx.lineWidth = 10;
+  for (const jaw of [up, down]) {
+    ctx.beginPath();
+    ctx.moveTo(jaw.x0, jaw.y0);
+    ctx.quadraticCurveTo(jaw.cx, jaw.cy, jaw.x1, jaw.y1);
+    ctx.stroke();
+  }
+  for (const [jaw, dir] of [[up, 1], [down, -1]] as const) {
+    for (let i = 1; i < 22; i++) {
+      const u = i / 22;
+      const x = (1 - u) ** 2 * jaw.x0 + 2 * (1 - u) * u * jaw.cx + u * u * jaw.x1;
+      const y = (1 - u) ** 2 * jaw.y0 + 2 * (1 - u) * u * jaw.cy + u * u * jaw.y1;
+      const len = 14 + ((i * 37) % 24);
+      ctx.strokeStyle = 'rgba(224,224,212,0.9)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 8 * (1 - u), y + dir * len * 0.9);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(200,204,196,0.5)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 10, y - dir * (22 + ((i * 29) % 36)) + Math.sin(t * 2 + i) * 5);
+      ctx.stroke();
+    }
+  }
+  ctx.fillStyle = '#F6F8F2';
+  ctx.shadowColor = 'rgba(255,255,255,0.9)';
+  ctx.shadowBlur = 14;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.arc(34, side * 62, 9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+/** A bigfin squid hovering head-up: a small mantle with two big rounded fins, and ten very long thin arms that bend out at an elbow and hang far below. */
+function bigfin(ctx: CanvasRenderingContext2D, c: Creature) {
+  const t = c.phase;
+  const flap = Math.sin(t * 1.1 + c.tint * 6);
+  const skin = '#8C5A66';
+  const fins = '#B98893';
+  const arm = '#D9B5BB';
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  /** Four arms bend out at an elbow, four hang straight down, and two much longer tentacles trail below them. */
+  const ARMS = [
+    { x: -6, out: -1, len: 640 },
+    { x: -12, out: -1, len: 720 },
+    { x: 6, out: 1, len: 640 },
+    { x: 12, out: 1, len: 720 },
+    { x: -5, out: 0, len: 760 },
+    { x: -1.7, out: 0, len: 680 },
+    { x: 1.7, out: 0, len: 780 },
+    { x: 5, out: 0, len: 700 },
+    { x: -3, out: 0, len: 940 },
+    { x: 3, out: 0, len: 920 },
+  ];
+  ARMS.forEach((a, i) => {
+    const long = i >= 8;
+    const elbow = a.out ? 16 : 0;
+    const elbowX = a.x + a.out * elbow;
+    ctx.strokeStyle = arm;
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = long ? 2.4 : 1.7;
+    ctx.beginPath();
+    ctx.moveTo(a.x, 14);
+    ctx.lineTo(elbowX, a.out ? 22 : 18);
+    const steps = 40;
+    for (let j = 1; j <= steps; j++) {
+      const u = j / steps;
+      const drift = a.out * 10 * u;
+      const wave = Math.sin(t * 0.7 - u * 7 + i * 1.3) * 14 * u * u;
+      ctx.lineTo(elbowX + drift + wave, 22 + a.len * u);
+    }
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = fins;
+    ctx.beginPath();
+    ctx.moveTo(side * 8, -30);
+    ctx.bezierCurveTo(side * (46 + flap * 3), -44, side * (58 + flap * 4), -8 + flap * 3, side * 8, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(70,35,45,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(side * 10, -22);
+    ctx.quadraticCurveTo(side * 34, -26, side * 46, -16);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.ellipse(0, -10, 11, 26, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(0, 10, 12, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.beginPath();
+  ctx.ellipse(-3, -16, 3, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1B1420';
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.arc(side * 7, 10, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** A blue whale about 620 px long before BLUE_WHALE_SCALE, facing right: a slim mottled blue-grey body, a pleated pale throat and big slow tail flukes. */
+function blueWhale(ctx: CanvasRenderingContext2D, c: Creature) {
+  const sway = Math.sin(c.phase * 0.7) * 18;
+  const skin = '#5C7FA6';
+  const dark = '#46668C';
+  const belly = '#A9C3D8';
+
+  ctx.save();
+  ctx.translate(-286, 0);
+  ctx.rotate(sway * 0.004);
+  ctx.fillStyle = dark;
+  ctx.beginPath();
+  ctx.moveTo(16, -5);
+  ctx.quadraticCurveTo(-14, -10, -52, -50 + sway * 0.5);
+  ctx.quadraticCurveTo(-30, -8, -38, 0);
+  ctx.quadraticCurveTo(-30, 8, -52, 50 + sway * 0.5);
+  ctx.quadraticCurveTo(-14, 10, 16, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  const body = () => {
+    ctx.beginPath();
+    ctx.moveTo(312, 8);
+    ctx.quadraticCurveTo(304, -34, 224, -50);
+    ctx.quadraticCurveTo(100, -70, -40, -56);
+    ctx.quadraticCurveTo(-190, -36, -290, -6);
+    ctx.lineTo(-290, 6);
+    ctx.quadraticCurveTo(-190, 34, -40, 54);
+    ctx.quadraticCurveTo(100, 68, 224, 46);
+    ctx.quadraticCurveTo(304, 32, 312, 8);
+    ctx.closePath();
+  };
+  ctx.fillStyle = skin;
+  body();
+  ctx.fill();
+
+  ctx.save();
+  body();
+  ctx.clip();
+  ctx.fillStyle = belly;
+  ctx.beginPath();
+  ctx.moveTo(320, 20);
+  ctx.quadraticCurveTo(160, 24, 30, 30);
+  ctx.quadraticCurveTo(-140, 24, -300, 8);
+  ctx.lineTo(-300, 90);
+  ctx.lineTo(320, 90);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(40,70,100,0.35)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 9; i++) {
+    const y = 26 + i * 4;
+    ctx.beginPath();
+    ctx.moveTo(250 - i * 4, y);
+    ctx.quadraticCurveTo(160, y + 6, 40, y + 4);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(190,215,235,0.28)';
+  for (const [x, y, r] of [[60, -32, 14], [-20, -38, 18], [-110, -28, 12], [130, -40, 10], [-190, -18, 9], [20, -12, 8]]) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, r * 1.6, r * 0.7, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = dark;
+  ctx.beginPath();
+  ctx.moveTo(-150, -36);
+  ctx.quadraticCurveTo(-170, -52, -190, -58);
+  ctx.quadraticCurveTo(-182, -44, -188, -26);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(130, 44);
+  ctx.quadraticCurveTo(90, 86, 28, 96 + sway * 0.2);
+  ctx.quadraticCurveTo(70, 66, 96, 52);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(30,50,80,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(300, 16);
+  ctx.quadraticCurveTo(250, 24, 210, 20);
+  ctx.stroke();
+  ctx.fillStyle = '#16233A';
+  ctx.beginPath();
+  ctx.arc(236, 10, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** A sea turtle about 90 px long, facing right, with a domed shell and flippers that stroke slowly. */
+function turtle(ctx: CanvasRenderingContext2D, c: Creature) {
+  const stroke = Math.sin(c.phase * 1.6 + c.tint * 6);
+  const skin = '#A5BF6E';
+  const shell = ['#5E8F4E', '#6C8A3F', '#4F8A66'][Math.floor(c.tint * 3) % 3];
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.moveTo(-34, 4);
+  ctx.lineTo(-52, 8 + stroke * 2);
+  ctx.lineTo(-34, 11);
+  ctx.closePath();
+  ctx.fill();
+  const flipper = (x: number, y: number, len: number, rot: number) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.beginPath();
+    ctx.ellipse(len / 2, 0, len / 2, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+  ctx.fillStyle = skin;
+  flipper(-22, 12, 20, 2.3 - stroke * 0.35);
+  flipper(20, 12, 34, 0.9 + stroke * 0.7);
+  ctx.beginPath();
+  ctx.arc(46, -1, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(36, 2, 9, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#D8D6A0';
+  ctx.beginPath();
+  ctx.ellipse(0, 10, 32, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = shell;
+  ctx.beginPath();
+  ctx.moveTo(-38, 10);
+  ctx.bezierCurveTo(-38, -26, 34, -26, 36, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(20,40,20,0.35)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-18, 8);
+  ctx.quadraticCurveTo(-14, -8, -8, -17);
+  ctx.moveTo(2, 8);
+  ctx.quadraticCurveTo(4, -6, 2, -19);
+  ctx.moveTo(20, 8);
+  ctx.quadraticCurveTo(16, -6, 10, -17);
+  ctx.moveTo(-30, -2);
+  ctx.quadraticCurveTo(0, -10, 30, -2);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(-4, -14, 14, 3, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1B2238';
+  ctx.beginPath();
+  ctx.arc(50, -3, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function fish(ctx: CanvasRenderingContext2D, c: Creature) {
   const color = FISH[Math.floor(c.tint * FISH.length)];
   const wag = Math.sin(c.phase * 12) * 3;
@@ -289,47 +687,63 @@ function jelly(ctx: CanvasRenderingContext2D, c: Creature) {
 function shark(ctx: CanvasRenderingContext2D, c: Creature, hammer = false) {
   const chasing = c.state === 'chase';
   const tail = Math.sin(c.phase * (chasing ? 12 : 7)) * 0.25;
-  const fin = hammer ? '#6E7388' : '#6A82A8';
+  const fin = hammer ? '#6E7388' : '#4F6F9A';
   ctx.save();
-  ctx.translate(-54, 0);
+  ctx.translate(-56, 0);
   ctx.rotate(tail);
   ctx.fillStyle = fin;
   ctx.beginPath();
-  ctx.moveTo(4, -5);
-  ctx.lineTo(-26, -30);
-  ctx.lineTo(-16, 0);
-  ctx.lineTo(-26, 26);
-  ctx.lineTo(4, 5);
+  ctx.moveTo(6, -3);
+  ctx.quadraticCurveTo(-8, -10, -30, -40);
+  ctx.quadraticCurveTo(-26, -16, -16, -2);
+  ctx.quadraticCurveTo(-18, 8, -22, 24);
+  ctx.quadraticCurveTo(-8, 10, 6, 3);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
 
   ctx.fillStyle = fin;
   ctx.beginPath();
-  ctx.moveTo(-4, -20);
-  ctx.lineTo(-16, -48);
-  ctx.lineTo(18, -20);
+  ctx.moveTo(-34, -13);
+  ctx.quadraticCurveTo(-42, -22, -46, -20);
+  ctx.quadraticCurveTo(-42, -12, -40, -10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-8, -22);
+  ctx.quadraticCurveTo(0, -42, 8, -56);
+  ctx.quadraticCurveTo(10, -36, 22, -20);
   ctx.closePath();
   ctx.fill();
 
-  const skin = hammer ? '#8E94A8' : '#7F97BD';
+  const skin = hammer ? '#8E94A8' : '#5C7FAE';
+  const body = () => {
+    ctx.beginPath();
+    ctx.moveTo(66, 4);
+    ctx.quadraticCurveTo(52, -12, 20, -21);
+    ctx.quadraticCurveTo(-26, -26, -52, -6);
+    ctx.lineTo(-58, -3);
+    ctx.lineTo(-58, 3);
+    ctx.quadraticCurveTo(-30, 18, 2, 21);
+    ctx.quadraticCurveTo(46, 22, 66, 4);
+    ctx.closePath();
+  };
   ctx.fillStyle = skin;
-  ctx.beginPath();
-  ctx.moveTo(62, 2);
-  ctx.quadraticCurveTo(44, -24, -8, -22);
-  ctx.quadraticCurveTo(-44, -18, -58, -4);
-  ctx.lineTo(-58, 4);
-  ctx.quadraticCurveTo(-40, 18, -4, 20);
-  ctx.quadraticCurveTo(42, 20, 62, 2);
+  body();
   ctx.fill();
+  ctx.save();
+  body();
+  ctx.clip();
   ctx.fillStyle = '#EAF0F7';
   ctx.beginPath();
-  ctx.moveTo(58, 6);
-  ctx.quadraticCurveTo(34, 19, -4, 19);
-  ctx.quadraticCurveTo(-30, 17, -50, 7);
-  ctx.quadraticCurveTo(-10, 10, 24, 8);
+  ctx.moveTo(70, 6);
+  ctx.quadraticCurveTo(40, 6, 10, 9);
+  ctx.quadraticCurveTo(-26, 8, -60, -1);
+  ctx.lineTo(-60, 30);
+  ctx.lineTo(70, 30);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
 
   if (hammer) {
     ctx.fillStyle = skin;
@@ -344,18 +758,18 @@ function shark(ctx: CanvasRenderingContext2D, c: Creature, hammer = false) {
 
   ctx.fillStyle = fin;
   ctx.beginPath();
-  ctx.moveTo(12, 10);
-  ctx.lineTo(-6, 32);
-  ctx.lineTo(24, 14);
+  ctx.moveTo(28, 12);
+  ctx.quadraticCurveTo(14, 30, -16, 42);
+  ctx.quadraticCurveTo(0, 22, 6, 14);
   ctx.closePath();
   ctx.fill();
 
-  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
   ctx.lineWidth = 2;
-  for (const x of [22, 27, 32]) {
+  for (const x of [24, 29, 34]) {
     ctx.beginPath();
-    ctx.moveTo(x, -6);
-    ctx.lineTo(x - 2, 4);
+    ctx.moveTo(x, -9);
+    ctx.quadraticCurveTo(x - 3, -3, x - 1, 4);
     ctx.stroke();
   }
 
@@ -364,7 +778,7 @@ function shark(ctx: CanvasRenderingContext2D, c: Creature, hammer = false) {
     ctx.beginPath();
     ctx.moveTo(60, 4);
     ctx.lineTo(36, 7);
-    ctx.lineTo(54, 14);
+    ctx.lineTo(52, 12);
     ctx.closePath();
     ctx.fill();
     ctx.fillStyle = '#FFFFFF';
@@ -383,11 +797,11 @@ function shark(ctx: CanvasRenderingContext2D, c: Creature, hammer = false) {
     ctx.stroke();
   }
 
-  const eyeX = hammer ? 58 : 42;
-  const eyeY = hammer ? -20 : -7;
+  const eyeX = hammer ? 58 : 46;
+  const eyeY = hammer ? -20 : -4;
   ctx.fillStyle = '#1B2238';
   ctx.beginPath();
-  ctx.arc(eyeX, eyeY, chasing ? 4.5 : 4, 0, Math.PI * 2);
+  ctx.arc(eyeX, eyeY, hammer ? (chasing ? 4.5 : 4) : chasing ? 3.4 : 3, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#FFFFFF';
   ctx.beginPath();
@@ -397,8 +811,8 @@ function shark(ctx: CanvasRenderingContext2D, c: Creature, hammer = false) {
     ctx.strokeStyle = '#1B2238';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(34, -15);
-    ctx.lineTo(48, -11);
+    ctx.moveTo(38, -11);
+    ctx.lineTo(52, -7);
     ctx.stroke();
   }
 }

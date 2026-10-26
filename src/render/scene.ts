@@ -1,10 +1,11 @@
 import type { Game } from '../game/game';
-import { COCKPIT_MIN, FLICKER_TIME, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET } from '../config';
+import { COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET } from '../config';
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
 import { buoyLabel, routesFrom } from '../data/routes';
-import { batteryLights, drawSub, drawWeight, glassGlow, runningLights, LAMP, ANCHOR, COCKPIT, REAR_LAMP } from '../art/sub';
+import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, runningLights, LAMP, ANCHOR, COCKPIT, REAR_LAMP } from '../art/sub';
 import { drawShip, drawIsland, drawCloud, cloudShape, drawBuoy, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
+import { BACKGROUND_KINDS, CREATURE_EXTENT } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
 import { waveY, mixColor, lerp, clamp } from '../util';
@@ -12,17 +13,48 @@ import { BACK_LAYERS } from '../game/world';
 import { daylight, STARS } from './daylight';
 import { lightCover, type Light } from './lighting';
 
+const faceImg = new Image();
+faceImg.src = `${import.meta.env.BASE_URL}images/monster-face.jpg?v=2`;
+
+/** The face with its edges faded to nothing, so no square outline shows against the background. */
+let faceSoft: HTMLCanvasElement | null = null;
+const softFace = () => {
+  if (faceSoft || !faceImg.naturalWidth) return faceSoft;
+  const c = document.createElement('canvas');
+  c.width = faceImg.naturalWidth;
+  c.height = faceImg.naturalHeight;
+  const f = c.getContext('2d')!;
+  f.drawImage(faceImg, 0, 0);
+  const fade = f.createRadialGradient(c.width / 2, c.height / 2, c.width * 0.22, c.width / 2, c.height / 2, c.width * 0.5);
+  fade.addColorStop(0, 'rgba(0,0,0,1)');
+  fade.addColorStop(1, 'rgba(0,0,0,0)');
+  f.globalCompositeOperation = 'destination-in';
+  f.fillStyle = fade;
+  f.fillRect(0, 0, c.width, c.height);
+  faceSoft = c;
+  return c;
+};
+
 const DEG = Math.PI / 180;
-/** Highest angle of each spotlight cone below the sub's heading; each then sweeps further down by BEAM_SWEEP. */
+/** Lowest-aimed beam angles at rest, below the sub's heading; each beam in turn sweeps down to straight below the sub. */
 const FRONT_BEAM_DOWN = 15 * DEG;
 const REAR_BEAM_DOWN = 20 * DEG;
-const BEAM_SWEEP = 10 * DEG;
-const FRONT_BEAM_SWEEP = 15 * DEG;
-const FRONT_SWEEP_SECONDS = 8;
-const REAR_SWEEP_SECONDS = 11;
+const UNDER = 90 * DEG;
+/** Seconds for one beam to swing down, to stay under the sub, and to swing back; the front goes first, then the rear. */
+const SWEEP_DOWN = 10;
+const SWEEP_HOLD = 1;
+const SWEEP_UP = 10;
+const SWEEP_TURN = SWEEP_DOWN + SWEEP_HOLD + SWEEP_UP;
 
-/** Slow back-and-forth 0..1 over `seconds`. */
-const sweep = (t: number, seconds: number, phase = 0) => 0.5 - 0.5 * Math.cos((t / seconds) * Math.PI * 2 + phase);
+const ease = (u: number) => u * u * (3 - 2 * u);
+
+/** 0 (at rest) to 1 (straight under the sub) for one beam, `c` seconds into its turn. */
+const beamSweep = (c: number) => {
+  if (c < 0 || c >= SWEEP_TURN) return 0;
+  if (c < SWEEP_DOWN) return ease(c / SWEEP_DOWN);
+  if (c < SWEEP_DOWN + SWEEP_HOLD) return 1;
+  return 1 - ease((c - SWEEP_DOWN - SWEEP_HOLD) / SWEEP_UP);
+};
 
 const MOON_CRATERS = [
   { dx: -11, dy: -9, r: 7.5 },
@@ -276,6 +308,11 @@ export function renderScene(g: Game) {
     ctx.restore();
   }
 
+  // Background creatures drift behind the sea floor and scenery, a little faded into the water.
+  ctx.globalAlpha = 0.8;
+  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && BACKGROUND_KINDS.includes(c.kind)) drawCreature(ctx, c);
+  ctx.globalAlpha = 1;
+
   // Sea floor
   if (bottom > 200) {
     def.wrecks.forEach((w) => {
@@ -326,6 +363,13 @@ export function renderScene(g: Game) {
           ctx.moveTo(b.x + b.r + extra, b.y);
           ctx.arc(b.x, b.y, b.r + extra, 0, Math.PI * 2);
         }
+        if (world.abyss) {
+          const x0 = Math.floor((left - 30) / 12) * 12;
+          ctx.moveTo(x0, world.abyss.to + extra);
+          for (let x = x0; x <= right + 30; x += 12) ctx.lineTo(x, world.abyssTop(x) - extra);
+          ctx.lineTo(right + 30, world.abyss.to + extra);
+          ctx.closePath();
+        }
         ctx.fill();
       }
       ctx.restore();
@@ -352,7 +396,7 @@ export function renderScene(g: Game) {
     }
   }
 
-  for (const c of world.creatures) if (inView(c.x)) drawCreature(ctx, c);
+  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && !BACKGROUND_KINDS.includes(c.kind)) drawCreature(ctx, c);
 
   // Zone exits
   const z = g.save.zone;
@@ -399,13 +443,67 @@ export function renderScene(g: Game) {
   }
 
   const blink = s.invuln > 0 && Math.floor(t * 12) % 2 === 0;
-  ctx.save();
-  ctx.translate(s.x, subY);
-  ctx.scale(s.facing, 1);
-  ctx.rotate(s.tilt);
-  if (blink) ctx.globalAlpha = 0.4;
-  drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn);
-  ctx.restore();
+  const im = g.implode;
+  const crush = im ? Math.min(1, im.t / IMPLODE_COLLAPSE) : 0;
+  const alive = (pieceScale('hull', crush) - 0.12) / 0.88;
+  const crumple = (c: CanvasRenderingContext2D) => {
+    c.translate(s.x + (im ? Math.sin(crush * 25) * 3 * crush : 0), subY);
+    c.scale(s.facing, 1);
+    c.rotate(s.tilt);
+  };
+  if (!im || crush < 1) {
+    ctx.save();
+    crumple(ctx);
+    if (blink) ctx.globalAlpha = 0.4;
+    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, scrubbers: g.save.scrubbers, electrolysis: g.save.electrolysis }, s.facing);
+    ctx.restore();
+  }
+  for (const d of g.debris) {
+    ctx.save();
+    ctx.translate(d.x, d.y + g.surfaceBob);
+    ctx.rotate(d.rot);
+    ctx.globalAlpha = Math.min(1, d.life / 1.2);
+    ctx.fillStyle = d.color;
+    ctx.beginPath();
+    ctx.moveTo(-d.w / 2, -d.h / 2);
+    ctx.lineTo(d.w / 2, -d.h / 3);
+    ctx.lineTo(d.w / 3, d.h / 2);
+    ctx.lineTo(-d.w / 2, d.h / 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  if (im) {
+    ctx.save();
+    ctx.translate(im.x, im.y + g.surfaceBob);
+    if (crush < 1) {
+      ctx.strokeStyle = `rgba(220,245,255,${0.5 * crush})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, 110 * (1 - crush) + 6, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      const f = (im.t - IMPLODE_COLLAPSE) / 0.4;
+      if (f < 1) {
+        ctx.globalCompositeOperation = 'lighter';
+        const r = 50 + 330 * (1 - (1 - f) * (1 - f));
+        const burst = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+        burst.addColorStop(0, `rgba(255,255,240,${1 - f})`);
+        burst.addColorStop(0.3, `rgba(255,230,150,${0.7 * (1 - f)})`);
+        burst.addColorStop(1, 'rgba(255,200,100,0)');
+        ctx.fillStyle = burst;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = `rgba(255,255,255,${0.8 * (1 - f)})`;
+        ctx.lineWidth = 6 * (1 - f) + 1;
+        ctx.beginPath();
+        ctx.arc(0, 0, 30 + 420 * f, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
 
   const claw = g.clawState();
   if (claw && g.mode === 'diving') {
@@ -513,9 +611,10 @@ export function renderScene(g: Game) {
   const power = g.lightPower;
   const lit = !!spot && power > 0.02 && g.lampLevel > 0.02;
   const reach = 0.35 + 0.65 * power;
-  const fade = Math.min(1, power * 2.5) * g.lampLevel;
-  const frontDown = FRONT_BEAM_DOWN + FRONT_BEAM_SWEEP * sweep(t, FRONT_SWEEP_SECONDS);
-  const rearDown = REAR_BEAM_DOWN + BEAM_SWEEP * sweep(t, REAR_SWEEP_SECONDS, Math.PI / 2);
+  const fade = Math.min(1, power * 2.5) * g.lampLevel * alive;
+  const turn = g.lampClock % (SWEEP_TURN * 2);
+  const frontDown = FRONT_BEAM_DOWN + (UNDER - FRONT_BEAM_DOWN) * beamSweep(turn);
+  const rearDown = REAR_BEAM_DOWN + (UNDER - REAR_BEAM_DOWN) * beamSweep(turn - SWEEP_TURN);
   const cockpitPower = Math.max(
     COCKPIT_MIN,
     Math.min(1, (s.battery / g.maxBattery / 0.5) * 2.5),
@@ -527,15 +626,15 @@ export function renderScene(g: Game) {
       const cos = Math.cos(s.tilt);
       const sin = Math.sin(s.tilt);
       lamp = {
-        x: s.x + s.facing * (LAMP.x * cos - LAMP.y * sin),
-        y: subY + LAMP.x * sin + LAMP.y * cos,
+        x: s.x + s.facing * (LAMP.x * cos - LAMP.y * sin) * pieceScale('lamp', crush),
+        y: subY + (LAMP.x * sin + LAMP.y * cos) * pieceScale('lamp', crush),
         angle: s.facing > 0 ? s.tilt + frontDown : Math.PI - (s.tilt + frontDown),
       };
       lights.push({ x: lamp.x, y: lamp.y, r: spot.range * reach, angle: lamp.angle, spread: spot.spread, a: a * fade, sub: true });
       if (g.up.light === 3) {
         lights.push({
-          x: s.x + s.facing * (REAR_LAMP.x * cos - REAR_LAMP.y * sin),
-          y: subY + REAR_LAMP.x * sin + REAR_LAMP.y * cos,
+          x: s.x + s.facing * (REAR_LAMP.x * cos - REAR_LAMP.y * sin) * pieceScale('rearLamp', crush),
+          y: subY + (REAR_LAMP.x * sin + REAR_LAMP.y * cos) * pieceScale('rearLamp', crush),
           r: 420 * reach,
           angle: s.facing > 0 ? Math.PI + s.tilt - rearDown : rearDown - s.tilt,
           spread: 0.5,
@@ -547,10 +646,10 @@ export function renderScene(g: Game) {
       const cos = Math.cos(s.tilt);
       const sin = Math.sin(s.tilt);
       lights.push({
-        x: s.x + s.facing * (COCKPIT.x * cos - COCKPIT.y * sin),
-        y: subY + COCKPIT.x * sin + COCKPIT.y * cos,
+        x: s.x + s.facing * (COCKPIT.x * cos - COCKPIT.y * sin) * pieceScale('glass', crush),
+        y: subY + (COCKPIT.x * sin + COCKPIT.y * cos) * pieceScale('glass', crush),
         r: 48,
-        a: 0.6 * cockpitPower,
+        a: 0.6 * cockpitPower * alive,
         sub: true,
       });
     }
@@ -579,30 +678,30 @@ export function renderScene(g: Game) {
   }
   if (bottom > lerp(startPx, 0, night)) {
     g.lighting.render(ctx, { k, ox, oy, left, top, w: W, h: H }, startPx, deepPx, lights, night, space ? '22,2,5' : '3,7,24');
-    if (lamp && spot) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      const halo = ctx.createRadialGradient(s.x, subY, 0, s.x, subY, spot.glow * reach);
-      halo.addColorStop(0, `rgba(${spot.rgb},${0.14 * fade})`);
-      halo.addColorStop(1, `rgba(${spot.rgb},0)`);
-      ctx.fillStyle = halo;
+  }
+  if (lamp && spot) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const halo = ctx.createRadialGradient(s.x, subY, 0, s.x, subY, spot.glow * reach);
+    halo.addColorStop(0, `rgba(${spot.rgb},${0.14 * fade})`);
+    halo.addColorStop(1, `rgba(${spot.rgb},0)`);
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(s.x, subY, spot.glow * reach, 0, Math.PI * 2);
+    ctx.fill();
+    const tint = ctx.createRadialGradient(lamp.x, lamp.y, 0, lamp.x, lamp.y, spot.range * reach);
+    tint.addColorStop(0, `rgba(${spot.rgb},${0.016 * a * fade})`);
+    tint.addColorStop(1, `rgba(${spot.rgb},0)`);
+    ctx.fillStyle = tint;
+    for (let i = 0; i < 10; i++) {
+      const k = 0.4 + 0.8 * (i / 9);
       ctx.beginPath();
-      ctx.arc(s.x, subY, spot.glow * reach, 0, Math.PI * 2);
+      ctx.moveTo(lamp.x, lamp.y);
+      ctx.arc(lamp.x, lamp.y, spot.range * reach, lamp.angle - spot.spread * k, lamp.angle + spot.spread * k);
+      ctx.closePath();
       ctx.fill();
-      const tint = ctx.createRadialGradient(lamp.x, lamp.y, 0, lamp.x, lamp.y, spot.range * reach);
-      tint.addColorStop(0, `rgba(${spot.rgb},${0.016 * a * fade})`);
-      tint.addColorStop(1, `rgba(${spot.rgb},0)`);
-      ctx.fillStyle = tint;
-      for (let i = 0; i < 10; i++) {
-        const k = 0.4 + 0.8 * (i / 9);
-        ctx.beginPath();
-        ctx.moveTo(lamp.x, lamp.y);
-        ctx.arc(lamp.x, lamp.y, spot.range * reach, lamp.angle - spot.spread * k, lamp.angle + spot.spread * k);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.restore();
     }
+    ctx.restore();
   }
   if (shipBeams.length && bottom > lerp(startPx, 0, night)) {
     ctx.save();
@@ -623,15 +722,20 @@ export function renderScene(g: Game) {
     }
     ctx.restore();
   }
-  if (diving) {
+  if (diving && (!im || crush < 1)) {
     ctx.save();
-    ctx.translate(s.x, subY);
-    ctx.scale(s.facing, 1);
-    ctx.rotate(s.tilt);
+    crumple(ctx);
+    ctx.save();
+    crumplePiece(ctx, 'hull', crush);
     runningLights(ctx, t, g.warning);
+    ctx.restore();
+    ctx.save();
+    crumplePiece(ctx, 'battery', crush);
     batteryLights(ctx, g.up.battery, t);
+    ctx.restore();
     if (bottom > lerp(startPx, 0, night)) {
       const dark = Math.max(clamp((s.y - startPx) / (deepPx - startPx), 0, 1), night * 0.8);
+      crumplePiece(ctx, 'glass', crush);
       glassGlow(ctx, dark * 0.55 * cockpitPower);
     }
     ctx.restore();
@@ -651,12 +755,23 @@ export function renderScene(g: Game) {
     for (const ping of g.sonarPings) {
       const speed = ping.range * SONAR_RING_SPEED;
       const front = Math.max(1, (g.t - ping.start) * speed);
-      g.sonarOutline.render(ctx, { k, ox, oy, left, top, w: W, h: H }, world, ping, ping.hits, front, ping.range, speed * ping.linger, g.sonarDark * 0.9);
+      g.sonarOutline.render(ctx, { k, ox, oy, left, top, w: W, h: H }, world, ping, ping.hits, front, ping.range, speed * ping.linger, g.sonarDark * 0.9, lights);
     }
   }
   for (const b of g.blips) {
     const a = Math.min(1, b.life / 0.6);
     const color = b.danger ? '255,90,95' : b.shape ? '150,245,170' : '255,211,77';
+    if (b.weight !== undefined) {
+      const open = 1 - lightCover(lights, b.x, b.y);
+      if (open <= 0.02) continue;
+      const rot = b.weight;
+      b.sprite ??= g.sonarShape.outline(`weight|${rot.toFixed(1)}|${k.toFixed(2)}`, 16, k, '170,215,255', (f) => {
+        f.rotate(rot);
+        drawWeight(f);
+      });
+      g.sonarShape.draw(ctx, k, b.x * k + ox, b.y * k + oy, b.sprite, a * open);
+      continue;
+    }
     if (b.shape) {
       const open = 1 - lightCover(lights, b.x, b.y);
       if (open <= 0.02) continue;
@@ -694,6 +809,25 @@ export function renderScene(g: Game) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   const cw = g.canvas.width;
   const ch = g.canvas.height;
+  const face = g.monsterFace;
+  const softened = face.alpha > 0.01 ? softFace() : null;
+  if (softened) {
+    const size = ch * 0.22 * (0.9 + 0.2 * face.p);
+    const fx = cw / 2;
+    const fy = ch - size / 2 - ch * 0.05;
+    ctx.save();
+    const dim = ctx.createRadialGradient(fx, fy, size * 0.2, fx, fy, size * 1.1);
+    dim.addColorStop(0, `rgba(0,0,0,${0.7 * face.alpha})`);
+    dim.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = dim;
+    ctx.beginPath();
+    ctx.arc(fx, fy, size * 1.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.4 * face.alpha;
+    ctx.drawImage(softened, fx - size / 2, fy - size / 2, size, size);
+    ctx.restore();
+  }
   const choking = diving && s.oxygen <= 0 && !g.atSurface;
   const stress = (diving && g.depthM > g.depthRating) || choking ? 0.35 + Math.sin(t * 8) * 0.15 : 0;
   const red = Math.max(stress, g.hitFlash * 1.6);
@@ -704,10 +838,17 @@ export function renderScene(g: Game) {
     ctx.fillStyle = v;
     ctx.fillRect(0, 0, cw, ch);
   }
+  if (im && im.t > IMPLODE_COLLAPSE) {
+    const f = (im.t - IMPLODE_COLLAPSE) / 0.18;
+    if (f < 1) {
+      ctx.fillStyle = `rgba(255,255,245,${0.6 * (1 - f)})`;
+      ctx.fillRect(0, 0, cw, ch);
+    }
+  }
   if (diving && g.shipHint && (g.ship.x + 150 < left || g.ship.x - 150 > right)) {
     const dir = g.ship.x > s.x ? 1 : -1;
     const u = k;
-    const x = dir > 0 ? cw - 56 * u : 56 * u;
+    const x = Math.min(cw - 56 * u, Math.max(56 * u, s.x * k + ox + dir * 130 * u));
     const y = Math.min(ch - 60 * u, Math.max(60 * u, s.y * k + oy));
     const nudge = Math.sin(t * 4) * 5 * u * dir;
     ctx.save();
@@ -741,8 +882,8 @@ export function renderScene(g: Game) {
   }
   if (g.speech.length && (diving || g.mode === 'docked')) {
     const u = view.ui * view.dpr;
-    const baseX = (diving ? s.x : g.ship.x) * k + ox;
-    const baseY = (diving ? s.y : bob - 60) * k + oy;
+    const baseX = (diving ? s.x + s.facing * 66 : g.ship.x + g.ship.facing * 74) * k + ox;
+    const baseY = (diving ? s.y - 8 : bob - 58) * k + oy;
     ctx.font = `500 ${14 * u}px Fredoka, Nunito, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -753,8 +894,10 @@ export function renderScene(g: Game) {
       const w = ctx.measureText(b.text).width + 62 * u;
       const h = 54 * u;
       const r = 14 * u;
-      const cx = Math.min(cw - w / 2 - 8 * u, Math.max(w / 2 + 8 * u, baseX + 20 * u));
-      const cy = baseY - (96 + i * 64) * u;
+      const face = diving ? s.facing : g.ship.facing;
+      const shift = face * (w / 2 - r + 14 * u);
+      const cx = Math.min(cw - w / 2 - 8 * u, Math.max(w / 2 + 8 * u, baseX + shift));
+      const cy = baseY - (56 + i * 64) * u;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(0.8 + 0.2 * pop, 0.8 + 0.2 * pop);
@@ -772,9 +915,12 @@ export function renderScene(g: Game) {
       ctx.lineTo(x1, y1 - r);
       ctx.arcTo(x1, y1, x1 - r, y1, r);
       if (i === 0) {
-        const tx = Math.min(x1 - r - 8 * u, Math.max(x0 + r + 8 * u, baseX - cx));
+        const tx = face * -(w / 2 - r - 8 * u);
+        const dx = baseX - cx - tx;
+        const dy = baseY - cy - y1;
+        const len = Math.hypot(dx, dy) || 1;
         ctx.lineTo(tx + 8 * u, y1);
-        ctx.lineTo(tx, y1 + 12 * u);
+        ctx.lineTo(tx + (dx / len) * 20 * u, y1 + (dy / len) * 20 * u);
         ctx.lineTo(tx - 8 * u, y1);
       }
       ctx.lineTo(x0 + r, y1);
