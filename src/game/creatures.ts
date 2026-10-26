@@ -27,6 +27,17 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
     steer(c, c.facing * speed, (c.homeY - c.y) * 0.5 + Math.sin(c.phase * 0.8 + c.tint * 6) * 14, k, dt);
   };
 
+  /** Slow steady swimming: keeps a heading that only now and then reverses, and bobs gently around its home depth. */
+  const cruise = (speed: number, margin: number, minWait: number, spread: number, depthPull: number, bob: number, bobRate: number, k: number) => {
+    if (c.x < margin) c.heading = 1;
+    else if (c.x > world.width - margin) c.heading = -1;
+    else if (c.timer <= 0) {
+      c.timer = minWait + Math.random() * spread;
+      if (Math.random() < 0.5) c.heading = c.heading === 1 ? -1 : 1;
+    }
+    steer(c, c.heading * speed, (c.homeY - c.y) * depthPull + Math.sin(c.phase * bobRate + c.tint * 6) * bob, k, dt);
+  };
+
   const dead = c.state === 'dead';
   if (dead) {
     c.dying += dt;
@@ -78,6 +89,44 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
           c.vy = (dy / d) * 340;
         } else {
           steer(c, Math.sin(c.phase * 0.4 + c.tint * 7) * 25, Math.sin(c.phase * 0.9) * 28 + (c.homeY - c.y) * 0.4, 1, dt);
+        }
+      }
+      break;
+    case 'whale':
+      cruise(42, 900, 30, 40, 0.1, 6, 0.12, 0.35);
+      break;
+    case 'manta':
+      cruise(55, 500, 15, 30, 0.25, 18, 0.35, 0.6);
+      break;
+    case 'stingray': {
+      const flee = d < 220;
+      if (c.x < 300) c.heading = 1;
+      else if (c.x > world.width - 300) c.heading = -1;
+      else if (c.timer <= 0) {
+        c.timer = 8 + Math.random() * 14;
+        if (Math.random() < 0.5) c.heading = c.heading === 1 ? -1 : 1;
+      }
+      steer(c, flee ? (-dx / d) * 110 : c.heading * 28, (world.floorAt(c.x) - 42 - c.y) * 0.8, flee ? 2.5 : 0.9, dt);
+      break;
+    }
+    case 'colossal':
+      if (c.state === 'lunge') {
+        const f = Math.exp(-1.4 * dt);
+        c.vx *= f;
+        c.vy *= f;
+        if (c.timer <= 0) {
+          c.state = 'rest';
+          c.timer = 3.5;
+        }
+      } else {
+        if (c.state === 'rest' && c.timer <= 0) c.state = 'idle';
+        if (c.state === 'idle' && d < 520) {
+          c.state = 'lunge';
+          c.timer = 1.8;
+          c.vx = (dx / d) * 360;
+          c.vy = (dy / d) * 360;
+        } else {
+          steer(c, Math.sin(c.phase * 0.25 + c.tint * 7) * 18, Math.sin(c.phase * 0.6) * 18 + (c.homeY - c.y) * 0.3, 0.8, dt);
         }
       }
       break;

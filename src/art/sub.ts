@@ -31,14 +31,42 @@ export const ANTENNA = { x: 3, y: -49 };
 export const ANCHOR = { x: -4, y: -51 };
 
 /** Draws the sub facing right, centered on the origin, about 140 px long. */
-export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, prop: number, alarm = false) {
+/** Where the two dive weights hang, as x offsets in the sub's local space. */
+export const WEIGHT_MOUNTS = [-1, 30];
+/** How far below the sub's center the weights hang. */
+export const WEIGHT_Y = 32;
+
+/** One lead weight: a rounded block with a lifting handle, centered on the origin. */
+export function drawWeight(ctx: CanvasRenderingContext2D) {
+  ctx.strokeStyle = '#2D2F36';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(0, -7, 4, Math.PI, 0);
+  ctx.stroke();
+  ctx.fillStyle = '#5C6578';
+  rrect(ctx, -8, -7, 16, 14, 3);
+  ctx.fill();
+  ctx.fillStyle = '#9AA3B8';
+  rrect(ctx, -6, -5, 12, 3, 1.5);
+  ctx.fill();
+  ctx.fillStyle = '#2D2F36';
+  ctx.fillRect(-8, 3, 16, 4);
+}
+
+export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, prop: number, alarm = false, weights = false) {
   const p = PLATING[up.plating];
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
+  if (weights) for (const x of WEIGHT_MOUNTS) {
+    ctx.save();
+    ctx.translate(x, WEIGHT_Y);
+    drawWeight(ctx);
+    ctx.restore();
+  }
   drawPropeller(ctx, p, prop, up.propeller);
-  drawBattery(ctx, up.battery, t);
+  drawBattery(ctx, up.battery, t, p);
   drawTower(ctx, p);
   drawTank(ctx, up.oxygen, p);
 
@@ -198,9 +226,14 @@ const TANKS = [
 ];
 
 function drawTank(ctx: CanvasRenderingContext2D, level: number, p: Plating) {
+  drawTankShape(ctx, level, p.band);
+}
+
+/** One horizontal oxygen tank in the sub's local space, shared with the ship's cargo tanks. */
+export function drawTankShape(ctx: CanvasRenderingContext2D, level: number, band: string) {
   const tank = TANKS[level];
   ctx.fillStyle = tank.cap;
-  rrect(ctx, -53, -31, 5, 6, 2);
+  rrect(ctx, -53, -29.5, 5, 6, 2);
   ctx.fill();
   ctx.fillStyle = tank.fill;
   rrect(ctx, -50, -34, 30, 15, 7.5);
@@ -215,7 +248,7 @@ function drawTank(ctx: CanvasRenderingContext2D, level: number, p: Plating) {
   if (level === 3) ctx.fillRect(-50, -23, 30, 2.5);
   else for (let i = 0; i <= level; i++) ctx.fillRect(-48 + i * 3, -34, 2, 15);
   ctx.restore();
-  ctx.fillStyle = p.band;
+  ctx.fillStyle = band;
   ctx.fillRect(-28, -35, 3, 17);
 
   ctx.strokeStyle = tank.mark;
@@ -232,8 +265,8 @@ const CELLS = [
   { n: 4, color: '#F6C445' },
 ];
 
-function drawBattery(ctx: CanvasRenderingContext2D, level: number, t: number) {
-  ctx.fillStyle = '#3A3F4B';
+function drawBattery(ctx: CanvasRenderingContext2D, level: number, t: number, p: Plating) {
+  ctx.fillStyle = p.band;
   rrect(ctx, -44, 16, 32, 15, 5);
   ctx.fill();
   batteryLights(ctx, level, t);
@@ -248,7 +281,13 @@ export function batteryLights(ctx: CanvasRenderingContext2D, level: number, t: n
   }
   ctx.fillStyle = c.color;
   for (let i = 0; i < c.n; i++) {
-    rrect(ctx, -40 + i * 7, 22, 3.5, 6, 1.5);
+    const x = -40 + i * 7;
+    ctx.beginPath();
+    ctx.moveTo(x + 2.5, 22);
+    ctx.lineTo(x + 6, 22);
+    ctx.lineTo(x + 3.5, 28);
+    ctx.lineTo(x, 28);
+    ctx.closePath();
     ctx.fill();
   }
   ctx.shadowBlur = 0;

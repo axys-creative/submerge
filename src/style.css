@@ -78,7 +78,7 @@ kbd {
   inset: 0 0 auto;
   display: grid;
   grid-template-columns: auto 1fr auto auto;
-  grid-template-areas: 'vitals depth purse menu';
+  grid-template-areas: 'vitals . purse menu';
   align-items: start;
   gap: 10px;
   padding: calc(env(safe-area-inset-top, 0px) + 12px) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
@@ -100,6 +100,52 @@ kbd {
   width: 150px;
 }
 
+.vitals-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.dim-switch {
+  pointer-events: auto;
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: var(--line);
+  cursor: pointer;
+  transition: background 0.25s;
+}
+
+.dim-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(20, 36, 90, 0.35);
+  transition: transform 0.25s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+
+.dim-switch.on {
+  background: var(--sea);
+}
+
+.dim-switch.on .dim-knob {
+  transform: translateX(14px);
+}
+
+.dim-switch:focus-visible {
+  outline: 3px solid var(--sun);
+  outline-offset: 2px;
+}
+
 .hull-row {
   display: flex;
   gap: 4px;
@@ -119,6 +165,24 @@ kbd {
 .dials {
   display: flex;
   justify-content: space-around;
+}
+
+.dial-col {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+}
+
+.pct {
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+.pct.low {
+  color: var(--danger);
 }
 
 .dial {
@@ -182,10 +246,6 @@ kbd {
   fill: var(--danger);
 }
 
-.depth.danger .dial .arc {
-  stroke: var(--danger);
-}
-
 .reading {
   text-align: center;
 }
@@ -194,43 +254,6 @@ kbd {
   to {
     opacity: 0.45;
   }
-}
-
-.depth {
-  grid-area: depth;
-  justify-self: center;
-  text-align: center;
-  min-width: 120px;
-}
-
-.depth b {
-  font-family: var(--display);
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.depth span {
-  display: block;
-  font-family: var(--display);
-  font-size: 12px;
-  line-height: 1;
-}
-
-.depth small {
-  display: block;
-  margin-top: 3px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-
-.depth.danger b,
-.depth.danger small {
-  color: var(--danger);
 }
 
 .purse {
@@ -863,15 +886,8 @@ textarea:focus {
 @media (max-width: 600px) {
   .hud {
     grid-template-columns: 1fr auto auto;
-    grid-template-areas:
-      'vitals purse menu'
-      'vitals depth depth';
+    grid-template-areas: 'vitals purse menu';
     gap: 8px;
-  }
-  .depth {
-    justify-self: end;
-    min-width: 0;
-    padding: 6px 10px;
   }
   .money {
     font-size: 20px;
@@ -912,12 +928,47 @@ textarea:focus {
   position: absolute;
   right: 12px;
   bottom: 12px;
-  width: 210px;
-  padding: 8px 10px;
-  border-radius: 12px;
+  width: 244px;
+  padding: 8px 10px 8px 36px;
+  border-radius: 12px 0 0 12px;
   background: rgba(20, 36, 90, 0.85);
   color: #fff;
   font-size: 12px;
+  /* Slides almost off the right edge, leaving the TEST tab showing. */
+  transform: translateX(calc(100% + 12px - 30px));
+  transition: transform 0.25s ease 0.25s, opacity 0.4s;
+}
+
+.debug-upgrades:hover {
+  transform: none;
+  transition-delay: 0s;
+}
+
+.debug-upgrades::before {
+  content: 'TEST';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  display: grid;
+  place-items: center;
+  writing-mode: vertical-rl;
+  rotate: 180deg;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  opacity: 0.8;
+}
+
+.dbg-row.all {
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dbg-row button:disabled {
+  opacity: 0.35;
 }
 
 .debug-upgrades h4 {
@@ -944,6 +995,11 @@ textarea:focus {
 .dbg-row small {
   display: block;
   opacity: 0.75;
+}
+
+.dbg-row button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .dbg-row button {
@@ -1125,6 +1181,10 @@ textarea:focus {
   display: none;
 }
 
+.is-touch .pct {
+  font-size: 10px;
+}
+
 .is-touch .dial {
   width: 42px;
   height: 42px;
@@ -1138,18 +1198,6 @@ textarea:focus {
 .is-touch .dial > svg:not(.ring) {
   width: 14px;
   height: 14px;
-}
-
-.is-touch .depth b {
-  font-size: 17px;
-}
-
-.is-touch .depth span {
-  font-size: 10px;
-}
-
-.is-touch .depth small {
-  font-size: 9px;
 }
 
 .is-touch .vitals {
@@ -1176,4 +1224,262 @@ textarea:focus {
   bottom: 85px;
   font-size: 9px;
   padding: 1px 8px 2px;
+}
+
+/* ---- Depth gauge: the track scrolls past a pointer that stays centered ---- */
+
+.depth-meter {
+  position: absolute;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  top: 50%;
+  transform: translateY(-50%);
+  height: clamp(210px, 36vh, 290px);
+  width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.depth-meter[hidden],
+.dm-tag[hidden] {
+  display: none;
+}
+
+.dm-tag {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.dm-track {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  clip-path: inset(0 -220px 0 -16px);
+}
+
+.dm-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  overflow: hidden;
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9);
+}
+
+.dm-scale,
+.dm-labels {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  will-change: transform;
+}
+
+.dm-scale {
+  height: 12000px;
+}
+
+.dm-scale::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.95) 0 2px, transparent 2px calc(50 * var(--ppm))),
+    repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.55) 0 2px, transparent 2px calc(10 * var(--ppm)));
+  background-size: 18px 100%, 7px 100%;
+  background-repeat: no-repeat;
+}
+
+.dm-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.dm-limit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  margin-top: -1.5px;
+  background: var(--danger);
+}
+
+.dm-labels span {
+  position: absolute;
+  left: 30px;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(20, 36, 90, 0.9), 0 0 4px rgba(20, 36, 90, 0.7);
+}
+
+.dm-marker {
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 38px;
+  height: 0;
+}
+
+.dm-marker::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -9px;
+  border-style: solid;
+  border-width: 9px 0 9px 14px;
+  border-color: transparent transparent transparent var(--sun);
+  filter: drop-shadow(0 0 2px var(--ink));
+}
+
+.dm-marker::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 0;
+  top: -2px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--sun);
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.is-touch .depth-meter {
+  height: clamp(165px, 32vh, 215px);
+  width: 150px;
+}
+
+.is-touch .dm-labels span {
+  font-size: 10px;
+}
+
+/* ---- Dimmed interface (the switch on the vitals panel): still readable, much less noticeable, and full strength under the mouse ---- */
+
+#ui .hud .panel,
+#ui .icon-btn,
+#ui .minimap,
+#ui .minimap-tab,
+#ui .depth-meter {
+  transition: opacity 0.4s;
+}
+
+#ui.ui-dim .hud .panel,
+#ui.ui-dim .minimap,
+#ui.ui-dim .minimap-tab,
+#ui.ui-dim .depth-meter,
+#ui.ui-dim .debug-upgrades {
+  opacity: 0.3;
+}
+
+#ui.ui-dim .icon-btn {
+  opacity: 0.45;
+}
+
+/* With a mouse the panels can be hovered; on touch screens they stay click-through so they never block steering. */
+body:not(.is-touch) #ui .hud .panel,
+body:not(.is-touch) #ui .minimap,
+body:not(.is-touch) #ui .minimap-tab,
+body:not(.is-touch) #ui .depth-meter {
+  pointer-events: auto;
+}
+
+#ui.ui-dim .hud .panel:hover,
+#ui.ui-dim .icon-btn:hover,
+#ui.ui-dim .minimap:hover,
+#ui.ui-dim .minimap-tab:hover,
+#ui.ui-dim .depth-meter:hover,
+#ui.ui-dim .debug-upgrades:hover,
+#ui.ui-dim .vitals:has(.dial.low),
+#ui.ui-dim .depth-meter.danger {
+  opacity: 1;
+}
+
+/* ---- Dark settings menu: night, or deep water ---- */
+
+#ui.ui-dark .card.menu {
+  --ink: #e8eeff;
+  --ink-soft: #9fb0dc;
+  --line: #2b3a6b;
+  --panel: #0e1838;
+  color: var(--ink);
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.5);
+}
+
+#ui.ui-dark .card.menu .eyebrow {
+  color: #6fc6e0;
+}
+
+#ui.ui-dark .card.menu .stats div {
+  background: #16224a;
+}
+
+#ui.ui-dark .card.menu kbd {
+  background: #22305f;
+  color: var(--ink);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+#ui.ui-dark .card.menu textarea {
+  background: #0a1230;
+  color: var(--ink);
+}
+
+#ui.ui-dark .card.menu .btn.ghost {
+  background: #16224a;
+  color: var(--ink);
+  box-shadow: 0 0 0 2px var(--line), 0 4px 0 var(--line);
+}
+
+#ui.ui-dark .card.menu .confirm {
+  background: #3a1a2e;
+}
+
+#ui.ui-dark .card.menu .error {
+  color: #ff8aa0;
+}
+
+/* Depth readout beside the pointer, and the plating limit under the gauge. */
+
+.dm-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.dm-depth {
+  position: absolute;
+  left: 44px;
+  top: 0;
+  transform: translateY(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(14, 24, 56, 0.9);
+  color: #fff;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.dm-depth.danger {
+  background: var(--danger);
+}
+
+#ui .dm-tag.danger {
+  background: var(--danger);
+  color: #fff;
 }

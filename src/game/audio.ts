@@ -6,6 +6,7 @@ const FILES = {
   surface: ["sound-ocean-surface-background.m4a"],
   depths: ["sound-ocean-depths-background.mp3"],
   propeller: ["sound-propeller.m4a"],
+  sailing: ["sound-ship-sailing.m4a"],
   implosion: ["sound-implosion.m4a"],
   horn: ["sound-warning-horn.m4a"],
   clank1: ["sound-clank-1.m4a"],
@@ -16,6 +17,8 @@ const FILES = {
   chime2: ["sound-chime-2.m4a"],
   seagulls: ["sound-seagulls.m4a"],
   music: ["sound-music-1.m4a"],
+  whaleFar: ["sound-whale-far.m4a"],
+  whaleNear: ["sound-whale-near.m4a"],
 } as const;
 
 type Sound = keyof typeof FILES;
@@ -29,6 +32,7 @@ const VOLUME: Record<Sound, number> = {
   surface: 0.7,
   depths: 0.7,
   propeller: 0.6,
+  sailing: 0.6,
   implosion: 1,
   horn: 0.8,
   clank1: 0.8,
@@ -39,14 +43,22 @@ const VOLUME: Record<Sound, number> = {
   chime2: 0.7,
   seagulls: 0.6,
   music: 0.5,
+  whaleFar: 0.7,
+  whaleNear: 0.9,
 };
 
 /** Which looping beds play in each scene. */
 const BEDS: Record<Scene, Sound[]> = { surface: ["surface"], dive: ["depths"] };
-const LOOPS: Sound[] = ["surface", "depths", "propeller"];
+const LOOPS: Sound[] = ["surface", "depths", "propeller", "sailing"];
 
 
 const HORN_GAP = 0.5;
+
+/** Distances in px from the nearest whale: the far call plays between these, the near call inside the first. */
+const WHALE_NEAR_PX = 1200;
+const WHALE_FAR_PX = 3000;
+/** The far call starts beyond this, so the whale itself is still off screen. */
+const WHALE_FAR_FROM_PX = 1500;
 
 /** Depth in meters at which the music is fully muffled, and the cutoff range it sweeps through. */
 const MUFFLE_DEPTH = 120;
@@ -81,6 +93,8 @@ export class AudioManager {
   private depthNext = 40;
   private depthY = 0;
   private hitIndex = 0;
+  private whaleFarTimer = 4;
+  private whaleNearTimer = 0;
   volume = 1;
   musicVolume = 1;
   muted = false;
@@ -112,6 +126,13 @@ export class AudioManager {
     if (on === this.propeller) return;
     this.propeller = on;
     this.applyBeds();
+  }
+
+  /** Fades the ship's engine loop with its speed, 0 (still) to 1 (full speed). */
+  setSailing(speed: number) {
+    const gain = this.beds.get("sailing");
+    if (!this.ctx || !gain) return;
+    gain.gain.setTargetAtTime(VOLUME.sailing * speed, this.ctx.currentTime, 0.3);
   }
 
   /** Repeats the single-blast horn while a warning is active. */
@@ -163,6 +184,26 @@ export class AudioManager {
     if (this.gullTimer > 0 || !clip) return;
     this.playGull((0.4 + 0.6 * nearness) * (0.8 + Math.random() * 0.2), clip);
     this.gullTimer = clip.duration + 8 + Math.random() * 17;
+  }
+
+  /**
+   * Whale calls: a far call when the nearest whale is distant and off screen, a near call once it is close.
+   * `dist` is in px (Infinity for none) and `dx` its sideways offset from the sub, used to pan the sound.
+   */
+  whales(dt: number, dist: number, dx: number) {
+    this.whaleFarTimer -= dt;
+    this.whaleNearTimer -= dt;
+    const far = this.buffers.get("whaleFar");
+    const near = this.buffers.get("whaleNear");
+    const pan = Math.max(-1, Math.min(1, dx / 1500));
+    if (near && dist < WHALE_NEAR_PX && this.whaleNearTimer <= 0) {
+      this.play("whaleNear", 0.6 + 0.4 * (1 - dist / WHALE_NEAR_PX), pan);
+      this.whaleNearTimer = near.duration + 12 + Math.random() * 18;
+      this.whaleFarTimer = Math.max(this.whaleFarTimer, near.duration + 6);
+    } else if (far && dist >= WHALE_FAR_FROM_PX && dist < WHALE_FAR_PX && this.whaleFarTimer <= 0) {
+      this.play("whaleFar", 0.45 + 0.55 * (1 - (dist - WHALE_FAR_FROM_PX) / (WHALE_FAR_PX - WHALE_FAR_FROM_PX)), pan);
+      this.whaleFarTimer = far.duration + 15 + Math.random() * 25;
+    }
   }
 
   /** Alternates the two clanks so repeated hits don't sound identical. */
@@ -229,14 +270,18 @@ export class AudioManager {
     if (this.musicBus) this.musicBus.gain.value = this.musicVolume * VOLUME.music;
   }
 
-  play(name: Sound, volume = 1) {
+  play(name: Sound, volume = 1, pan = 0) {
     const buf = this.buffers.get(name);
     if (!this.ctx || !this.master || !buf) return;
     const src = this.ctx.createBufferSource();
     const gain = this.ctx.createGain();
     gain.gain.value = VOLUME[name] * volume;
     src.buffer = buf;
-    src.connect(gain).connect(this.master);
+    if (pan) {
+      const panner = this.ctx.createStereoPanner();
+      panner.pan.value = pan;
+      src.connect(gain).connect(panner).connect(this.master);
+    } else src.connect(gain).connect(this.master);
     src.start();
   }
 
@@ -300,6 +345,7 @@ export class AudioManager {
   private applyBeds() {
     if (!this.ctx) return;
     for (const [name, gain] of this.beds) {
+      if (name === "sailing") continue;
       const on = name === "propeller" ? this.propeller : BEDS[this.scene].includes(name);
       gain.gain.setTargetAtTime(
         on ? VOLUME[name] : 0,

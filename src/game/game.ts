@@ -4,21 +4,29 @@ import { updateCreature } from "./creatures";
 import { DAY_SECONDS, START_DAY, daylight } from "../render/daylight";
 import { AudioManager } from "./audio";
 import { loadSave, newSave, writeSave, type SaveData } from "./save";
-import { STATS, UPGRADES, type UpgradeId } from "../data/upgrades";
+import { STATS, UPGRADES, WEIGHTS, type UpgradeId } from "../data/upgrades";
+import { WEIGHT_MOUNTS, WEIGHT_Y } from "../art/sub";
 import { ITEMS, ITEM_KINDS } from "../data/items";
 import { CREATURES, type CreatureKind } from "../data/creatures";
 import { routesFrom, type Endpoint, type Side } from "../data/routes";
 import {
   BREATH_TIME,
   FLICKER_TIME,
+  MAX_CANVAS_PIXELS,
+  MAX_FPS,
   SPEECH_TIME,
   PX_PER_M,
   SUB_DOCK_OFFSET,
   SUB_RADIUS,
+  SONAR_RAYS,
+  SONAR_RING_SPEED,
+  TREASURE_DETECT_RANGE,
+  VALUABLE_TREASURE,
   VIEW_AREA,
 } from "../config";
 import { clamp, damp, money, waveY } from "../util";
 import { Lighting } from "../render/lighting";
+import { SonarOutline, SonarShape, type ShapeSprite } from "../render/sonarOutline";
 import { renderScene } from "../render/scene";
 import { UI } from "../ui/ui";
 
@@ -75,6 +83,12 @@ export interface Blip {
   y: number;
   danger: boolean;
   life: number;
+  /** Starting life, for the pulse. */
+  max: number;
+  /** How the creature looked when pinged, drawn as an outline instead of a dot. */
+  shape?: Creature;
+  /** The outline image for `shape`, drawn the first time it is needed. */
+  sprite?: ShapeSprite;
 }
 
 export type DockSpot =
@@ -103,9 +117,13 @@ const GULL_EARSHOT = 1500;
 const SINK_START = 40;
 const SINK_RAMP = 60;
 const SINK_ACCEL = 24;
+const SINK_MAX_FACTOR = 6;
 /** The sub counts as at the surface (refilling air) once it is above ENTER, until it sinks below STAY. */
 const SURFACE_ENTER = 26;
 const SURFACE_STAY = 38;
+/** The ship direction hint appears a little deeper than the air refill zone. */
+const SHIP_HINT_ENTER = SURFACE_STAY + 22;
+const SHIP_HINT_STAY = SURFACE_STAY + 32;
 const DEATH_FADE_END = 6;
 const SURFACE_Y = 8;
 const SURFACE_RAMP = 12;
@@ -137,21 +155,38 @@ export class Game {
   private pinged = new Set<object>();
   private swing = { gap: SWING_REST, vel: 0 };
   private swingFacing: 1 | -1 = 1;
+  private deepWarned = false;
   private halfAir = false;
   private halfBattery = false;
+  private lowAir = false;
+  private lowBattery = false;
   /** Short messages shown over the sub, newest first. */
   speech: { text: string; color: string; life: number; age: number; key?: string }[] = [];
   flicker = 0;
   warning = false;
+  /** 0..1, how strongly the ship's mast light signals valuable treasure below. */
+  treasureAlert = 0;
+  /** The dive weights are strapped on, and whether they were let go this dive. */
+  weightsOn = false;
+  weightsDropped = false;
+  /** Weights that have been dropped and are sinking or resting on the bottom. */
+  weightFx: { x: number; y: number; vx: number; vy: number; rot: number; vr: number; rest: boolean }[] = [];
+  shipHint = false;
   ship: { x: number; vx: number; facing: 1 | -1 } = { x: 0, vx: 0, facing: 1 };
   sub!: Sub;
   cam = { x: 0, y: 0 };
-  view = { w: 1280, h: 720, scale: 1, dpr: 1 };
+  /** `ui` is the scale for screen-space drawing; `scale` also includes the dive zoom. */
+  view = { w: 1280, h: 720, scale: 1, dpr: 1, ui: 1, zoom: 1 };
+  private zoom = 1;
   t = 0;
   paused = true;
   bubbles: Bubble[] = [];
   popups: Popup[] = [];
   blips: Blip[] = [];
+  sonarOutline = new SonarOutline();
+  sonarShape = new SonarShape();
+  /** Pings still fading, oldest first: where each started, when, and how far each ray went before hitting rock (-1 for none). */
+  sonarPings: { x: number; y: number; start: number; range: number; linger: number; hits: number[]; scanned: number }[] = [];
   sonar = { timer: 1, ring: -1 };
   shake = 0;
   hitFlash = 0;
@@ -210,29 +245,71 @@ export class Game {
     return Math.sin(this.t * 1.3) * 3;
   }
 
+  /** Scales the canvas resolution down when frames run slow; 1 is full resolution. */
+  private quality = 1;
+  private maxQuality = 1;
+
   start() {
     let last = performance.now();
+    let prev = last;
+    let vsync = 1000 / 60;
+    let sum = 0;
+    let frames = 0;
+    let calm = 0;
+    let sinceRaise = Infinity;
     const frame = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
+      requestAnimationFrame(frame);
+      const gap = now - prev;
+      prev = now;
+      if (gap > 2) vsync = gap < vsync ? gap : vsync + (gap - vsync) * 0.01;
+      const elapsed = now - last;
+      if (elapsed < 1000 / MAX_FPS - vsync / 2) return;
       last = now;
-      this.step(dt);
+      this.step(Math.min(0.05, elapsed / 1000));
       renderScene(this);
       this.ui.update();
       this.input.endFrame();
-      requestAnimationFrame(frame);
+
+      if (document.hidden || elapsed > 200) return;
+      sum += elapsed;
+      if (++frames < 90) return;
+      const avg = sum / frames;
+      sum = 0;
+      frames = 0;
+      sinceRaise++;
+      if (avg > 24 && this.quality > 0.5) {
+        if (sinceRaise <= 3) this.maxQuality = this.quality;
+        this.quality = Math.max(0.5, this.quality * 0.85);
+        calm = 0;
+        this.resize();
+      } else if (avg < 18 && this.quality < this.maxQuality) {
+        if (++calm >= 8) {
+          this.quality = Math.min(this.maxQuality, this.quality / 0.9);
+          calm = 0;
+          sinceRaise = 0;
+          this.resize();
+        }
+      } else calm = 0;
     };
     requestAnimationFrame(frame);
   }
 
   resize() {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
     const w = innerWidth;
     const h = innerHeight;
+    const dpr = Math.max(0.5, Math.min(devicePixelRatio || 1, 2, Math.sqrt(MAX_CANVAS_PIXELS / (w * h))) * this.quality);
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
-    const scale = Math.sqrt((w * h) / VIEW_AREA);
-    this.view = { w: w / scale, h: h / scale, scale, dpr };
+    this.view.ui = Math.sqrt((w * h) / VIEW_AREA);
+    this.view.dpr = dpr;
+    this.applyView();
     this.lighting.resize(this.canvas.width, this.canvas.height);
+  }
+
+  /** Sizes the visible world area from the screen, the base scale and the current dive zoom. */
+  private applyView() {
+    const scale = this.view.ui * this.zoom;
+    this.view = { ...this.view, w: innerWidth / scale, h: innerHeight / scale, scale, zoom: this.zoom };
   }
 
   // ---- Saves -------------------------------------------------------------
@@ -288,6 +365,51 @@ export class Game {
     return v;
   }
 
+  buyWeights() {
+    if (this.save.weights || this.save.money < WEIGHTS.cost) return false;
+    this.save.money -= WEIGHTS.cost;
+    this.save.weights = true;
+    this.audio.play("chime1");
+    if (this.mode === "docked") this.resetSub();
+    this.persist();
+    return true;
+  }
+
+  /** Gives or takes away the dive weights without a purchase (for the test panel). */
+  setWeights(on: boolean) {
+    this.save.weights = on;
+    this.weightsOn = on;
+    this.weightsDropped = false;
+    this.weightFx = [];
+    this.persist();
+  }
+
+  /** Lets both weights go: they drop away with a burst of bubbles, and the sub shoots upward. */
+  private dropWeights() {
+    const s = this.sub;
+    this.weightsOn = false;
+    this.weightsDropped = true;
+    s.vy -= WEIGHTS.kick;
+    const cos = Math.cos(s.tilt);
+    const sin = Math.sin(s.tilt);
+    for (const lx of WEIGHT_MOUNTS) {
+      this.weightFx.push({
+        x: s.x + s.facing * (lx * cos - WEIGHT_Y * sin),
+        y: s.y + lx * sin + WEIGHT_Y * cos,
+        vx: s.vx * 0.3 + (lx - 14) * 1.2,
+        vy: 30,
+        rot: s.tilt,
+        vr: (Math.random() - 0.5) * 5,
+        rest: false,
+      });
+    }
+    this.emitBubbles(s.x, s.y + 24, 26, 70);
+    this.audio.play("clank2", 0.9);
+    this.audio.play("splash", 0.4);
+    this.shake = Math.max(this.shake, 0.18);
+    this.popup(s.x, s.y - 60, "Weights dropped!", "#FFD34D");
+  }
+
   buy(id: UpgradeId) {
     const next = UPGRADES[id].levels[this.up[id] + 1];
     if (!next || this.save.money < next.cost) return false;
@@ -339,10 +461,28 @@ export class Game {
     this.uiDark += ((wantDark ? 1 : 0) - this.uiDark) * damp(2.5, dt);
     this.audio.setPropeller(this.driving);
     this.audio.tick(dt, this.warning && !this.paused);
+    let whaleDist = Infinity;
+    let whaleDx = 0;
+    if (this.mode === "diving" && !this.paused) {
+      for (const c of this.world.creatures) {
+        if (c.kind !== "whale") continue;
+        const d = Math.hypot(c.x - this.sub.x, c.y - this.sub.y);
+        if (d < whaleDist) {
+          whaleDist = d;
+          whaleDx = c.x - this.sub.x;
+        }
+      }
+    }
+    this.audio.whales(dt, whaleDist, whaleDx);
     this.driving = false;
     this.warning = false;
     if (!this.paused) this.day = (this.day + dt / DAY_SECONDS) % 1;
     const live = !this.paused && !this.travel;
+    const zoomTarget = this.mode === "diving" ? this.world.def.diveZoom : 1;
+    if (Math.abs(zoomTarget - this.zoom) > 0.001) {
+      this.zoom += (zoomTarget - this.zoom) * damp(1.6, dt);
+      this.applyView();
+    }
 
     if (live) {
       if (this.mode === "docked") this.updateDocked(dt);
@@ -374,6 +514,15 @@ export class Game {
     this.updateSwing(dt, (this.ship.vx - prevVx) / dt);
     this.placeDockedSub();
 
+    const over = this.world.items.some(
+      (it) =>
+        it.alive &&
+        ITEMS[it.kind].value >= VALUABLE_TREASURE &&
+        Math.abs(it.x - this.ship.x) < TREASURE_DETECT_RANGE,
+    );
+    this.pinSpeech("treasure", over, "Something valuable below!", "#F6C445");
+    this.treasureAlert += ((over ? 1 : 0) - this.treasureAlert) * damp(6, dt);
+
     if (this.input.pressed("dive") || this.input.pressed("down")) {
       this.launch();
       return;
@@ -404,6 +553,7 @@ export class Game {
     if (this.mode !== "docked") return;
     this.mode = "diving";
     this.audio.play("splash");
+    this.treasureAlert = 0;
     const x = this.dockedX();
     this.resetSub();
     const s = this.sub;
@@ -414,6 +564,7 @@ export class Game {
     this.ship.vx = 0;
     this.batteryWarned = false;
     this.sonar = { timer: 0.6, ring: -1 };
+    this.sonarPings = [];
     this.save.stats.dives++;
     this.emitBubbles(s.x, s.y + 10, 14, 40);
   }
@@ -443,22 +594,28 @@ export class Game {
     const moving = Math.hypot(a.x, a.y) > 0.1;
     const cranks = inp.takeCranks();
     const speed = STATS.speed[this.up.propeller];
+    const airborne = s.y < SURFACE_Y;
+    if (inp.pressed("drop") && this.weightsOn) this.dropWeights();
+    const fall = this.weightsOn ? WEIGHTS.descent : 1;
+    const rise = this.weightsDropped ? WEIGHTS.ascent : 1;
     s.crankLight = Math.max(0, Math.min(0.8, s.crankLight + cranks * 0.18 - dt * 0.15));
 
     if (s.battery > 0) {
       if (moving) {
         s.vx += a.x * 560 * speed * dt;
-        s.vy += a.y * 560 * speed * dt;
+        const ay = airborne ? Math.max(0, a.y) : a.y;
+        s.vy += ay * 560 * speed * (ay > 0 ? fall : rise) * dt;
       }
     } else if (cranks) {
       const dx = moving ? a.x : s.facing;
       const dy = moving ? a.y : 0;
       const m = Math.hypot(dx, dy) || 1;
       s.vx += (dx / m) * 75 * cranks;
-      s.vy += (dy / m) * 75 * cranks;
+      s.vy += ((airborne ? Math.max(0, dy) : dy) / m) * 75 * cranks;
       this.emitBubbles(s.x - s.facing * 70, s.y, 2, 6);
     }
 
+    if (this.weightsOn) s.vy += WEIGHTS.pull * dt;
     if (s.y < SURFACE_Y)
       s.vy += SURFACE_GRAVITY * clamp((SURFACE_Y - s.y) / SURFACE_RAMP, 0, 1) * dt;
 
@@ -467,15 +624,16 @@ export class Game {
     s.vx *= drag;
     s.vy *= drag;
     const sp = Math.hypot(s.vx, s.vy);
-    if (sp > top) {
-      s.vx *= top / sp;
-      s.vy *= top / sp;
+    const limit = top * (s.vy > 0 ? fall : s.vy < 0 ? rise : 1);
+    if (sp > limit) {
+      s.vx *= limit / sp;
+      s.vy *= limit / sp;
     }
 
     const sinkDepth = s.y / PX_PER_M;
     if (sinkDepth > SINK_START) {
       const ramp = Math.min(1, (sinkDepth - SINK_START) / SINK_RAMP);
-      s.vy += SINK_ACCEL * ramp * (1 + Math.max(0, sinkDepth - SINK_START - SINK_RAMP) / 300) * dt;
+      s.vy += SINK_ACCEL * ramp * Math.min(SINK_MAX_FACTOR, 1 + Math.max(0, sinkDepth - SINK_START - SINK_RAMP) / 300) * dt;
     }
 
     const px = s.x;
@@ -498,33 +656,37 @@ export class Game {
       s.y = -90;
       s.vy = Math.max(0, s.vy);
     }
-    if (this.world.blocked(px, s.x, s.y, SUB_HALF_WIDTH, 26)) {
-      this.bump(Math.abs(s.vx));
-      this.kickUpDust(px + Math.sign(s.vx) * SUB_HALF_WIDTH, s.y, -Math.sign(s.vx), 0, Math.abs(s.vx));
-      s.x = px;
-      s.vx = 0;
-    }
-    const clearAt = (x: number) => this.world.clearFloorAt(x, SUB_HALF_WIDTH) - 26;
-    if (s.y > clearAt(s.x)) {
-      const steep = Math.abs(clearAt(s.x + 8) - clearAt(s.x - 8)) / 16 > MAX_SLOPE;
-      let pushed = false;
-      for (let d = 4; steep && !pushed && d <= 64; d += 4) {
-        for (const dir of [1, -1]) {
-          if (s.y <= clearAt(s.x + dir * d)) {
-            s.x += dir * d;
-            pushed = true;
-            break;
+    if (this.world.inCave(s.x) && this.world.inCave(px)) {
+      this.collideCave(px, py);
+    } else {
+      if (this.world.blocked(px, s.x, s.y, SUB_HALF_WIDTH, 26)) {
+        this.bump(Math.abs(s.vx));
+        this.kickUpDust(px + Math.sign(s.vx) * SUB_HALF_WIDTH, s.y, -Math.sign(s.vx), 0, Math.abs(s.vx));
+        s.x = px;
+        s.vx = 0;
+      }
+      const clearAt = (x: number) => this.world.clearFloorAt(x, SUB_HALF_WIDTH) - 26;
+      if (s.y > clearAt(s.x)) {
+        const steep = Math.abs(clearAt(s.x + 8) - clearAt(s.x - 8)) / 16 > MAX_SLOPE;
+        let pushed = false;
+        for (let d = 4; steep && !pushed && d <= 64; d += 4) {
+          for (const dir of [1, -1]) {
+            if (s.y <= clearAt(s.x + dir * d)) {
+              s.x += dir * d;
+              pushed = true;
+              break;
+            }
           }
         }
-      }
-      if (!pushed) {
-        s.y = clearAt(s.x);
-        if (s.vy > 0) {
-          this.bump(s.vy);
-          this.kickUpDust(s.x, s.y + 26, 0, -1, s.vy);
-          s.vy *= -0.2;
+        if (!pushed) {
+          s.y = clearAt(s.x);
+          if (s.vy > 0) {
+            this.bump(s.vy);
+            this.kickUpDust(s.x, s.y + 26, 0, -1, s.vy);
+            s.vy *= -0.2;
+          }
+          s.vx *= 0.97;
         }
-        s.vx *= 0.97;
       }
     }
 
@@ -537,6 +699,7 @@ export class Game {
 
     this.driving = moving && s.battery > 0;
     this.atSurface = s.y < (this.atSurface ? SURFACE_STAY : SURFACE_ENTER);
+    this.shipHint = s.y < (this.shipHint ? SHIP_HINT_STAY : SHIP_HINT_ENTER);
     const surfaced = this.atSurface;
     if (surfaced) s.oxygen = Math.min(this.maxOxygen, s.oxygen + 30 * dt);
     else s.oxygen = Math.max(0, s.oxygen - dt);
@@ -562,25 +725,21 @@ export class Game {
         : "Use the rudders with E and R (or J and K)",
       "#E5484D",
     );
-    const depthFrac = depth / this.depthRating;
+    const metersLeft = this.depthRating - depth;
+    if (metersLeft > STATS.deepWarning[this.up.plating] || s.vy < -10) this.deepWarned = false;
+    else if (s.vy > 10) this.deepWarned = true;
     this.pinSpeech(
       "depth",
-      depthFrac >= 0.8,
-      depthFrac > 1 ? "Too deep! Head up now!" : "We're going too deep!",
+      metersLeft <= 0 || this.deepWarned,
+      metersLeft <= 0 ? "Too deep! Head up now!" : "We're going too deep!",
       "#E5484D",
     );
-    this.halfAir = this.sayAtHalf(
-      s.oxygen / this.maxOxygen,
-      this.halfAir,
-      "Air is at half!",
-      "#2AA6C9",
-    );
-    this.halfBattery = this.sayAtHalf(
-      s.battery / this.maxBattery,
-      this.halfBattery,
-      "Battery is at half!",
-      "#D9A21E",
-    );
+    const airFrac = s.oxygen / this.maxOxygen;
+    const batteryFrac = s.battery / this.maxBattery;
+    this.halfAir = this.sayAtLevel(airFrac, 0.5, this.halfAir, "Oxygen is at 50%!", "#2AA6C9");
+    this.halfBattery = this.sayAtLevel(batteryFrac, 0.5, this.halfBattery, "Battery is at 50%!", "#D9A21E");
+    this.lowAir = this.sayAtLevel(airFrac, 0.2, this.lowAir, "Oxygen is at 20%!", "#E5484D");
+    this.lowBattery = this.sayAtLevel(batteryFrac, 0.2, this.lowBattery, "Battery is at 20%!", "#E5484D");
     if (depth > this.depthRating) {
       s.stress += dt;
       this.shake = Math.max(this.shake, 0.08);
@@ -595,8 +754,9 @@ export class Game {
     s.invuln = Math.max(0, s.invuln - dt);
     for (const c of this.world.creatures) {
       if (c.state === "dead" || !CREATURES[c.kind].harmful || s.invuln > 0) continue;
-      const r = CREATURES[c.kind].radius + SUB_RADIUS;
-      if ((c.x - s.x) ** 2 + (c.y - s.y) ** 2 < r * r) {
+      const def = CREATURES[c.kind];
+      const circles = def.body ? def.body.map(([dx, r]) => [c.x + c.facing * dx, r] as const) : [[c.x, def.radius] as const];
+      if (circles.some(([x, r]) => (x - s.x) ** 2 + (c.y - s.y) ** 2 < (r + SUB_RADIUS) ** 2)) {
         if (this.damage(c)) return;
       }
     }
@@ -616,9 +776,9 @@ export class Game {
   }
 
   /** Returns true when the hit wrecked the sub. */
-  /** Posts a message the first time `frac` drops to 50%; returns the new "already said" flag. */
-  private sayAtHalf(frac: number, said: boolean, text: string, color: string) {
-    if (frac > 0.5) return false;
+  /** Posts a message the first time `frac` drops to `level`; returns the new "already said" flag. */
+  private sayAtLevel(frac: number, level: number, said: boolean, text: string, color: string) {
+    if (frac > level) return false;
     if (!said) this.speech.unshift({ text, color, life: SPEECH_TIME, age: 0 });
     return true;
   }
@@ -713,6 +873,29 @@ export class Game {
     this.audio.hit(clamp(speed / 200, 0.4, 1));
   }
 
+  /** Slides the sub along tunnel walls: each axis is tried alone, and a blocked one is undone. */
+  private collideCave(px: number, py: number) {
+    const s = this.sub;
+    const w = this.world;
+    if (w.caveHit(px, py, SUB_HALF_WIDTH)) return;
+    const nx = s.x;
+    const ny = s.y;
+    s.y = py;
+    if (w.caveHit(nx, py, SUB_HALF_WIDTH)) {
+      this.bump(Math.abs(s.vx));
+      this.kickUpDust(px + Math.sign(s.vx) * SUB_HALF_WIDTH, s.y, -Math.sign(s.vx), 0, Math.abs(s.vx));
+      s.x = px;
+      s.vx = 0;
+    }
+    s.y = ny;
+    if (w.caveHit(s.x, ny, SUB_HALF_WIDTH)) {
+      this.bump(Math.abs(s.vy));
+      this.kickUpDust(s.x, py + Math.sign(s.vy) * 26, 0, -Math.sign(s.vy), Math.abs(s.vy));
+      s.y = py;
+      s.vy *= -0.2;
+    }
+  }
+
   private damage(c: Creature | null): boolean {
     const s = this.sub;
     s.hull--;
@@ -756,6 +939,10 @@ export class Game {
       hammerhead: "Hammerhead attack!",
       squid: "Squeezed by a squid!",
       angler: "Anglerfish ambush!",
+      whale: "Hit by a whale!",
+      stingray: "",
+      manta: "",
+      colossal: "Caught by a colossal squid!",
       fish: "Bonked by a fish!",
       jelly: "Stung!",
       pressure: "Hull crushed!",
@@ -766,6 +953,10 @@ export class Game {
       hammerhead: "Hammerheads patrol back and forth. Steer around them.",
       squid: "Squid lunge when you get close. Give them room.",
       angler: "Anglerfish hunt by their glowing lure. Sonar spots them early.",
+      stingray: "",
+      manta: "",
+      colossal: "Colossal squid ambush from the dark and lunge from far away. Sonar spots them early; give them a wide berth.",
+      whale: "Sperm whales ignore you, but they are enormous and slow to turn. Keep clear of them.",
       fish: "",
       jelly: "",
       pressure: `Your plating is only safe to ${this.depthRating} m. Upgrade it to go deeper.`,
@@ -814,42 +1005,98 @@ export class Game {
     const level = this.up.sonar;
     if (!level) {
       this.sonar.ring = -1;
+      this.sonarPings = [];
       this.blips = [];
       return;
     }
     const range = STATS.sonarRange[level];
+    this.sonarPings = this.sonarPings.filter((p) => this.t - p.start < 1 / SONAR_RING_SPEED + p.linger);
     if (this.sonar.ring >= 0) {
-      this.sonar.ring += range * dt * 0.9;
-      this.markSonarContacts(level);
+      this.sonar.ring += range * dt * SONAR_RING_SPEED;
+      this.markSonarContacts();
+      if (this.sonarDark > 0.15) this.markSonarWalls();
       if (this.sonar.ring > range) this.sonar.ring = -1;
     }
     this.sonar.timer -= dt;
     if (this.sonar.timer > 0) return;
     this.sonar.timer = STATS.sonarInterval[level];
     this.sonar.ring = 0;
+    this.sonarPings.push({
+      x: this.sub.x,
+      y: this.sub.y,
+      start: this.t,
+      range,
+      linger: STATS.sonarLinger[level],
+      hits: new Array(SONAR_RAYS).fill(-1),
+      scanned: 0,
+    });
     this.pinged.clear();
     this.audio.play("sonar");
   }
 
-  /** Adds a blip for anything the expanding ping ring has just reached, where it was at that moment. */
-  private markSonarContacts(level: number) {
-    const s = this.sub;
-    const reach = this.sonar.ring;
-    const hit = (x: number, y: number, radius: number) => Math.hypot(x - s.x, y - s.y) - radius <= reach;
-    for (const c of this.world.creatures) {
-      const harmful = CREATURES[c.kind].harmful;
-      if (c.state === "dead" || this.pinged.has(c) || (!harmful && level < 3)) continue;
-      if (hit(c.x, c.y, CREATURES[c.kind].radius)) {
-        this.pinged.add(c);
-        this.blips.push({ x: c.x, y: c.y, danger: harmful, life: 2.4 });
+  /** How dark the water is at the sub's depth, 0 near the surface to 1 well into the dark. */
+  get sonarDark() {
+    const [dim, full] = this.world.def.darkness;
+    return clamp((this.depthM - dim) / ((full - dim) * 0.5), 0, 1);
+  }
+
+  /** Finds how far each ray from the ping's origin goes before it first meets rock, checking the ground the ring crossed since last frame. */
+  private markSonarWalls() {
+    const ping = this.sonarPings[this.sonarPings.length - 1];
+    if (!ping) return;
+    const ring = this.sonar.ring;
+    const rock = (cos: number, sin: number, d: number) =>
+      ping.y + sin * d >= 0 && this.world.caveSolid(ping.x + cos * d, ping.y + sin * d);
+    for (let i = 0; i < SONAR_RAYS; i++) {
+      if (ping.hits[i] >= 0) continue;
+      const cos = Math.cos((i / SONAR_RAYS) * Math.PI * 2);
+      const sin = Math.sin((i / SONAR_RAYS) * Math.PI * 2);
+      let lo = ping.scanned;
+      for (let d = lo + 24; ; d += 24) {
+        const at = Math.min(d, ring);
+        if (rock(cos, sin, at)) {
+          let hi = at;
+          for (let k = 0; k < 5; k++) {
+            const mid = (lo + hi) / 2;
+            if (rock(cos, sin, mid)) hi = mid;
+            else lo = mid;
+          }
+          ping.hits[i] = hi;
+          break;
+        }
+        lo = at;
+        if (at >= ring) break;
       }
     }
-    if (level < 2) return;
+    ping.scanned = ring;
+  }
+
+  /** Adds a blip for any danger or treasure (and, at the top level, every animal) the expanding ping ring has just reached, where it was at that moment. */
+  private markSonarContacts() {
+    const ping = this.sonarPings[this.sonarPings.length - 1];
+    if (!ping) return;
+    const reach = this.sonar.ring;
+    const hit = (x: number, y: number, radius: number) => Math.hypot(x - ping.x, y - ping.y) - radius <= reach;
+    for (const c of this.world.creatures) {
+      const harmful = CREATURES[c.kind].harmful;
+      if (c.state === "dead" || this.pinged.has(c) || (!harmful && this.up.sonar < 3)) continue;
+      if (hit(c.x, c.y, CREATURES[c.kind].radius)) {
+        this.pinged.add(c);
+        this.blips.push({
+          x: c.x,
+          y: c.y,
+          danger: harmful,
+          life: ping.linger,
+          max: ping.linger,
+          shape: this.up.sonar >= 3 ? { ...c } : undefined,
+        });
+      }
+    }
     for (const it of this.world.items) {
-      if (this.pinged.has(it) || !it.alive || (!ITEMS[it.kind].treasure && level < 3)) continue;
+      if (this.pinged.has(it) || !it.alive || !ITEMS[it.kind].treasure) continue;
       if (hit(it.x, it.y, ITEMS[it.kind].size * 0.45)) {
         this.pinged.add(it);
-        this.blips.push({ x: it.x, y: it.y, danger: false, life: 2.4 });
+        this.blips.push({ x: it.x, y: it.y, danger: false, life: ping.linger, max: ping.linger });
       }
     }
   }
@@ -896,6 +1143,22 @@ export class Game {
 
   private updateEffects(dt: number) {
     this.updateKelp(dt);
+    for (const w of this.weightFx) {
+      if (w.rest) continue;
+      w.vy = Math.min(420, w.vy + 520 * dt) * Math.exp(-0.3 * dt);
+      w.vx *= Math.exp(-1.4 * dt);
+      w.x += w.vx * dt;
+      w.y += w.vy * dt;
+      w.rot += w.vr * dt;
+      if (Math.random() < dt * 12) this.emitBubbles(w.x, w.y - 8, 1, 6);
+      const landed = this.world.inCave(w.x) ? this.world.caveSolid(w.x, w.y + 8) : w.y > this.world.floorAt(w.x) - 8;
+      if (landed) {
+        w.rest = true;
+        w.vr = 0;
+        this.emitBubbles(w.x, w.y, 6, 20);
+        this.audio.play("clank1", 0.4);
+      }
+    }
     const drag = Math.exp(-2.5 * dt);
     for (const d of this.dust) {
       d.vx *= drag;
@@ -949,8 +1212,14 @@ export class Game {
   }
 
   private resetSub() {
+    this.deepWarned = false;
+    this.weightsOn = this.save.weights;
+    this.weightsDropped = false;
+    this.weightFx = [];
     this.halfAir = false;
     this.halfBattery = false;
+    this.lowAir = false;
+    this.lowBattery = false;
     this.speech = [];
     this.swing = { gap: SWING_REST, vel: 0 };
     this.claw.t = -1;

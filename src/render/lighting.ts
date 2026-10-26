@@ -22,7 +22,10 @@ export interface WorldTransform {
 }
 
 /** Thin wedges stacked from a bright core out past the cone's edge, so the edge fades smoothly instead of in stripes. */
-const EDGE_LAYERS = 24;
+const EDGE_LAYERS = 12;
+
+/** The darkness layer is soft, so it is drawn at this fraction of the screen's resolution and scaled up. */
+const LIGHT_RES = 0.5;
 
 /** Paints deep-water darkness on an offscreen layer and cuts holes in it for lights. */
 export class Lighting {
@@ -30,8 +33,8 @@ export class Lighting {
   private ctx = this.canvas.getContext('2d')!;
 
   resize(w: number, h: number) {
-    this.canvas.width = w;
-    this.canvas.height = h;
+    this.canvas.width = Math.ceil(w * LIGHT_RES);
+    this.canvas.height = Math.ceil(h * LIGHT_RES);
   }
 
   render(main: CanvasRenderingContext2D, tf: WorldTransform, startPx: number, fullPx: number, lights: Light[], night = 0) {
@@ -39,7 +42,7 @@ export class Lighting {
     c.globalCompositeOperation = 'source-over';
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    c.setTransform(tf.k, 0, 0, tf.k, tf.ox, tf.oy);
+    c.setTransform(tf.k * LIGHT_RES, 0, 0, tf.k * LIGHT_RES, tf.ox * LIGHT_RES, tf.oy * LIGHT_RES);
 
     const top = -16;
     const span = fullPx - top;
@@ -73,7 +76,7 @@ export class Lighting {
         const spread = l.spread ?? 0.4;
         for (let i = 0; i < EDGE_LAYERS; i++) {
           const sp = spread * (0.4 + 0.8 * (i / (EDGE_LAYERS - 1)));
-          c.globalAlpha = a * 0.1;
+          c.globalAlpha = a * (0.1 * 24) / EDGE_LAYERS;
           c.beginPath();
           c.moveTo(l.x, l.y);
           c.arc(l.x, l.y, l.r, l.angle - sp, l.angle + sp);
@@ -86,7 +89,7 @@ export class Lighting {
 
     main.save();
     main.setTransform(1, 0, 0, 1, 0, 0);
-    main.drawImage(this.canvas, 0, 0);
+    main.drawImage(this.canvas, 0, 0, main.canvas.width, main.canvas.height);
     main.restore();
   }
 }

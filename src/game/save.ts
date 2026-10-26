@@ -12,6 +12,8 @@ export interface SaveData {
   shipX: number;
   day: number;
   cargo: Partial<Record<ItemKind, number>>;
+  /** Whether the one-time dive weights have been bought. */
+  weights: boolean;
   stats: { dives: number; earned: number; deepest: number };
 }
 
@@ -24,6 +26,7 @@ export function newSave(): SaveData {
     shipX: 900,
     day: START_DAY,
     cargo: {},
+    weights: false,
     stats: { dives: 0, earned: 0, deepest: 0 },
   };
 }
@@ -46,6 +49,7 @@ export function sanitize(raw: any): SaveData | null {
     const c = Math.floor(num(raw.cargo?.[k], 0, 9999, 0));
     if (c) s.cargo[k] = c;
   }
+  s.weights = raw.weights === true;
   s.stats.dives = Math.floor(num(raw.stats?.dives, 0, 1e9, 0));
   s.stats.earned = Math.floor(num(raw.stats?.earned, 0, 1e12, 0));
   s.stats.deepest = Math.floor(num(raw.stats?.deepest, 0, 1e5, 0));

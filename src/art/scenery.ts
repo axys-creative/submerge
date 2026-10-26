@@ -1,4 +1,5 @@
 import { mulberry32, rrect } from '../util';
+import { drawTankShape } from './sub';
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a: number) {
   ctx.save();
@@ -16,6 +17,12 @@ function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a:
 /** Crane arm tip relative to the ship center, where the sub's cable hangs from. */
 export const CRANE_TIP = { x: -215, y: -112 };
 
+/** Deck spotlights relative to the ship center, aimed down and outward (a is the beam angle from straight down, toward the end of the ship). */
+export const SHIP_LAMPS = [
+  { x: 132, y: -42, dir: 1, a: 0.55 },
+  { x: -130, y: -30, dir: -1, a: 0.55 },
+];
+
 /** Ship paint by tier, which follows the sub's lowest of plating and oxygen tank level. */
 const SHIP_TIERS = [
   { hull: '#C9D1DA', shade: '#AEB8C4', deck: '#8F9AA8', dark: '#3E4552', accent: '#2AA6C9', text: '#3E4552' },
@@ -24,7 +31,32 @@ const SHIP_TIERS = [
   { hull: '#2A2D35', shade: '#1D2026', deck: '#14161B', dark: '#0E1013', accent: '#F28C28', text: '#F0F3F8' },
 ];
 
-export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -1 = 1, night = 0, tier = 0) {
+const GLASS = '#A8E1F2';
+
+/** Fills the current path and rounds its corners with a same-colour stroke. */
+function fillRounded(ctx: CanvasRenderingContext2D, color: string, width = 5) {
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.fill();
+  ctx.stroke();
+}
+
+/** A curved reflection hugging the top-left corner of a window, like the sub's nose glass. */
+function windowShine(ctx: CanvasRenderingContext2D, x: number, y: number, h: number, alpha: number) {
+  ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + 3, y + h - 3);
+  ctx.quadraticCurveTo(x + 3, y + 3, x + 9, y + 3);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x + 13, y + 3);
+  ctx.lineTo(x + 16, y + 3);
+  ctx.stroke();
+}
+
+export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -1 = 1, night = 0, tier = 0, oxygen = 0, alert = 0) {
   const c = SHIP_TIERS[tier];
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -76,11 +108,16 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.lineTo(34, -98);
   ctx.lineTo(50, -80);
   ctx.closePath();
-  ctx.fill();
+  fillRounded(ctx, c.hull);
   ctx.fillStyle = '#EEF2F6';
   ctx.beginPath();
-  ctx.arc(24, -104, 7, Math.PI, 0);
+  ctx.arc(24, -98, 7, Math.PI, 0);
   ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(24, -98, 4.2, Math.PI * 1.1, Math.PI * 1.5);
+  ctx.stroke();
   ctx.fillStyle = c.deck;
   ctx.beginPath();
   ctx.moveTo(-38, -30);
@@ -89,7 +126,7 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.lineTo(92, -50);
   ctx.lineTo(98, -30);
   ctx.closePath();
-  ctx.fill();
+  fillRounded(ctx, c.deck);
   ctx.fillStyle = 'rgba(255,255,255,0.12)';
   ctx.beginPath();
   ctx.moveTo(-28, -80);
@@ -99,27 +136,46 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.closePath();
   ctx.fill();
   const lit = night > 0.3;
-  ctx.fillStyle = lit ? '#FFD66B' : '#14283A';
+  const glass = lit ? '#FFD66B' : GLASS;
+  const shine = lit ? 0.55 : 0.9;
   for (const x of [-18, 8, 34]) {
-    rrect(ctx, x, -68, 22, 12, 3);
+    ctx.fillStyle = c.hull;
+    rrect(ctx, x - 1.5, -69.5, 25, 15, 6);
+    ctx.fill();
+    ctx.fillStyle = glass;
+    rrect(ctx, x, -68, 22, 12, 4.5);
     ctx.fill();
     if (night > 0) glow(ctx, x + 11, -62, 40, 0.4 * night);
+    windowShine(ctx, x, -68, 12, shine);
   }
   ctx.beginPath();
   ctx.moveTo(62, -68);
   ctx.lineTo(80, -54);
   ctx.lineTo(62, -54);
   ctx.closePath();
-  ctx.fill();
-  if (!lit) {
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = 1.5;
-    for (const x of [-18, 8, 34]) {
-      ctx.beginPath();
-      ctx.moveTo(x + 4, -56);
-      ctx.lineTo(x + 10, -66);
-      ctx.stroke();
-    }
+  fillRounded(ctx, glass, 3);
+  ctx.strokeStyle = `rgba(255,255,255,${shine})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(63.5, -58);
+  ctx.quadraticCurveTo(63.5, -63.5, 68, -64.5);
+  ctx.stroke();
+
+  for (const l of SHIP_LAMPS) {
+    ctx.strokeStyle = c.dark;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(l.x, l.y + 12);
+    ctx.lineTo(l.x, l.y);
+    ctx.stroke();
+    ctx.fillStyle = c.dark;
+    rrect(ctx, l.x - 5, l.y - 5, 10, 8, 3);
+    ctx.fill();
+    ctx.fillStyle = night > 0.3 ? '#FFF6D8' : '#8A93A3';
+    ctx.beginPath();
+    ctx.arc(l.x + l.dir * 2, l.y - 1, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    if (night > 0) glow(ctx, l.x + l.dir * 2, l.y - 1, 26, 0.6 * night);
   }
 
   if (night > 0) {
@@ -133,6 +189,65 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
     }
   }
 
+  ctx.fillStyle = c.accent;
+  ctx.beginPath();
+  ctx.arc(8, -126, 3, 0, Math.PI * 2);
+  ctx.fill();
+  if (alert > 0.02) {
+    const pulse = 0.5 + 0.5 * Math.sin(t * 8);
+    glow(ctx, 8, -128, 26 + 22 * pulse, alert);
+    ctx.fillStyle = '#FFD34D';
+    ctx.beginPath();
+    ctx.arc(8, -128, 4 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255,211,77,${alert * (1 - pulse)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(8, -128, 8 + 12 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Cargo oxygen tanks on the aft deck, drawn like the sub's tank
+  for (const cx of [-80, -64, -48]) {
+    ctx.save();
+    ctx.translate(cx - 26.5, -6);
+    ctx.rotate(Math.PI / 2);
+    drawTankShape(ctx, oxygen, c.accent);
+    ctx.restore();
+  }
+
+  // Life preserver on the wheelhouse wall
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = c.dark;
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.arc(74, -45, 6.5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 6;
+  for (let i = 0; i < 4; i++) {
+    ctx.strokeStyle = i % 2 ? '#E5484D' : '#F4FAFF';
+    ctx.beginPath();
+    ctx.arc(74, -45, 6.5, (i * Math.PI) / 2 + 0.3, ((i + 1) * Math.PI) / 2 + 0.3);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'round';
+
+  // Bow rail
+  const hullTop = (x: number) => -38 + ((x - 120) * 4) / 52;
+  ctx.strokeStyle = '#EEF2F6';
+  ctx.lineWidth = 2;
+  for (const x of [128, 140, 152, 164]) {
+    ctx.beginPath();
+    ctx.moveTo(x, hullTop(x) + 2);
+    ctx.lineTo(x, hullTop(x) - 12);
+    ctx.stroke();
+  }
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(128, hullTop(128) - 12);
+  ctx.lineTo(164, hullTop(164) - 12);
+  ctx.stroke();
+
   // Hull: angular, with a raked bow
   ctx.fillStyle = c.hull;
   ctx.beginPath();
@@ -143,15 +258,30 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.lineTo(-122, 26);
   ctx.lineTo(-140, 6);
   ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = c.shade;
+  fillRounded(ctx, c.hull, 7);
   ctx.beginPath();
   ctx.moveTo(-135, 12);
   ctx.lineTo(125, 12);
   ctx.lineTo(110, 26);
   ctx.lineTo(-122, 26);
   ctx.closePath();
-  ctx.fill();
+  fillRounded(ctx, c.shade, 7);
+
+  for (const x of [-104, -80, -56]) {
+    ctx.fillStyle = c.accent;
+    ctx.beginPath();
+    ctx.arc(x, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = glass;
+    ctx.beginPath();
+    ctx.arc(x, 0, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255,255,255,${shine})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(x, 0, 2.6, Math.PI * 1.1, Math.PI * 1.5);
+    ctx.stroke();
+  }
   ctx.strokeStyle = c.accent;
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -166,6 +296,8 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.lineTo(172, -34);
   ctx.stroke();
 
+  drawSternBumper(ctx);
+
   ctx.fillStyle = c.text;
   ctx.font = '600 13px Fredoka, Nunito, sans-serif';
   const label = 'SUBMERGE';
@@ -175,6 +307,22 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.textAlign = 'center';
   ctx.fillText(label, 0, 0);
   ctx.restore();
+}
+
+function drawSternBumper(ctx: CanvasRenderingContext2D) {
+  ctx.strokeStyle = '#2D2F36';
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(-139, -22);
+  ctx.lineTo(-139, 6);
+  ctx.lineTo(-121, 24);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-142, -20);
+  ctx.lineTo(-142, 5);
+  ctx.stroke();
 }
 
 export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: string) {

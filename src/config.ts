@@ -13,3 +13,14 @@ export const SPEECH_TIME = 4;
 export const COCKPIT_MIN = 0.12;
 /** Seconds the sub can hold its breath after the air runs out. */
 export const BREATH_TIME = 5;
+/** Rays a sonar ping casts to find terrain. */
+export const SONAR_RAYS = 180;
+/** Treasure worth at least this much sets off the ship's detector when the ship passes within the range (px) of it. */
+export const VALUABLE_TREASURE = 200;
+export const TREASURE_DETECT_RANGE = 150;
+/** How fast a sonar ring expands, as a multiple of the sonar's range per second. */
+export const SONAR_RING_SPEED = 1.8;
+/** The game draws at most this many frames per second, which saves heat and battery on fast displays. */
+export const MAX_FPS = 60;
+/** The canvas is drawn with at most this many pixels, so very large or high-density screens do not overload the GPU. */
+export const MAX_CANVAS_PIXELS = 2_800_000;

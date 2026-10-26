@@ -21,7 +21,7 @@ export interface ItemDef {
   /** Relative spawn chance; 0 means it only appears in special places (wrecks). */
   weight: number;
   size: number;
-  /** Treasure shows up on Treasure Ping sonar. */
+  /** Treasure shows up on sonar. */
   treasure: boolean;
 }
 

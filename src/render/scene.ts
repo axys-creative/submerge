@@ -1,10 +1,10 @@
 import type { Game } from '../game/game';
-import { COCKPIT_MIN, FLICKER_TIME, PX_PER_M, SUB_DOCK_OFFSET } from '../config';
+import { COCKPIT_MIN, FLICKER_TIME, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET } from '../config';
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
 import { buoyLabel, routesFrom } from '../data/routes';
-import { batteryLights, drawSub, glassGlow, runningLights, LAMP, ANCHOR, COCKPIT, REAR_LAMP } from '../art/sub';
-import { drawShip, drawIsland, drawCloud, cloudShape, drawBuoy, drawWreck, drawDeco, CRANE_TIP } from '../art/scenery';
+import { batteryLights, drawSub, drawWeight, glassGlow, runningLights, LAMP, ANCHOR, COCKPIT, REAR_LAMP } from '../art/sub';
+import { drawShip, drawIsland, drawCloud, cloudShape, drawBuoy, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
 import { waveY, mixColor, lerp, clamp } from '../util';
@@ -17,7 +17,8 @@ const DEG = Math.PI / 180;
 const FRONT_BEAM_DOWN = 15 * DEG;
 const REAR_BEAM_DOWN = 20 * DEG;
 const BEAM_SWEEP = 10 * DEG;
-const FRONT_SWEEP_SECONDS = 9;
+const FRONT_BEAM_SWEEP = 15 * DEG;
+const FRONT_SWEEP_SECONDS = 8;
 const REAR_SWEEP_SECONDS = 11;
 
 /** Slow back-and-forth 0..1 over `seconds`. */
@@ -71,6 +72,9 @@ function crater(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, 
 /** Height of the sky above the waterline, in world px; matches the view at the surface. */
 const SKY_HEIGHT = 400;
 
+const SHIP_BEAM_RANGE = 190;
+const SHIP_BEAM_SPREAD = 0.5;
+
 export function renderScene(g: Game) {
   const { ctx, view, cam, world, t } = g;
   const def = world.def;
@@ -104,18 +108,25 @@ export function renderScene(g: Game) {
     ctx.fillStyle = sky;
     ctx.fillRect(left - 20, top - 20, W + 40, -top + 40);
 
+    // Stars, sun, moon and clouds are far away, so they ignore the dive zoom and stay at their normal size.
+    const k0 = view.ui * view.dpr;
+    ctx.save();
+    ctx.setTransform(k0, 0, 0, k0, 0, oy);
+    const skyW = g.canvas.width / k0;
+    const skyH = SKY_HEIGHT * view.zoom;
+
     if (night > 0) {
       ctx.fillStyle = '#FFFFFF';
       STARS.forEach((st) => {
         ctx.globalAlpha = night * (0.55 + 0.45 * Math.sin(t * 2 + st.p));
         ctx.beginPath();
-        ctx.arc(left + st.x * W, -st.y * SKY_HEIGHT * 0.95, st.r, 0, Math.PI * 2);
+        ctx.arc(st.x * skyW, -st.y * SKY_HEIGHT * 0.95, st.r, 0, Math.PI * 2);
         ctx.fill();
       });
       ctx.globalAlpha = 1;
     }
 
-    const body = (angle: number) => ({ x: left + W * (0.5 - 0.42 * Math.cos(angle)), y: 10 - 300 * Math.sin(angle) });
+    const body = (angle: number) => ({ x: skyW * (0.5 - 0.42 * Math.cos(angle)), y: 10 - 0.75 * skyH * Math.sin(angle) });
     if (Math.sin(sunAngle) > -0.25) {
       const p = body(sunAngle);
       ctx.fillStyle = 'rgba(255,240,170,0.35)';
@@ -141,16 +152,17 @@ export function renderScene(g: Game) {
     }
 
     const cloudColor = mixColor('#FFFFFF', '#46567F', night * 0.85);
-    const span = W + 900;
+    const span = skyW + 900;
     for (let i = 0; i < 9; i++) {
       const shape = cloudShape(i);
-      const x = left - 450 + ((((i * 610 - left * 0.3 + t * (5 + (i % 3) * 2)) % span) + span) % span);
+      const x = -450 + ((((i * 610 - cam.x * 0.3 + t * (5 + (i % 3) * 2)) % span) + span) % span);
       ctx.save();
-      ctx.translate(x, -340 + shape.height * 140);
+      ctx.translate(x, (-340 + shape.height * 140) * (skyH / SKY_HEIGHT));
       drawCloud(ctx, i, cloudColor);
       ctx.restore();
     }
     ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   for (const isl of def.islands) {
@@ -189,8 +201,29 @@ export function renderScene(g: Game) {
     }
   }
 
+  // Parallax mountains sit behind everything else, including the islands' underwater peaks.
+  if (bottom > 200) {
+    BACK_LAYERS.forEach((layer, i) => {
+      const shift = cam.x * (1 - layer.p);
+      const fill = ctx.createLinearGradient(0, 0, 0, deepPx);
+      fill.addColorStop(0, mixColor(water0, '#0A1A3E', layer.dark));
+      fill.addColorStop(1, mixColor(water1, '#0A1A3E', layer.dark));
+      ctx.fillStyle = fill;
+      ctx.globalAlpha = layer.alpha;
+      ctx.beginPath();
+      ctx.moveTo(left - 30, bottom + 30);
+      for (let c = Math.floor((left - 30 - shift) / 24) * 24; c + shift <= right + 30; c += 24) {
+        ctx.lineTo(c + shift, world.layerFloorAt(c, i));
+      }
+      ctx.lineTo(right + 30, bottom + 30);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+  }
+
   // Each island is the peak of a faint mountain that keeps going down behind everything.
-  const peakDepth = world.maxFloor + 200;
+  const peakDepth = world.floorMax + 200;
   const mountains = def.islands.filter((isl) => inView(isl.x, 1400));
   if (mountains.length) {
     ctx.save();
@@ -202,9 +235,9 @@ export function renderScene(g: Game) {
     ctx.clip();
     const y0 = Math.max(6, Math.floor((top - 60) / 60) * 60);
     const y1 = Math.min(peakDepth, Math.ceil((bottom + 60) / 60) * 60);
-    const fade = ctx.createLinearGradient(0, 0, 0, peakDepth);
-    fade.addColorStop(0, 'rgba(8,24,60,0.2)');
-    fade.addColorStop(1, 'rgba(8,24,60,0.06)');
+    const fade = ctx.createLinearGradient(0, 0, 0, deepPx);
+    fade.addColorStop(0, mixColor(water0, '#0A1A3E', 0.3));
+    fade.addColorStop(1, mixColor(water1, '#0A1A3E', 0.3));
     for (const isl of mountains) {
       if (y1 <= y0) continue;
       const half = (y: number) => 250 + y * 0.25 + Math.sin(y * 0.01 + isl.x) * 18 * Math.min(1, y / 200);
@@ -216,7 +249,7 @@ export function renderScene(g: Game) {
       ctx.closePath();
       ctx.fillStyle = fade;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(190,225,255,0.07)';
+      ctx.strokeStyle = 'rgba(190,225,255,0.04)';
       ctx.lineWidth = 3;
       for (const dir of [-1, 1]) {
         ctx.beginPath();
@@ -229,22 +262,6 @@ export function renderScene(g: Game) {
 
   // Sea floor
   if (bottom > 200) {
-    BACK_LAYERS.forEach((layer, i) => {
-      const shift = cam.x * (1 - layer.p);
-      const fill = ctx.createLinearGradient(0, 0, 0, deepPx);
-      fill.addColorStop(0, mixColor(water0, '#0A1A3E', layer.dark));
-      fill.addColorStop(1, mixColor(water1, '#0A1A3E', layer.dark));
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      ctx.moveTo(left - 30, bottom + 30);
-      for (let c = Math.floor((left - 30 - shift) / 24) * 24; c + shift <= right + 30; c += 24) {
-        ctx.lineTo(c + shift, world.layerFloorAt(c, i));
-      }
-      ctx.lineTo(right + 30, bottom + 30);
-      ctx.closePath();
-      ctx.fill();
-    });
-
     def.wrecks.forEach((w) => {
       if (!inView(w.x, 300)) return;
       ctx.save();
@@ -261,7 +278,7 @@ export function renderScene(g: Game) {
       ctx.restore();
     }
 
-    const ground = ctx.createLinearGradient(0, 0, 0, world.maxFloor);
+    const ground = ctx.createLinearGradient(0, 0, 0, world.floorMax);
     ground.addColorStop(0, def.ground[0]);
     ground.addColorStop(1, def.ground[1]);
     ctx.fillStyle = ground;
@@ -276,6 +293,27 @@ export function renderScene(g: Game) {
     ctx.beginPath();
     for (let x = Math.floor((left - 30) / 12) * 12; x <= right + 30; x += 12) ctx.lineTo(x, world.floorAt(x) + 2);
     ctx.stroke();
+
+    if (def.caves?.some((c) => right > c.x0 - 200 && left < c.x1 + 200)) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(left - 30, bottom + 30);
+      for (let x = Math.floor((left - 30) / 12) * 12; x <= right + 30; x += 12) ctx.lineTo(x, world.floorAt(x));
+      ctx.lineTo(right + 30, bottom + 30);
+      ctx.closePath();
+      ctx.clip();
+      const blobs = world.caveBlobs.filter((b) => b.x + b.r > left && b.x - b.r < right);
+      for (const [color, extra] of [[mixColor(def.ground[1], '#FFFFFF', 0.14), 8], [mixColor(def.ground[1], '#050A1E', 0.7), 0]] as const) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        for (const b of blobs) {
+          ctx.moveTo(b.x + b.r + extra, b.y);
+          ctx.arc(b.x, b.y, b.r + extra, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
+      ctx.restore();
+    }
 
     for (const d of world.deco) {
       if (d.kind === 'rock' || !inView(d.x)) continue;
@@ -333,8 +371,16 @@ export function renderScene(g: Game) {
   ctx.translate(g.ship.x, bob);
   ctx.scale(g.ship.facing, 1);
   ctx.rotate(Math.sin(t * 0.9) * 0.02);
-  drawShip(ctx, t, g.ship.facing, night, Math.min(g.up.plating, g.up.oxygen));
+  drawShip(ctx, t, g.ship.facing, night, Math.min(g.up.plating, g.up.oxygen), g.up.oxygen, g.treasureAlert);
   ctx.restore();
+
+  for (const w of g.weightFx) {
+    ctx.save();
+    ctx.translate(w.x, w.y);
+    ctx.rotate(w.rot);
+    drawWeight(ctx);
+    ctx.restore();
+  }
 
   const blink = s.invuln > 0 && Math.floor(t * 12) % 2 === 0;
   ctx.save();
@@ -342,7 +388,7 @@ export function renderScene(g: Game) {
   ctx.scale(s.facing, 1);
   ctx.rotate(s.tilt);
   if (blink) ctx.globalAlpha = 0.4;
-  drawSub(ctx, g.up, t, s.prop, g.warning);
+  drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn);
   ctx.restore();
 
   const claw = g.clawState();
@@ -449,7 +495,7 @@ export function renderScene(g: Game) {
   const lit = !!spot && power > 0.02;
   const reach = 0.35 + 0.65 * power;
   const fade = Math.min(1, power * 2.5);
-  const frontDown = FRONT_BEAM_DOWN + BEAM_SWEEP * sweep(t, FRONT_SWEEP_SECONDS);
+  const frontDown = FRONT_BEAM_DOWN + FRONT_BEAM_SWEEP * sweep(t, FRONT_SWEEP_SECONDS);
   const rearDown = REAR_BEAM_DOWN + BEAM_SWEEP * sweep(t, REAR_SWEEP_SECONDS, Math.PI / 2);
   const cockpitPower = Math.max(
     COCKPIT_MIN,
@@ -487,6 +533,16 @@ export function renderScene(g: Game) {
         a: 0.6 * cockpitPower,
       });
     }
+  }
+  const shipBeams = night > 0.05
+    ? SHIP_LAMPS.map((l) => ({
+        x: g.ship.x + l.x * g.ship.facing,
+        y: g.shipBob + l.y,
+        angle: Math.PI / 2 - l.dir * g.ship.facing * l.a,
+      }))
+    : [];
+  for (const b of shipBeams) {
+    lights.push({ x: b.x, y: b.y, r: SHIP_BEAM_RANGE, angle: b.angle, spread: SHIP_BEAM_SPREAD, a: night });
   }
   const lures: { x: number; y: number; glow: number }[] = [];
   for (const c of world.creatures) {
@@ -527,6 +583,25 @@ export function renderScene(g: Game) {
       ctx.restore();
     }
   }
+  if (shipBeams.length && bottom > lerp(startPx, 0, night)) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const b of shipBeams) {
+      const tint = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, SHIP_BEAM_RANGE);
+      tint.addColorStop(0, `rgba(255,246,216,${0.02 * night})`);
+      tint.addColorStop(1, 'rgba(255,246,216,0)');
+      ctx.fillStyle = tint;
+      for (let i = 0; i < 10; i++) {
+        const k = 0.4 + 0.8 * (i / 9);
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.arc(b.x, b.y, SHIP_BEAM_RANGE, b.angle - SHIP_BEAM_SPREAD * k, b.angle + SHIP_BEAM_SPREAD * k);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
   if (diving) {
     ctx.save();
     ctx.translate(s.x, subY);
@@ -548,13 +623,25 @@ export function renderScene(g: Game) {
     ctx.strokeStyle = `rgba(120,255,210,${0.1 * (1 - g.sonar.ring / range)})`;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, g.sonar.ring, 0, Math.PI * 2);
+    ctx.arc((g.sonarPings.at(-1) ?? s).x, (g.sonarPings.at(-1) ?? s).y, g.sonar.ring, 0, Math.PI * 2);
     ctx.stroke();
+  }
+  if (diving && g.sonarDark > 0.15) {
+    for (const ping of g.sonarPings) {
+      const speed = ping.range * SONAR_RING_SPEED;
+      const front = Math.max(1, (g.t - ping.start) * speed);
+      g.sonarOutline.render(ctx, { k, ox, oy, left, top, w: W, h: H }, world, ping, ping.hits, front, ping.range, speed * ping.linger, g.sonarDark * 0.9);
+    }
   }
   for (const b of g.blips) {
     const a = Math.min(1, b.life / 0.6);
-    const color = b.danger ? '255,90,95' : '255,211,77';
-    const pulse = (2.4 - b.life) * 14;
+    const color = b.danger ? '255,90,95' : b.shape ? '150,245,170' : '255,211,77';
+    if (b.shape) {
+      b.sprite ??= g.sonarShape.sprite(k, b.shape, color);
+      g.sonarShape.draw(ctx, k, b.x * k + ox, b.y * k + oy, b.sprite, a);
+      continue;
+    }
+    const pulse = (b.max - b.life) * 14;
     ctx.strokeStyle = `rgba(${color},${a * 0.5})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -566,12 +653,12 @@ export function renderScene(g: Game) {
     ctx.fill();
   }
 
-  ctx.font = '700 18px Fredoka, Nunito, sans-serif';
+  ctx.font = `700 ${18 / view.zoom}px Fredoka, Nunito, sans-serif`;
   ctx.textAlign = 'center';
   ctx.lineJoin = 'round';
   for (const p of g.popups) {
     ctx.globalAlpha = Math.min(1, p.life / 0.4);
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 5 / view.zoom;
     ctx.strokeStyle = 'rgba(20,36,90,0.9)';
     ctx.strokeText(p.text, p.x, p.y);
     ctx.fillStyle = p.color;
@@ -594,7 +681,7 @@ export function renderScene(g: Game) {
     ctx.fillStyle = v;
     ctx.fillRect(0, 0, cw, ch);
   }
-  if (diving && !g.underwater && (g.ship.x + 150 < left || g.ship.x - 150 > right)) {
+  if (diving && g.shipHint && (g.ship.x + 150 < left || g.ship.x - 150 > right)) {
     const dir = g.ship.x > s.x ? 1 : -1;
     const u = k;
     const x = dir > 0 ? cw - 56 * u : 56 * u;
@@ -629,10 +716,10 @@ export function renderScene(g: Game) {
     ctx.fillText(label, x, y + 40 * u);
     ctx.textAlign = 'left';
   }
-  if (diving && g.speech.length) {
-    const u = k;
-    const baseX = s.x * k + ox;
-    const baseY = s.y * k + oy;
+  if (g.speech.length && (diving || g.mode === 'docked')) {
+    const u = view.ui * view.dpr;
+    const baseX = (diving ? s.x : g.ship.x) * k + ox;
+    const baseY = (diving ? s.y : bob - 60) * k + oy;
     ctx.font = `500 ${14 * u}px Fredoka, Nunito, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

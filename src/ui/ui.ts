@@ -1,13 +1,14 @@
 import type { Game } from '../game/game';
 import type { Action } from '../game/input';
 import { exportCode, importCode } from '../game/save';
-import { UPGRADES, UPGRADE_ORDER, type Loadout, type UpgradeId } from '../data/upgrades';
+import { UPGRADES, UPGRADE_ORDER, WEIGHTS, type Loadout, type UpgradeId } from '../data/upgrades';
 import { ZONES } from '../data/zones';
+import { DEPTH_ZONES, METER_WINDOW, zoneIndexAt } from '../data/depthZones';
 import { ROUTES, routesFrom, type Endpoint } from '../data/routes';
 import { ITEMS, ITEM_KINDS, type ItemKind } from '../data/items';
 import { drawSub } from '../art/sub';
 import { drawItem } from '../art/items';
-import { money } from '../util';
+import { money, mixColor } from '../util';
 
 const ICON = {
   hull: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>',
@@ -15,6 +16,9 @@ const ICON = {
   bolt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>',
   menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/></svg>',
 };
+
+const DIM_KEY = 'submerge.ui.v1';
+const MAX_TEST_LEVEL = 3;
 
 type ModalKind = 'title' | 'shop' | 'menu' | 'message' | 'map';
 
@@ -40,13 +44,12 @@ export class UI {
     this.root.innerHTML = `
       <div class="hud">
         <div class="panel vitals">
-          <div class="hull-row" id="hud-hull"></div>
+          <div class="vitals-top"><div class="hull-row" id="hud-hull"></div><button class="dim-switch" id="btn-dim" role="switch" tabindex="-1" aria-label="Dim the interface" aria-checked="false" title="Dim the interface"><span class="dim-knob"></span></button></div>
           <div class="dials">
-            <div class="dial air" id="hud-air">${RING}${ICON.air}</div>
-            <div class="dial batt" id="hud-batt">${RING}${ICON.bolt}</div>
+            <div class="dial-col"><div class="dial air" id="hud-air">${RING}${ICON.air}</div><span class="pct" id="pct-air">100%</span></div>
+            <div class="dial-col"><div class="dial batt" id="hud-batt">${RING}${ICON.bolt}</div><span class="pct" id="pct-batt">100%</span></div>
           </div>
         </div>
-        <div class="panel depth" id="hud-depth"><div class="dial big">${RING}<div class="reading"><b>0</b><span>m</span></div></div><small>Safe to 120 m</small></div>
         <div class="panel purse"><div class="money" id="hud-money">$0</div><div class="cargo" id="hud-cargo">Hold empty</div></div>
         <button class="icon-btn" id="btn-menu" aria-label="Menu">${ICON.menu}</button>
       </div>
@@ -58,9 +61,19 @@ export class UI {
         <div class="touch-buttons">
           <button class="round-btn crank" data-act="crankJ" hidden>E</button>
           <button class="round-btn crank" data-act="crankK" hidden>R</button>
+          <button class="round-btn secondary" id="btn-drop" data-act="drop" hidden>Drop</button>
           <button class="round-btn secondary" id="btn-spot" data-act="action" hidden>Shop</button>
           <button class="round-btn primary" id="btn-dive" data-act="dive" hidden>Dive</button>
         </div>
+      </div>
+      <div class="depth-meter" id="depth-meter" hidden>
+        <div class="panel dm-tag" id="dm-current"></div>
+        <div class="dm-track" id="dm-track">
+          <div class="dm-frame"><div class="dm-scale" id="dm-scale">${this.depthMeterBands()}<div class="dm-limit" id="dm-limit"></div></div></div>
+          <div class="dm-labels" id="dm-labels">${this.depthMeterLabels()}</div>
+          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b></div>
+        </div>
+        <div class="dm-foot"><div class="panel dm-tag" id="dm-next"></div><div class="panel dm-tag" id="dm-limit-tag"></div></div>
       </div>
       <canvas class="minimap" id="minimap" width="440" height="220"></canvas>
       <div class="minimap-tab" id="map-zone"></div>
@@ -69,9 +82,29 @@ export class UI {
     this.modal = $(this.root, '#modal');
 
     $(this.root, '#debug-up').onclick = (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-dbg]');
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-dbg], [data-zone], [data-all], [data-weights]');
       if (!btn) return;
       btn.blur();
+      if (btn.dataset.weights) {
+        this.game.setWeights(btn.dataset.weights === '1');
+        return;
+      }
+      if (btn.dataset.all) {
+        const g = this.game;
+        const level = Math.max(0, Math.min(MAX_TEST_LEVEL, this.masterLevel() + Number(btn.dataset.all)));
+        for (const id of UPGRADE_ORDER) g.save.upgrades[id] = Math.min(level, UPGRADES[id].levels.length - 1);
+        g.setWeights(level === MAX_TEST_LEVEL);
+        g.audio.play('chime1');
+        g.sub.hull = g.maxHull;
+        g.sub.oxygen = g.maxOxygen;
+        g.sub.battery = g.maxBattery;
+        return;
+      }
+      if (btn.dataset.zone) {
+        const zone = this.game.save.zone + Number(btn.dataset.zone);
+        if (zone >= 0 && zone < ZONES.length) this.game.sailTo({ zone, side: 'west' });
+        return;
+      }
       const [id, step] = btn.dataset.dbg!.split(':') as [UpgradeId, string];
       const g = this.game;
       const max = UPGRADES[id].levels.length - 1;
@@ -84,8 +117,106 @@ export class UI {
     };
 
     $(this.root, '#btn-menu').addEventListener('click', () => this.openMenu());
+    new ResizeObserver(() => {
+      this.trackHeight = $(this.root, '#dm-track').clientHeight;
+      this.cache.delete('dm-ppm');
+    }).observe($(this.root, '#dm-track'));
+    const dimBtn = $(this.root, '#btn-dim');
+    dimBtn.addEventListener('click', () => {
+      this.setDim(!this.dim);
+      dimBtn.blur();
+    });
+    try {
+      this.setDim(localStorage.getItem(DIM_KEY) === '1');
+    } catch {}
     this.setupTouch();
     this.showTitle();
+  }
+
+  private dim = false;
+  /** The level the test panel's master arrows show: the lowest upgrade level, counting a maxed upgrade as top level. */
+  private masterLevel() {
+    return Math.min(
+      ...UPGRADE_ORDER.map((id) => {
+        const lv = this.game.save.upgrades[id];
+        return lv >= UPGRADES[id].levels.length - 1 ? MAX_TEST_LEVEL : lv;
+      }),
+    );
+  }
+
+  /** Fades the HUD panels, minimap and depth gauge so they are still readable but out of the way. */
+  private setDim(on: boolean) {
+    this.dim = on;
+    this.root.classList.toggle('ui-dim', on);
+    const btn = this.root.querySelector('#btn-dim');
+    btn?.classList.toggle('on', on);
+    btn?.setAttribute('aria-checked', String(on));
+    try {
+      localStorage.setItem(DIM_KEY, on ? '1' : '0');
+    } catch {}
+  }
+
+  // ---- Depth meter -------------------------------------------------------
+
+  /** Positions below are in meters times --ppm (pixels per meter), so the track keeps its scale at any gauge height. */
+  private depthMeterBands() {
+    return DEPTH_ZONES.map((z, i) => {
+      const end = DEPTH_ZONES[i + 1]?.from ?? z.from + 5000;
+      return `<div class="dm-band" style="top:calc(${z.from} * var(--ppm));height:calc(${end - z.from} * var(--ppm));background:${z.color}"></div>`;
+    }).join('');
+  }
+
+  private depthMeterLabels() {
+    return DEPTH_ZONES.filter((z) => z.from > 0)
+      .map((z) => `<span style="top:calc(${z.from} * var(--ppm))">${z.name} · ${z.from.toLocaleString()} m</span>`)
+      .join('');
+  }
+
+  private deepestZone = 0;
+  private trackHeight = 0;
+
+  private updateDepthMeter(depth: number) {
+    const g = this.game;
+    const diving = g.mode === 'diving';
+    const meter = $(this.root, '#depth-meter');
+    meter.hidden = !diving;
+    if (!diving) {
+      this.deepestZone = 0;
+      return;
+    }
+    const zone = zoneIndexAt(depth);
+    if (zone > this.deepestZone) {
+      this.deepestZone = zone;
+      this.toast(`Entering the ${DEPTH_ZONES[zone].name}`);
+    }
+    const track = $(this.root, '#dm-track');
+    const height = this.trackHeight || track.clientHeight;
+    const ppm = height / METER_WINDOW;
+    this.set('dm-ppm', `${ppm.toFixed(3)}|${g.depthRating}`, () => {
+      track.style.setProperty('--ppm', `${ppm}px`);
+      $(this.root, '#dm-limit').style.top = `${g.depthRating * ppm}px`;
+    });
+    const shift = `translateY(${(height / 2 - depth * ppm).toFixed(1)}px)`;
+    $(this.root, '#dm-scale').style.transform = shift;
+    $(this.root, '#dm-labels').style.transform = shift;
+    const over = depth > g.depthRating;
+    meter.classList.toggle('danger', over);
+    this.set('dm-read', `${Math.round(depth)}|${g.depthRating}|${over}`, () => {
+      $(this.root, '#dm-depth').textContent = `${Math.round(depth)} m`;
+      const tag = $(this.root, '#dm-limit-tag');
+      tag.textContent = over ? 'Too deep!' : `Safe to ${g.depthRating.toLocaleString()} m`;
+      tag.classList.toggle('danger', over);
+      $(this.root, '#dm-depth').classList.toggle('danger', over);
+    });
+    this.set('dm-zone', String(zone), () => {
+      $(this.root, '#dm-current').textContent = DEPTH_ZONES[zone].name;
+    });
+    const next = DEPTH_ZONES[zone + 1];
+    this.set('dm-next', next ? `${next.name}|${Math.ceil((next.from - depth) / 10) * 10}` : 'none', () => {
+      const el = $(this.root, '#dm-next');
+      el.hidden = !next;
+      if (next) el.textContent = `${next.name} in ${(Math.ceil((next.from - depth) / 10) * 10).toLocaleString()} m`;
+    });
   }
 
   // ---- HUD ---------------------------------------------------------------
@@ -100,14 +231,21 @@ export class UI {
         ICON.hull.replace('<svg', `<svg class="${i < s.hull ? '' : 'empty'}"`),
       ).join('');
     });
-    this.set('dbg', UPGRADE_ORDER.map((id) => g.save.upgrades[id]).join(), () => {
+    this.set('dbg', UPGRADE_ORDER.map((id) => g.save.upgrades[id]).join() + `|${g.save.zone}|${g.mode}|${g.save.weights}`, () => {
+      const zone = g.save.zone;
+      const master = this.masterLevel();
+      const off = (ok: boolean) => (ok && g.mode === 'docked' ? '' : ' disabled');
       $(this.root, '#debug-up').innerHTML =
+        '<h4>Zone (test)</h4>' +
+        `<div class="dbg-row"><button tabindex="-1" data-zone="-1"${off(zone > 0)}>◀</button><span><b>Zone ${zone + 1}/${ZONES.length}</b><small>${ZONES[zone].name}</small></span><button tabindex="-1" data-zone="1"${off(zone < ZONES.length - 1)}>▶</button></div>` +
         '<h4>Upgrades (test)</h4>' +
+        `<div class="dbg-row all"><button tabindex="-1" data-all="-1"${master > 0 ? '' : ' disabled'}>−</button><span><b>All upgrades</b><small>Level ${master + 1}/${MAX_TEST_LEVEL + 1}</small></span><button tabindex="-1" data-all="1"${master < MAX_TEST_LEVEL ? '' : ' disabled'}>+</button></div>` +
         UPGRADE_ORDER.map((id) => {
           const def = UPGRADES[id];
           const lv = g.save.upgrades[id];
           return `<div class="dbg-row"><button tabindex="-1" data-dbg="${id}:-1">−</button><span><b>${def.title} ${lv + 1}/${def.levels.length}</b><small>${def.levels[lv].name}</small></span><button tabindex="-1" data-dbg="${id}:1">+</button></div>`;
-        }).join('');
+        }).join('') +
+        `<div class="dbg-row"><button tabindex="-1" data-weights="0"${g.save.weights ? '' : ' disabled'}>−</button><span><b>${WEIGHTS.name}</b><small>${g.save.weights ? 'Owned' : 'Not owned'}</small></span><button tabindex="-1" data-weights="1"${g.save.weights ? ' disabled' : ''}>+</button></div>`;
     });
     this.drawMap();
     this.set("zone", String(g.save.zone), () => {
@@ -117,15 +255,7 @@ export class UI {
     this.meter('air', s.oxygen / g.maxOxygen);
     this.meter('batt', s.battery / g.maxBattery);
 
-    const depth = Math.round(g.depthM);
-    const over = diving && depth > g.depthRating;
-    this.set('depth', `${depth}|${g.depthRating}|${over}`, () => {
-      const el = $(this.root, '#hud-depth');
-      $(el, 'b').textContent = String(depth);
-      $(el, 'small').textContent = over ? 'Too deep!' : `Safe to ${g.depthRating} m`;
-      this.setArc(el, depth / g.depthRating);
-      el.classList.toggle('danger', over);
-    });
+    this.updateDepthMeter(g.depthM);
     this.set('money', money(g.save.money), (v) => ($(this.root, '#hud-money').textContent = v));
     const n = g.cargoCount();
     this.set('cargo', n ? `Hold: ${n} · ${money(g.cargoValue())}` : 'Hold empty', (v) => ($(this.root, '#hud-cargo').textContent = v));
@@ -152,6 +282,8 @@ export class UI {
         b.textContent = label;
         b.hidden = !label;
       });
+      const drop = diving && g.weightsOn;
+      this.set('t-drop', String(drop), () => ($(this.root, '#btn-drop').hidden = !drop));
       const crank = diving && s.battery <= 0;
       this.set('t-crank', String(crank), () => this.root.querySelectorAll<HTMLElement>('.crank').forEach((b) => (b.hidden = !crank)));
     }
@@ -170,11 +302,13 @@ export class UI {
     if (s.battery <= 0) return this.touch ? 'Battery empty! Tap E and R back and forth' : 'Battery empty! Tap <kbd>E</kbd><kbd>R</kbd> back and forth to crank';
     if (g.depthM > g.depthRating) return `Too deep! Rise above ${g.depthRating} m`;
     if (s.oxygen < g.maxOxygen * 0.25) return 'Air running low! Head for the surface';
+    if (g.weightsOn && s.diveTime < 7) return this.touch ? 'Tap Drop to let go of your weights' : '<kbd>Q</kbd> or <kbd>?</kbd> Drop your weights to rise fast';
     if (s.diveTime < 4 && g.save.stats.dives <= 2) return 'Return to the ship to dock and recharge';
     return '';
   }
 
   private mapBg: { world: Game['world']; canvas: HTMLCanvasElement } | null = null;
+  private mapScroll = 0;
 
   private drawMap() {
     const g = this.game;
@@ -183,35 +317,67 @@ export class UI {
     const W = 440;
     const H = 220;
     const sx = W / w.width;
-    const sy = (H - 40) / w.maxFloor;
+    const sy = sx;
+    const fullH = Math.max(H, Math.ceil(24 + (w.maxFloor + 100) * sy));
     const mx = (x: number) => x * sx;
     const my = (y: number) => 24 + Math.max(0, y) * sy;
 
     if (this.mapBg?.world !== w) {
       const c = document.createElement('canvas');
       c.width = W;
-      c.height = H;
+      c.height = fullH;
       const b = c.getContext('2d')!;
       b.fillStyle = w.def.water[1];
-      b.fillRect(0, 0, W, H);
-      const sea = b.createLinearGradient(0, 24, 0, H);
+      b.fillRect(0, 0, W, fullH);
+      const sea = b.createLinearGradient(0, 24, 0, fullH);
       sea.addColorStop(0, w.def.water[0]);
       sea.addColorStop(1, w.def.water[1]);
       b.fillStyle = sea;
-      b.fillRect(0, 24, W, H - 24);
+      b.fillRect(0, 24, W, fullH - 24);
       b.fillStyle = w.def.sky[1];
       b.fillRect(0, 0, W, 24);
       b.fillStyle = w.def.ground[0];
       b.beginPath();
-      b.moveTo(0, H);
+      b.moveTo(0, fullH);
       for (let px = 0; px <= W; px += 2) b.lineTo(px, my(w.floorAt(px / sx)));
-      b.lineTo(W, H);
+      b.lineTo(W, fullH);
       b.closePath();
       b.fill();
+      b.fillStyle = mixColor(w.def.ground[1], '#050A1E', 0.7);
+      b.beginPath();
+      for (const c of w.caveBlobs) {
+        b.moveTo(mx(c.x + c.r), my(c.y));
+        b.ellipse(mx(c.x), my(c.y), Math.max(1, c.r * sx), Math.max(1, c.r * sy), 0, 0, Math.PI * 2);
+      }
+      b.fill();
+      for (const isl of w.def.islands) {
+        const ix = mx(isl.x);
+        b.fillStyle = '#F5D58A';
+        b.beginPath();
+        b.moveTo(ix - 11, 24);
+        b.quadraticCurveTo(ix, 4, ix + 11, 24);
+        b.closePath();
+        b.fill();
+        b.fillStyle = '#6CC57A';
+        b.beginPath();
+        b.moveTo(ix - 7, 17);
+        b.quadraticCurveTo(ix, 8, ix + 7, 17);
+        b.closePath();
+        b.fill();
+      }
       this.mapBg = { world: w, canvas: c };
+      this.mapScroll = 0;
     }
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(this.mapBg.canvas, 0, 0);
+
+    const follow = g.mode === 'diving' ? my(g.sub.y) - H / 2 : 0;
+    const scroll = Math.max(0, Math.min(fullH - H, follow));
+    this.mapScroll += (scroll - this.mapScroll) * 0.12;
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(this.mapBg.canvas, 0, this.mapScroll, W, H, 0, 0, W, H);
+    ctx.save();
+    ctx.translate(0, -this.mapScroll);
 
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(255,255,255,0.55)';
@@ -229,6 +395,7 @@ export class UI {
       ctx.fill();
       ctx.stroke();
     }
+    ctx.restore();
   }
 
   private meter(id: string, frac: number) {
@@ -237,6 +404,9 @@ export class UI {
       const el = $(this.root, `#hud-${id}`);
       this.setArc(el, pct);
       el.classList.toggle('low', pct < 0.25);
+      const label = $(this.root, `#pct-${id}`);
+      label.textContent = `${Math.ceil(pct * 100)}%`;
+      label.classList.toggle('low', pct < 0.25);
     });
   }
 
@@ -620,6 +790,10 @@ export class UI {
         if (v) this.toast(`Sold your haul for ${money(v)}`);
         this.renderShop();
       }
+      if (act === 'buyWeights' && this.game.buyWeights()) {
+        this.toast(`Strapped on the ${WEIGHTS.name}`);
+        this.renderShop();
+      }
       if (act === 'buy') {
         const id = btn.dataset.id as UpgradeId;
         if (this.game.buy(id)) {
@@ -632,7 +806,8 @@ export class UI {
     };
     const setPreview = (e: Event) => {
       const row = (e.target as HTMLElement).closest<HTMLElement>('.upg');
-      this.shopPreview = row && !row.classList.contains('maxed') ? (row.dataset.id as UpgradeId) : null;
+      const id = row?.dataset.id;
+      this.shopPreview = row && id && id in UPGRADES && !row.classList.contains('maxed') ? (id as UpgradeId) : null;
     };
     this.modal.addEventListener('pointerover', setPreview);
     this.modal.addEventListener('focusin', setPreview);
@@ -678,7 +853,20 @@ export class UI {
         ${next ? `<p class="upg-next">Next: <b>${esc(next.name)}</b> · ${esc(next.effect)}</p>` : `<p class="upg-next">${esc(def.blurb)}</p>`}
         <div class="upg-buy">${action}</div>
       </div>`;
-    }).join('');
+    }).join('') + (g.world.def.sellsWeights ? this.weightsCard() : '');
+  }
+
+  private weightsCard() {
+    const g = this.game;
+    const action = g.save.weights
+      ? '<span class="maxed-tag">Owned</span>'
+      : `<button class="btn small" data-act="buyWeights" ${g.save.money < WEIGHTS.cost ? 'disabled' : ''}>Buy ${money(WEIGHTS.cost)}</button>`;
+    return `<div class="upg ${g.save.weights ? 'maxed' : ''}" data-id="weights" tabindex="-1">
+        <div class="upg-head"><h3>${WEIGHTS.name}</h3></div>
+        <p class="upg-now">${g.save.weights ? 'Strapped on every dive' : 'One-time purchase'}</p>
+        <p class="upg-next">${WEIGHTS.blurb} Drop them with ${this.touch ? 'the <b>Drop</b> button' : '<kbd>Q</kbd> or <kbd>?</kbd>'}.</p>
+        <div class="upg-buy">${action}</div>
+      </div>`;
   }
 
   private drawPreviewLoop() {

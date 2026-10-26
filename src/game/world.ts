@@ -4,17 +4,25 @@ import { CREATURES, type CreatureKind } from '../data/creatures';
 import { PX_PER_M } from '../config';
 import { clamp, mulberry32, rand, type Rng } from '../util';
 
+/** The sea floor never rises above this depth in px, so kelp, creatures and the ship stay clear of the surface. */
+const MIN_FLOOR = 15 * PX_PER_M;
+/** How gently the floor eases into MIN_FLOOR instead of flattening abruptly. */
+const FLOOR_SOFTNESS = 25;
+
+/** Closest two surface items may spawn to each other, in px. */
+const ITEM_SPACING = 160;
+
 /** Steepest ground (rise over run) that can be climbed by sliding along it. */
 export const MAX_SLOPE = 1;
 
 /**
  * Background mountain layers, far to near. `p` is how much of the camera's sideways
- * motion the layer follows: smaller means farther away and slower.
+ * motion the layer follows: smaller means farther away and slower. `alpha` fades distant layers into the water.
  */
 export const BACK_LAYERS = [
-  { p: 0.45, lift: 260, amp: 90, offset: 2200, dark: 0.12 },
-  { p: 0.7, lift: 170, amp: 70, offset: 900, dark: 0.26 },
-  { p: 0.88, lift: 90, amp: 60, offset: 400, dark: 0.4 },
+  { p: 0.45, lift: 260, amp: 90, offset: 2200, dark: 0.12, alpha: 0.45 },
+  { p: 0.7, lift: 170, amp: 70, offset: 900, dark: 0.26, alpha: 1 },
+  { p: 0.88, lift: 90, amp: 60, offset: 400, dark: 0.4, alpha: 1 },
 ];
 
 export interface ItemInst {
@@ -26,7 +34,52 @@ export interface ItemInst {
   phase: number;
   /** Index of the wreck this chest belongs to, or -1. */
   wreck: number;
+  /** Where cave loot sits, and returns to when it respawns. */
+  spot?: { x: number; y: number };
 }
+
+/** One round piece of tunnel; a cave is the union of many overlapping blobs. */
+export interface CaveBlob {
+  x: number;
+  y: number;
+  r: number;
+}
+
+/** Distance in px between blobs along a tunnel. */
+const BLOB_SPACING = 22;
+
+/**
+ * Replaces each bend with either a diagonal cut or a curve, keeping the ends fixed.
+ * Sharp turns alternate between the two (`sharpTurns` carries the count across passages).
+ */
+function smoothBends(pts: [number, number][], sharpTurns: { n: number }): [number, number][] {
+  const out: [number, number][] = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [vx, vy] = pts[i];
+    const la = Math.hypot(pts[i - 1][0] - vx, pts[i - 1][1] - vy);
+    const lb = Math.hypot(pts[i + 1][0] - vx, pts[i + 1][1] - vy);
+    const cut = Math.min(la, lb) * 0.45;
+    const p1: [number, number] = [vx + ((pts[i - 1][0] - vx) / la) * cut, vy + ((pts[i - 1][1] - vy) / la) * cut];
+    const p2: [number, number] = [vx + ((pts[i + 1][0] - vx) / lb) * cut, vy + ((pts[i + 1][1] - vy) / lb) * cut];
+    const turn = Math.abs(Math.atan2(vx - pts[i - 1][0], vy - pts[i - 1][1]) - Math.atan2(pts[i + 1][0] - vx, pts[i + 1][1] - vy));
+    const sharp = Math.min(turn, Math.PI * 2 - turn) > Math.PI / 3;
+    if (sharp && sharpTurns.n++ % 2 === 0) {
+      out.push(p1, p2);
+      continue;
+    }
+    for (let k = 0; k <= 8; k++) {
+      const u = k / 8;
+      const w = 1 - u;
+      out.push([w * w * p1[0] + 2 * w * u * vx + u * u * p2[0], w * w * p1[1] + 2 * w * u * vy + u * u * p2[1]]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+/** Stable pseudo-noise in -1..1 from a position along a tunnel. */
+const wobble = (s: number, seed: number) =>
+  (Math.sin(s * 0.011 + seed) * 0.6 + Math.sin(s * 0.037 + seed * 2.3) * 0.4);
 
 export interface Creature {
   kind: CreatureKind;
@@ -35,6 +88,8 @@ export interface Creature {
   vx: number;
   vy: number;
   facing: 1 | -1;
+  /** Where a slow swimmer is heading, which only changes now and then. */
+  heading: 1 | -1;
   angle: number;
   homeY: number;
   minY: number;
@@ -63,11 +118,15 @@ export interface Deco {
 export class World {
   readonly def: ZoneDef;
   readonly width: number;
+  /** Deepest point of the sea floor and of any tunnel. */
   readonly maxFloor: number;
+  /** Deepest point of the sea floor alone. */
+  readonly floorMax: number;
   readonly items: ItemInst[] = [];
   readonly creatures: Creature[] = [];
   readonly deco: Deco[] = [];
   private readonly shape: number[];
+  readonly caveBlobs: CaveBlob[] = [];
   private readonly rng: Rng;
 
   constructor(readonly index: number) {
@@ -78,8 +137,12 @@ export class World {
     this.shape = [layout(), layout(), layout(), layout()].map((v) => v * 100);
     this.rng = mulberry32((Date.now() ^ (index * 7919)) >>> 0);
 
+    this.buildCave();
+
     let max = 0;
     for (let x = 0; x <= this.width; x += 20) max = Math.max(max, this.floorAt(x));
+    this.floorMax = max;
+    for (const b of this.caveBlobs) max = Math.max(max, b.y + b.r);
     this.maxFloor = max;
 
     this.buildDeco(layout);
@@ -88,6 +151,7 @@ export class World {
       this.placeItem(it);
       this.items.push(it);
     }
+    this.placeCaveLoot();
     this.def.wrecks.forEach((_, i) => {
       const it = this.blankItem();
       it.kind = 'chest';
@@ -106,7 +170,104 @@ export class World {
       const bottom = sh.depth * PX_PER_M + Math.sin(x * 0.05) * 6;
       if (u > 0 && bottom > y) y += (bottom - y) * u * u * (3 - 2 * u);
     }
-    return y;
+    for (const { hill } of this.def.caves ?? []) {
+      const u = clamp((hill.half + hill.ramp - Math.abs(x - hill.x)) / hill.ramp, 0, 1);
+      y -= hill.height * PX_PER_M * u * u * (3 - 2 * u);
+    }
+    if (y > MIN_FLOOR + FLOOR_SOFTNESS * 20) return y;
+    return MIN_FLOOR + FLOOR_SOFTNESS * Math.log(1 + Math.exp((y - MIN_FLOOR) / FLOOR_SOFTNESS));
+  }
+
+  /** True when x is inside the headland where collision follows the tunnels. */
+  inCave(x: number): boolean {
+    return !!this.def.caves?.some((c) => x >= c.x0 && x <= c.x1);
+  }
+
+  /** Rock: below the sea floor and outside every tunnel. */
+  caveSolid(x: number, y: number): boolean {
+    if (y <= this.floorAt(x)) return false;
+    if (!this.inCave(x)) return true;
+    for (const b of this.caveBlobs) {
+      const dx = x - b.x;
+      const dy = y - b.y;
+      if (dx * dx + dy * dy < b.r * b.r) return false;
+    }
+    return true;
+  }
+
+  /** True when a body centered at (x, y), halfWidth wide, overlaps rock. */
+  caveHit(x: number, y: number, halfWidth: number): boolean {
+    for (const dx of [-0.85, -0.45, 0, 0.45, 0.85]) {
+      for (const dy of [-24, 0, 24]) {
+        if (Math.abs(dx) > 0.7 && dy !== 0) continue;
+        if (this.caveSolid(x + dx * halfWidth, y + dy)) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Turns the cave's passages into overlapping blobs with smoothed bends and a wavering rock wall. */
+  private buildCave() {
+    const sharpTurns = { n: 0 };
+    (this.def.caves ?? []).flatMap((c) => c.passages).forEach((p, n) => {
+      const seed = n * 1.7;
+      const pts = p.pts.map(([x, m]) => [x, m * PX_PER_M] as [number, number]);
+      if (pts.length === 1) {
+        const [x, y] = pts[0];
+        this.caveBlobs.push({ x, y, r: p.r });
+        for (let k = 0; k < 9; k++) {
+          const a = (k / 9) * Math.PI * 2 + seed;
+          const w = wobble(k * 90, seed);
+          this.caveBlobs.push({ x: x + Math.cos(a) * p.r * (0.25 + 0.08 * w), y: y + Math.sin(a) * p.r * (0.25 + 0.08 * w), r: p.r * (0.82 + 0.1 * w) });
+        }
+        return;
+      }
+      const path = smoothBends(pts, sharpTurns);
+      let dist = 0;
+      let next = 0;
+      for (let i = 0; i < path.length - 1; i++) {
+        const [ax, ay] = path[i];
+        const [bx, by] = path[i + 1];
+        const len = Math.hypot(bx - ax, by - ay);
+        for (; next <= dist + len; next += BLOB_SPACING) {
+          const u = len ? (next - dist) / len : 0;
+          this.caveBlobs.push({ x: ax + (bx - ax) * u, y: ay + (by - ay) * u, r: p.r * (1 + 0.17 * wobble(next, seed)) });
+        }
+        dist += len;
+      }
+      const [lx, ly] = path[path.length - 1];
+      this.caveBlobs.push({ x: lx, y: ly, r: p.r });
+    });
+  }
+
+  private placeCaveLoot() {
+    const r = this.rng;
+    for (const p of (this.def.caves ?? []).flatMap((c) => c.passages)) {
+      if (!p.loot) continue;
+      const low = p.pts.reduce((a, b) => (b[1] > a[1] ? b : a));
+      for (let i = 0; i < p.loot; i++) {
+        const it = this.blankItem();
+        const kind = this.pickKind(low[1], true);
+        if (!kind) continue;
+        const reach = p.r * (p.pts.length === 1 ? 0.6 : 0.3);
+        const cy = low[1] * PX_PER_M;
+        let x = 0;
+        let y = cy;
+        let landed = false;
+        for (let tries = 0; tries < 60 && !landed; tries++) {
+          x = low[0] + rand(r, -reach, reach);
+          y = cy;
+          while (y < cy + p.r * 2.2 && !this.caveSolid(x, y + 4)) y += 4;
+          landed = !this.caveSolid(x, cy) && this.caveSolid(x, y + 4);
+        }
+        if (!landed) continue;
+        it.kind = kind;
+        it.x = x;
+        it.y = y - ITEMS[kind].size * 0.45;
+        it.spot = { x, y: it.y };
+        this.items.push(it);
+      }
+    }
   }
 
   private terrainAt(x: number): number {
@@ -144,7 +305,11 @@ export class World {
   update(t: number) {
     for (const it of this.items) {
       if (it.alive || t < it.respawnAt) continue;
-      if (it.wreck >= 0) this.placeChest(it);
+      if (it.spot) {
+        it.x = it.spot.x;
+        it.y = it.spot.y;
+        it.alive = true;
+      } else if (it.wreck >= 0) this.placeChest(it);
       else this.placeItem(it);
     }
   }
@@ -172,11 +337,13 @@ export class World {
     for (let tries = 0; tries < 25; tries++) {
       const x = rand(r, 250, this.width - 250);
       const floor = this.floorAt(x);
+      if (Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 20) continue;
+      if (this.items.some((o) => o !== it && o.alive && Math.abs(o.x - x) < ITEM_SPACING)) continue;
       const kind = this.pickKind(floor / PX_PER_M);
       if (!kind) continue;
       it.kind = kind;
       it.x = x;
-      it.y = kind === 'bottle' && r() < 0.5 ? rand(r, 120, floor - 80) : floor - ITEMS[kind].size * 0.45;
+      it.y = kind === 'bottle' && r() < 0.25 ? rand(r, 120, floor - 80) : floor - ITEMS[kind].size * 0.45;
       it.alive = true;
       return;
     }
@@ -191,12 +358,12 @@ export class World {
     it.alive = true;
   }
 
-  private pickKind(depth: number): ItemKind | null {
+  private pickKind(depth: number, treasureOnly = false): ItemKind | null {
     const pool: [ItemKind, number][] = [];
     let total = 0;
     for (const k of ITEM_KINDS) {
       const d = ITEMS[k];
-      if (d.weight > 0 && depth >= d.minDepth && depth <= d.maxDepth) {
+      if (d.weight > 0 && (!treasureOnly || d.treasure) && depth >= d.minDepth && depth <= d.maxDepth) {
         pool.push([k, d.weight]);
         total += d.weight;
       }
@@ -218,7 +385,7 @@ export class World {
       const minY = spec.minDepth * PX_PER_M;
       const maxY = Math.min(spec.maxDepth * PX_PER_M, this.floorAt(x) - 60);
       if (maxY < minY + 10) continue;
-      const y = rand(r, minY, maxY);
+      const y = spec.kind === 'stingray' ? this.floorAt(x) - 50 : rand(r, minY, maxY);
       const n = spec.kind === 'fish' ? 4 + Math.floor(r() * 4) : 1;
       const tint = r();
       const facing = r() < 0.5 ? 1 : -1;
@@ -230,6 +397,7 @@ export class World {
           vx: 0,
           vy: 0,
           facing,
+          heading: facing,
           angle: -Math.PI / 2,
           homeY: y,
           minY,
