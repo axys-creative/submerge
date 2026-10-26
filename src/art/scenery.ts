@@ -1,5 +1,8 @@
 import { mulberry32, rrect } from '../util';
 import { drawTankShape } from './sub';
+import { drawBones, type BoneKind } from './bones';
+
+export type DecoKind = 'kelp' | 'coral' | 'rock' | BoneKind;
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a: number) {
   ctx.save();
@@ -655,11 +658,15 @@ function rockPath(ctx: CanvasRenderingContext2D, R: number, tint: number) {
 
 const CORAL = ['#FF8FA3', '#FFB070', '#B48CFF', '#FF6F91'];
 
-export function drawDeco(ctx: CanvasRenderingContext2D, kind: 'kelp' | 'coral' | 'rock', size: number, tint: number, t: number, push = 0) {
+export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: number, tint: number, t: number, push = 0, pale = false) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  if (kind !== 'kelp' && kind !== 'coral' && kind !== 'rock') {
+    drawBones(ctx, kind, size, tint, push);
+    return;
+  }
   if (kind === 'rock') {
-    const color = tint > 0.5 ? '#5B6B8A' : '#4E5C7D';
+    const color = pale ? (tint > 0.5 ? '#BDB6AC' : '#ADA69C') : tint > 0.5 ? '#5B6B8A' : '#4E5C7D';
     const R = 26 * size;
     ctx.save();
     ctx.translate(0, 4 * size);

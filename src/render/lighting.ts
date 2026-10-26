@@ -37,7 +37,7 @@ export class Lighting {
     this.canvas.height = Math.ceil(h * LIGHT_RES);
   }
 
-  render(main: CanvasRenderingContext2D, tf: WorldTransform, startPx: number, fullPx: number, lights: Light[], night = 0) {
+  render(main: CanvasRenderingContext2D, tf: WorldTransform, startPx: number, fullPx: number, lights: Light[], night = 0, rgb = '3,7,24') {
     const c = this.ctx;
     c.globalCompositeOperation = 'source-over';
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -47,9 +47,9 @@ export class Lighting {
     const top = -16;
     const span = fullPx - top;
     const g = c.createLinearGradient(0, top, 0, fullPx);
-    g.addColorStop(0, 'rgba(3,7,24,0)');
-    g.addColorStop(clamp01((lerp(startPx, 30, night) - top) / span), `rgba(3,7,24,${0.55 * night})`);
-    g.addColorStop(1, 'rgba(3,7,24,1)');
+    g.addColorStop(0, `rgba(${rgb},0)`);
+    g.addColorStop(clamp01((lerp(startPx, 30, night) - top) / span), `rgba(${rgb},${0.55 * night})`);
+    g.addColorStop(1, `rgba(${rgb},1)`);
     c.fillStyle = g;
     const y0 = Math.max(tf.top - 50, top);
     c.fillRect(tf.left - 50, y0, tf.w + 100, tf.top + tf.h + 50 - y0);

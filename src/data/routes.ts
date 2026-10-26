@@ -17,6 +17,7 @@ export const ROUTES: [Endpoint, Endpoint][] = [
   [{ zone: 1, side: 'east' }, { zone: 2, side: 'west' }],
   [{ zone: 2, side: 'east' }, { zone: 3, side: 'west' }],
   [{ zone: 3, side: 'east' }, { zone: 4, side: 'west' }],
+  [{ zone: 4, side: 'east' }, { zone: 5, side: 'west' }],
 ];
 
 const same = (a: Endpoint, b: Endpoint) => a.zone === b.zone && a.side === b.side;

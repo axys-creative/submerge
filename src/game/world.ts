@@ -2,6 +2,7 @@ import { ZONES, type ZoneDef, type CreatureSpawn } from '../data/zones';
 import { ITEMS, ITEM_KINDS, type ItemKind } from '../data/items';
 import { CREATURES, type CreatureKind } from '../data/creatures';
 import { PX_PER_M } from '../config';
+import { BONE_KINDS, BONE_WEIGHTS, type BoneKind } from '../art/bones';
 import { clamp, mulberry32, rand, type Rng } from '../util';
 
 /** The sea floor never rises above this depth in px, so kelp, creatures and the ship stay clear of the surface. */
@@ -104,7 +105,7 @@ export interface Creature {
 }
 
 export interface Deco {
-  kind: 'kelp' | 'coral' | 'rock';
+  kind: 'kelp' | 'coral' | 'rock' | BoneKind;
   x: number;
   y: number;
   size: number;
@@ -326,6 +327,20 @@ export class World {
     add('rock', this.def.rocks, Infinity);
     add('kelp', this.def.kelp, 260);
     add('coral', this.def.coral, 170);
+    for (let i = 0; i < (this.def.bones ?? 0); i++) {
+      const x = rand(r, 100, this.width - 100);
+      let roll = r();
+      let kind: BoneKind = 'bone';
+      for (const k of BONE_KINDS) {
+        roll -= BONE_WEIGHTS[k];
+        if (roll <= 0) {
+          kind = k;
+          break;
+        }
+      }
+      const slope = Math.atan2(this.floorAt(x + 40) - this.floorAt(x - 40), 80);
+      this.deco.push({ kind, x, y: this.floorAt(x), size: rand(r, 0.8, 1.3), phase: r() * 10, tint: r(), push: Math.max(-0.5, Math.min(0.5, slope)), pushV: 0 });
+    }
   }
 
   private blankItem(): ItemInst {

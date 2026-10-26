@@ -91,7 +91,12 @@ export function renderScene(g: Game) {
   const oy = (-top + sy) * k;
   const inView = (x: number, m = 150) => x > left - m && x < right + m;
 
-  const { night, warm, sunAngle } = daylight(g.day);
+  const space = !!def.space;
+  const { night, warm, sunAngle } = space ? { night: 0, warm: 0, sunAngle: 0 } : daylight(g.day);
+  /** Lights on the ship: at night, and always on a moon. */
+  const lampNight = space ? 1 : night;
+  /** The color the water darkens toward in the deep. */
+  const abyss = space ? '#1A0305' : '#0A1A3E';
   const water0 = mixColor(def.water[0], '#0E2A5C', night * 0.65);
   const water1 = mixColor(def.water[1], '#030818', night * 0.55);
 
@@ -115,10 +120,10 @@ export function renderScene(g: Game) {
     const skyW = g.canvas.width / k0;
     const skyH = SKY_HEIGHT * view.zoom;
 
-    if (night > 0) {
+    if (night > 0 || space) {
       ctx.fillStyle = '#FFFFFF';
-      STARS.forEach((st) => {
-        ctx.globalAlpha = night * (0.55 + 0.45 * Math.sin(t * 2 + st.p));
+      (space ? STARS.slice(0, 22) : STARS).forEach((st) => {
+        ctx.globalAlpha = (space ? 1 : night) * (0.55 + 0.45 * Math.sin(t * 2 + st.p));
         ctx.beginPath();
         ctx.arc(st.x * skyW, -st.y * SKY_HEIGHT * 0.95, st.r, 0, Math.PI * 2);
         ctx.fill();
@@ -127,7 +132,7 @@ export function renderScene(g: Game) {
     }
 
     const body = (angle: number) => ({ x: skyW * (0.5 - 0.42 * Math.cos(angle)), y: 10 - 0.75 * skyH * Math.sin(angle) });
-    if (Math.sin(sunAngle) > -0.25) {
+    if (!space && Math.sin(sunAngle) > -0.25) {
       const p = body(sunAngle);
       ctx.fillStyle = 'rgba(255,240,170,0.35)';
       ctx.beginPath();
@@ -138,7 +143,7 @@ export function renderScene(g: Game) {
       ctx.arc(p.x, p.y, 44, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (night > 0 && Math.sin(sunAngle + Math.PI) > -0.25) {
+    if (!space && night > 0 && Math.sin(sunAngle + Math.PI) > -0.25) {
       const p = body(sunAngle + Math.PI);
       ctx.globalAlpha = night;
       ctx.fillStyle = '#F4F1DC';
@@ -153,7 +158,7 @@ export function renderScene(g: Game) {
 
     const cloudColor = mixColor('#FFFFFF', '#46567F', night * 0.85);
     const span = skyW + 900;
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < (space ? 0 : 9); i++) {
       const shape = cloudShape(i);
       const x = -450 + ((((i * 610 - cam.x * 0.3 + t * (5 + (i % 3) * 2)) % span) + span) % span);
       ctx.save();
@@ -186,7 +191,7 @@ export function renderScene(g: Game) {
   ctx.closePath();
   ctx.fill();
 
-  if (top < 500) {
+  if (top < 500 && !space) {
     ctx.fillStyle = `rgba(255,255,255,${0.05 * (1 - night)})`;
     const step = 260;
     for (let x0 = Math.floor(left / step) * step - step; x0 < right + step; x0 += step) {
@@ -206,8 +211,8 @@ export function renderScene(g: Game) {
     BACK_LAYERS.forEach((layer, i) => {
       const shift = cam.x * (1 - layer.p);
       const fill = ctx.createLinearGradient(0, 0, 0, deepPx);
-      fill.addColorStop(0, mixColor(water0, '#0A1A3E', layer.dark));
-      fill.addColorStop(1, mixColor(water1, '#0A1A3E', layer.dark));
+      fill.addColorStop(0, mixColor(water0, abyss, layer.dark));
+      fill.addColorStop(1, mixColor(water1, abyss, layer.dark));
       ctx.fillStyle = fill;
       ctx.globalAlpha = layer.alpha;
       ctx.beginPath();
@@ -236,8 +241,8 @@ export function renderScene(g: Game) {
     const y0 = Math.max(6, Math.floor((top - 60) / 60) * 60);
     const y1 = Math.min(peakDepth, Math.ceil((bottom + 60) / 60) * 60);
     const fade = ctx.createLinearGradient(0, 0, 0, deepPx);
-    fade.addColorStop(0, mixColor(water0, '#0A1A3E', 0.3));
-    fade.addColorStop(1, mixColor(water1, '#0A1A3E', 0.3));
+    fade.addColorStop(0, mixColor(water0, abyss, 0.3));
+    fade.addColorStop(1, mixColor(water1, abyss, 0.3));
     for (const isl of mountains) {
       if (y1 <= y0) continue;
       const half = (y: number) => 250 + y * 0.25 + Math.sin(y * 0.01 + isl.x) * 18 * Math.min(1, y / 200);
@@ -274,7 +279,7 @@ export function renderScene(g: Game) {
       if (d.kind !== 'rock' || !inView(d.x)) continue;
       ctx.save();
       ctx.translate(d.x, d.y + 2);
-      drawDeco(ctx, d.kind, d.size, d.tint, t);
+      drawDeco(ctx, d.kind, d.size, d.tint, t, 0, space);
       ctx.restore();
     }
 
@@ -319,7 +324,7 @@ export function renderScene(g: Game) {
       if (d.kind === 'rock' || !inView(d.x)) continue;
       ctx.save();
       ctx.translate(d.x, d.y + 2);
-      drawDeco(ctx, d.kind, d.size, d.tint, t, d.push);
+      drawDeco(ctx, d.kind, d.size, d.tint, t, d.push, space);
       ctx.restore();
     }
 
@@ -371,7 +376,7 @@ export function renderScene(g: Game) {
   ctx.translate(g.ship.x, bob);
   ctx.scale(g.ship.facing, 1);
   ctx.rotate(Math.sin(t * 0.9) * 0.02);
-  drawShip(ctx, t, g.ship.facing, night, Math.min(g.up.plating, g.up.oxygen), g.up.oxygen, g.treasureAlert);
+  drawShip(ctx, t, g.ship.facing, lampNight, Math.min(g.up.plating, g.up.oxygen), g.up.oxygen, g.treasureAlert);
   ctx.restore();
 
   for (const w of g.weightFx) {
@@ -534,7 +539,7 @@ export function renderScene(g: Game) {
       });
     }
   }
-  const shipBeams = night > 0.05
+  const shipBeams = lampNight > 0.05
     ? SHIP_LAMPS.map((l) => ({
         x: g.ship.x + l.x * g.ship.facing,
         y: g.shipBob + l.y,
@@ -542,7 +547,7 @@ export function renderScene(g: Game) {
       }))
     : [];
   for (const b of shipBeams) {
-    lights.push({ x: b.x, y: b.y, r: SHIP_BEAM_RANGE, angle: b.angle, spread: SHIP_BEAM_SPREAD, a: night });
+    lights.push({ x: b.x, y: b.y, r: SHIP_BEAM_RANGE, angle: b.angle, spread: SHIP_BEAM_SPREAD, a: lampNight });
   }
   const lures: { x: number; y: number; glow: number }[] = [];
   for (const c of world.creatures) {
@@ -557,7 +562,7 @@ export function renderScene(g: Game) {
     }
   }
   if (bottom > lerp(startPx, 0, night)) {
-    g.lighting.render(ctx, { k, ox, oy, left, top, w: W, h: H }, startPx, deepPx, lights, night);
+    g.lighting.render(ctx, { k, ox, oy, left, top, w: W, h: H }, startPx, deepPx, lights, night, space ? '22,2,5' : '3,7,24');
     if (lamp && spot) {
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -588,7 +593,7 @@ export function renderScene(g: Game) {
     ctx.globalCompositeOperation = 'lighter';
     for (const b of shipBeams) {
       const tint = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, SHIP_BEAM_RANGE);
-      tint.addColorStop(0, `rgba(255,246,216,${0.02 * night})`);
+      tint.addColorStop(0, `rgba(255,246,216,${0.02 * lampNight})`);
       tint.addColorStop(1, 'rgba(255,246,216,0)');
       ctx.fillStyle = tint;
       for (let i = 0; i < 10; i++) {

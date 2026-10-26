@@ -451,13 +451,13 @@ export class Game {
     }
     const listenX = this.mode === "diving" ? this.sub.x : this.ship.x;
     const islandDist = Math.min(Infinity, ...this.world.def.islands.map((isl) => Math.abs(isl.x - listenX)));
-    const daytime = daylight(this.day).night < 0.5;
+    const daytime = !this.world.def.space && daylight(this.day).night < 0.5;
     this.audio.gulls(dt, daytime ? clamp(1 - islandDist / GULL_EARSHOT, 0, 1) : 0);
     this.audio.musicTick(dt, this.depthM);
     this.audio.gullMuffleTick(dt, this.depthM);
     const [dim, full] = this.world.def.darkness;
     const deep = this.mode === "diving" && this.depthM > dim + (full - dim) * 0.25;
-    const wantDark = daylight(this.day).night > 0.5 || deep;
+    const wantDark = this.world.def.space || daylight(this.day).night > 0.5 || deep;
     this.uiDark += ((wantDark ? 1 : 0) - this.uiDark) * damp(2.5, dt);
     this.audio.setPropeller(this.driving);
     this.audio.tick(dt, this.warning && !this.paused);
