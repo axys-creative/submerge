@@ -1,4 +1,4 @@
-export type Action = 'left' | 'right' | 'up' | 'down' | 'dive' | 'action' | 'crankJ' | 'crankK' | 'menu' | 'drop';
+export type Action = 'left' | 'right' | 'up' | 'down' | 'dive' | 'action' | 'crankJ' | 'crankK' | 'menu' | 'drop' | 'hold';
 
 const KEYMAP: Record<string, Action> = {
   ArrowLeft: 'left',
@@ -16,6 +16,7 @@ const KEYMAP: Record<string, Action> = {
   KeyK: 'crankK',
   KeyQ: 'drop',
   Slash: 'drop',
+  Period: 'hold',
   Escape: 'menu',
   KeyP: 'menu',
 };
@@ -40,6 +41,7 @@ export class Input {
       if (t instanceof HTMLButtonElement && (e.code === 'Enter' || e.code === 'Space')) return;
       e.preventDefault();
       if (crank && !e.repeat) this.tap(crank);
+      if (e.code === 'KeyE' && !e.repeat) this.tap('hold');
       if (!a) return;
       if (!e.repeat) this.tap(a);
       this.held.add(a);

@@ -7,6 +7,7 @@ const FILES = {
   depths: ["sound-ocean-depths-background.mp3"],
   propeller: ["sound-propeller.m4a"],
   sailing: ["sound-ship-sailing.m4a"],
+  tether: ["sound-ship-tether.m4a"],
   implosion: ["sound-implosion.m4a"],
   horn: ["sound-warning-horn.m4a"],
   clank1: ["sound-clank-1.m4a"],
@@ -35,7 +36,7 @@ const FILES = {
 type Sound = keyof typeof FILES;
 type Scene = "surface" | "dive";
 
-const KEY = "submerge.audio.v1";
+const KEY = "submerge.audio.v2";
 
 const VOLUME: Record<Sound, number> = {
   splash: 1,
@@ -44,6 +45,7 @@ const VOLUME: Record<Sound, number> = {
   depths: 0.7,
   propeller: 0.6,
   sailing: 0.25,
+  tether: 0.5,
   implosion: 1,
   horn: 0.8,
   clank1: 0.8,
@@ -71,7 +73,15 @@ const VOLUME: Record<Sound, number> = {
 
 /** Which looping beds play in each scene. */
 const BEDS: Record<Scene, Sound[]> = { surface: ["surface"], dive: ["depths"] };
-const LOOPS: Sound[] = ["surface", "depths", "propeller", "sailing", "heartbeat", "crimson", "crimsonDeep"];
+const LOOPS: Sound[] = [
+  "surface",
+  "depths",
+  "propeller",
+  "sailing",
+  "heartbeat",
+  "crimson",
+  "crimsonDeep",
+];
 
 const HORN_GAP = 0.5;
 
@@ -107,6 +117,7 @@ export class AudioManager {
   private musicTrack = 0;
   private scene: Scene = "surface";
   private propeller = false;
+  private propellerLevel = 1;
   private hornTimer = 0;
   private depthTimer = 0;
   private gullTimer = 3;
@@ -119,8 +130,8 @@ export class AudioManager {
   private hitIndex = 0;
   private whaleFarTimer = 4;
   private whaleNearTimer = 0;
-  volume = 1;
-  musicVolume = 1;
+  volume = 0.5;
+  musicVolume = 0.5;
   muted = false;
 
   constructor() {
@@ -159,17 +170,23 @@ export class AudioManager {
     }
   }
 
-  setPropeller(on: boolean) {
-    if (on === this.propeller) return;
+  setPropeller(on: boolean, level = 1) {
+    if (on === this.propeller && level === this.propellerLevel) return;
     this.propeller = on;
+    this.propellerLevel = level;
     this.applyBeds();
   }
 
   /** The Crimson Sea's low vibration, which fades in once the sub is under the surface there and changes tone in the great cavern. */
   setCrimson(on: boolean, cavern: boolean) {
     if (!this.ctx) return;
-    for (const [name, here] of [["crimson", !cavern], ["crimsonDeep", cavern]] as const) {
-      this.beds.get(name)?.gain.setTargetAtTime(on && here ? VOLUME[name] : 0, this.ctx.currentTime, 1.5);
+    for (const [name, here] of [
+      ["crimson", !cavern],
+      ["crimsonDeep", cavern],
+    ] as const) {
+      this.beds
+        .get(name)
+        ?.gain.setTargetAtTime(on && here ? VOLUME[name] : 0, this.ctx.currentTime, 1.5);
     }
   }
 
@@ -423,16 +440,24 @@ export class AudioManager {
     if (track === this.musicTrack) return;
     this.musicTrack = track;
     if (!this.ctx) return;
-    this.musicTracks.forEach((gain, i) => gain.gain.setTargetAtTime(i === track ? 1 : 0, this.ctx!.currentTime, 1.2));
+    this.musicTracks.forEach((gain, i) =>
+      gain.gain.setTargetAtTime(i === track ? 1 : 0, this.ctx!.currentTime, 1.2),
+    );
   }
 
   private applyBeds() {
     if (!this.ctx) return;
     for (const [name, gain] of this.beds) {
-      if (name === "sailing" || name === "heartbeat" || name === "crimson" || name === "crimsonDeep") continue;
+      if (
+        name === "sailing" ||
+        name === "heartbeat" ||
+        name === "crimson" ||
+        name === "crimsonDeep"
+      )
+        continue;
       const on = name === "propeller" ? this.propeller : BEDS[this.scene].includes(name);
       gain.gain.setTargetAtTime(
-        on ? VOLUME[name] : 0,
+        on ? VOLUME[name] * (name === "propeller" ? this.propellerLevel : 1) : 0,
         this.ctx.currentTime,
         name === "propeller" ? 0.15 : 0.6,
       );

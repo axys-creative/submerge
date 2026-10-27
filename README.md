@@ -1,8 +1,8 @@
 # Submerge
 
-A submarine treasure-diving game for the browser, inspired by the old Flash game *Treasure Seas Inc.*
+A submarine treasure-diving game for the browser, inspired by the old Flash game _Treasure Seas Inc._
 
-Sail your ship across the surface, drop your sub, and dive for seaweed, junk and treasure. Dodge sharks, giant squid and anglerfish, sell your haul at island shops, and upgrade your sub to go deeper. Every upgrade changes how the sub looks.
+Sail your ship across the surface, drop your sub, and dive for seaweed, junk and treasure. Dodge sharks, squid and anglerfish, sell your haul at island shops, and upgrade your sub to go deeper. Every upgrade changes how the sub looks.
 
 ## Run it
 
@@ -17,13 +17,13 @@ Then open http://localhost:5173.
 
 ## Controls
 
-| | Keyboard | Phone |
-| --- | --- | --- |
-| Sail the ship / steer the sub | Arrow keys or WASD | Drag on the left side |
-| Dive | Space or ↓ | Dive button |
-| Shop or sail to the next zone | E or Enter | Shop / Sail button |
-| Hand-crank with a dead battery | J and K, back and forth | J and K buttons |
-| Menu, save codes | Esc or P | ☰ button |
+|                                | Keyboard                | Phone                 |
+| ------------------------------ | ----------------------- | --------------------- |
+| Sail the ship / steer the sub  | Arrow keys or WASD      | Drag on the left side |
+| Dive                           | Space or ↓              | Dive button           |
+| Shop or sail to the next zone  | E or Enter              | Shop / Sail button    |
+| Hand-crank with a dead battery | J and K, back and forth | J and K buttons       |
+| Menu, save codes               | Esc or P                | ☰ button             |
 
 ## How it plays
 

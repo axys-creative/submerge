@@ -1,8 +1,9 @@
+import lockIcon from '../assets/icons/icon-lock.svg?raw';
 import type { Game } from '../game/game';
 import type { Action } from '../game/input';
 import { exportCode, importCode, type SwitchMode } from '../game/save';
 import { CELL } from '../game/explored';
-import { BREATH_TIME, GLITCH_TIME, CRUSH_DEPTH_SHOWN, DEPTH_WARN_RANGE, MAP_SURFACE_FADE, PX_PER_M } from '../config';
+import { DEPTH_HOLD_DRAIN, BREATH_TIME, GLITCH_TIME, CRUSH_DEPTH_SHOWN, DEPTH_WARN_RANGE, MAP_SURFACE_FADE, PX_PER_M } from '../config';
 import { GEAR, STATS, UPGRADES, UPGRADE_FIRST_ZONE, UPGRADE_ORDER, WEIGHTS, type GearId, type Loadout, type UpgradeId } from '../data/upgrades';
 import { ZONES } from '../data/zones';
 import { DEPTH_ZONES, METER_WINDOW, zoneIndexAt } from '../data/depthZones';
@@ -36,6 +37,7 @@ export class UI {
   private modalKind: ModalKind | null = null;
   private root: HTMLElement;
   private modal: HTMLElement;
+  private closeTimer: ReturnType<typeof setTimeout> | undefined;
   private cache = new Map<string, string>();
   private toastTimer = 0;
   private shopRaf = 0;
@@ -53,11 +55,11 @@ export class UI {
             <div class="dial-col"><div class="dial batt" id="hud-batt">${RING}${ICON.bolt}</div><span class="pct" id="pct-batt">100%</span><div class="dial-pop" id="pop-batt"></div></div>
           </div>
           <div class="seg" id="lamp-seg" data-switch="lamp" role="group" aria-label="Spotlight" hidden>
-            <span>Light</span>
+            <span>Light</span><i class="seg-thumb"></i>
             <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
           </div>
           <div class="seg" id="sonar-seg" data-switch="sonar" role="group" aria-label="Sonar" hidden>
-            <span>Sonar</span>
+            <span>Sonar</span><i class="seg-thumb"></i>
             <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
           </div>
         </div>
@@ -139,6 +141,8 @@ export class UI {
     };
 
     $(this.root, '#btn-menu').addEventListener('click', () => this.openMenu());
+    addEventListener('keydown', (e) => this.mapKeys(e), true);
+    this.root.querySelectorAll<HTMLElement>('.seg').forEach((seg) => new ResizeObserver(() => this.placeThumb(seg)).observe(seg));
     this.root.querySelectorAll<HTMLElement>('.seg').forEach((seg) =>
       seg.addEventListener('click', (e) => {
         const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-mode]');
@@ -212,6 +216,7 @@ export class UI {
   private staticCanvas: HTMLCanvasElement | null = null;
   private deepestZone = 0;
   private trackHeight = 0;
+  private wasHeld = false;
 
   private updateDepthMeter(depth: number) {
     const g = this.game;
@@ -255,10 +260,17 @@ export class UI {
     const shift = `translateY(${(height / 2 - scaleAt * ppm).toFixed(1)}px)`;
     $(this.root, '#dm-scale').style.transform = shift;
     $(this.root, '#dm-labels').style.transform = shift;
+    if (g.depthHeld !== this.wasHeld) {
+      this.wasHeld = g.depthHeld;
+      const readout = $(this.root, '#dm-depth');
+      readout.classList.remove('pop');
+      void readout.offsetWidth;
+      readout.classList.add('pop');
+    }
     const over = depth > g.depthRating;
     meter.classList.toggle('danger', over);
-    this.set('dm-read', `${Math.round(shown)}|${g.depthRating}|${over}`, () => {
-      $(this.root, '#dm-depth').textContent = `${Math.round(shown)} m`;
+    this.set('dm-read', `${Math.round(shown)}|${g.depthRating}|${over}|${g.depthHeld}`, () => {
+      $(this.root, '#dm-depth').innerHTML = `${Math.round(shown)} m${g.depthHeld ? lockIcon : ''}`;
       const tag = $(this.root, '#dm-limit-tag');
       tag.textContent = over ? 'Too deep!' : `Safe to ${g.depthRating.toLocaleString()} m`;
       tag.classList.toggle('danger', over);
@@ -324,6 +336,7 @@ export class UI {
         const seg = $(this.root, `#${key}-seg`);
         seg.hidden = owned < 1;
         seg.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === g.save[key]));
+        this.placeThumb(seg);
       }
     });
     this.updatePopovers();
@@ -566,18 +579,34 @@ export class UI {
     });
     const cell = UPGRADES.battery.levels[g.up.battery];
     const range = Math.round(s.battery / PX_PER_M);
-    this.set('pop-batt', `${Math.round(range / 10)}|${g.maxBattery}|${save.electrolysis}|${g.up.battery}|${g.up.light}|${g.up.sonar}`, () => {
+    this.set('pop-batt', `${Math.round(range / 10)}|${g.maxBattery}|${save.electrolysis}|${g.up.battery}|${g.up.light}|${g.up.sonar}|${g.depthHeld}|${g.weightsOn}|${g.lampOn}|${g.sonarOnline}`, () => {
       const lines = [
         `<h4>Battery · ${esc(cell.name)}</h4>`,
         row(`About <b>${range.toLocaleString()} m</b> of driving left, out of ${Math.round(g.maxBattery / PX_PER_M).toLocaleString()} m.`),
-        row('The <b>motor</b> drains the battery as the sub moves, and docking with the ship recharges it.'),
+        row('The <b>Motor</b> drains the battery as the sub moves, and docking with the ship recharges it.'),
         row(this.touch ? 'If it runs out, tap the two crank buttons back and forth to turn the rudders by hand.' : 'If it runs out, press <kbd>E</kbd> and <kbd>R</kbd> back and forth to turn the rudders by hand.'),
       ];
-      if (g.up.light > 0) lines.push(row(`The <b>spotlight</b> draws about ${STATS.lampDrain[g.up.light]} a second while it is lit. Turn it off to save charge.`));
-      if (g.up.sonar > 0) lines.push(row(`Each <b>sonar</b> ping costs ${STATS.sonarPingCost[g.up.sonar]}, and it stops pinging when the battery is dead.`));
+      if (g.lampOn) lines.push(row(`The <b>Spotlight</b> draws about ${STATS.lampDrain[g.up.light]} a second while it is lit. Turn it off to save charge.`));
+      if (g.sonarOnline) lines.push(row(`Each <b>Sonar</b> ping costs ${STATS.sonarPingCost[g.up.sonar]}, and it stops pinging when the battery is dead.`));
+      if (g.depthHeld) {
+        const heavy = g.weightsOn ? ` It costs ${WEIGHTS.holdDrain} times as much with the <b>Dive weights</b> still attached; drop them to hold with less.` : '';
+        lines.push(row(`Holding your <b>Depth</b> uses about ${DEPTH_HOLD_DRAIN} a second to stay put.${heavy}`));
+      }
       if (save.electrolysis) lines.push(row(`The <b>${GEAR.electrolysis.name}</b> also draws power, even when you are sitting still.`));
       $(this.root, '#pop-batt').innerHTML = lines.join('');
     });
+  }
+
+  /** Slides a switch's highlight under its selected option. */
+  private placeThumb(seg: HTMLElement) {
+    const btn = seg.querySelector<HTMLButtonElement>('.on');
+    if (!btn || !btn.offsetWidth) return;
+    const thumb = $(seg, '.seg-thumb');
+    const first = !thumb.classList.contains('placed');
+    thumb.style.width = `${btn.offsetWidth}px`;
+    thumb.style.height = `${btn.offsetHeight}px`;
+    thumb.style.transform = `translate(${btn.offsetLeft}px, ${btn.offsetTop}px)`;
+    if (first) requestAnimationFrame(() => thumb.classList.add('placed'));
   }
 
   private meter(id: string, frac: number) {
@@ -690,6 +719,7 @@ export class UI {
   // ---- Modals ------------------------------------------------------------
 
   private open(kind: ModalKind, html: string, cls = '') {
+    clearTimeout(this.closeTimer);
     this.modalKind = kind;
     this.game.paused = true;
     this.modal.className = `overlay ${cls}`;
@@ -700,13 +730,37 @@ export class UI {
     first?.focus();
   }
 
+  /** Keeps keyboard focus inside the route map: Tab or the arrow keys move between its buttons and Enter picks the focused one (Escape closes it elsewhere). */
+  private mapKeys(e: KeyboardEvent) {
+    if (this.modalKind !== 'map') return;
+    const keys = ['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter'];
+    if (!keys.includes(e.key)) return;
+    const buttons = [...this.modal.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+    if (!buttons.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'Enter') return void (buttons[Math.max(0, at)].click());
+    const back = e.key === 'ArrowLeft' || e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey);
+    const next = at < 0 ? 0 : (at + (back ? -1 : 1) + buttons.length) % buttons.length;
+    buttons[next].focus();
+  }
+
   close() {
     cancelAnimationFrame(this.shopRaf);
+    clearTimeout(this.closeTimer);
+    const menu = this.modalKind === 'menu' && !matchMedia('(prefers-reduced-motion: reduce)').matches ? this.modal.querySelector('.card.menu') : null;
     this.modalKind = null;
-    this.modal.hidden = true;
-    this.modal.innerHTML = '';
     this.game.paused = false;
     this.cache.clear();
+    if (!menu) return this.hideModal();
+    menu.classList.add('closing');
+    this.closeTimer = setTimeout(() => this.hideModal(), 200);
+  }
+
+  private hideModal() {
+    this.modal.hidden = true;
+    this.modal.innerHTML = '';
   }
 
   onMenuKey() {
@@ -819,6 +873,10 @@ export class UI {
         <text class="name" x="${z.map.x}" y="${z.map.y + 25}">${esc(z.name)}</text>${ports}
       </g>`;
     }).join('');
+    const here = ZONES[from.zone].map;
+    const bx = Math.min(Math.max(here.x, 33), 327);
+    const by = here.y - 36;
+    const pin = `<g class="pin"><rect x="${bx - 31}" y="${by}" width="62" height="18" rx="6"/><path d="M${here.x - 4},${by + 18} L${here.x},${by + 24} L${here.x + 4},${by + 18}Z"/><text x="${bx}" y="${by + 12.5}">You are here</text></g>`;
     const list = dests
       .map(
         (d, i) =>
@@ -832,7 +890,7 @@ export class UI {
           <div><span class="eyebrow">Route map</span><h2>Where to?</h2></div>
           <button class="btn small ghost" data-act="close">Stay here</button>
         </header>
-        <svg class="route-svg" viewBox="0 0 360 200" role="img" aria-label="Map of zones and the routes between them">${edges}${nodes}</svg>
+        <svg class="route-svg" viewBox="0 0 360 200" role="img" aria-label="Map of zones and the routes between them">${edges}${nodes}${pin}</svg>
         <div class="route-list">${list}</div>
       </div>`,
     );
@@ -862,43 +920,52 @@ export class UI {
           <div><b>${st.deepest} m</b><span>Deepest</span></div>
           <div><b>${money(st.earned)}</b><span>Earned</span></div>
         </div>
-        <section>
-          <h3>How to play</h3>
+        <details class="acc" open>
+          <summary>How to play</summary>
+          <h4 class="howto-title">Ship</h4>
           <ul class="howto">
-            <li>${this.touch ? 'Drag on the left side of the screen' : 'Arrow keys or WASD'} to sail the ship and steer the sub.</li>
+            <li>${this.touch ? 'Drag on the left side of the screen' : '<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>'} to sail the ship.</li>
+            <li>${this.touch ? 'Hold <b>Boost</b>' : 'Hold <kbd>Q</kbd> or <kbd>/</kbd>'} while sailing to boost.</li>
             <li>${this.touch ? 'Tap <b>Dive</b>' : 'Press <kbd>Space</kbd>'} to drop the sub. Drive back up to the ship to dock, recharge and repair.</li>
-            <li>${this.touch ? 'Tap <b>Grab</b>' : 'Press <kbd>Space</kbd>'} underwater to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
-            <li>Surface anywhere to refill your air.</li>
-            <li>When the battery runs out, ${this.touch ? 'tap the <b>E</b> and <b>R</b> buttons' : 'press <kbd>E</kbd> and <kbd>R</kbd>'} back and forth to hand-crank.</li>
             <li>Sail next to an island and ${this.touch ? 'tap <b>Shop</b>' : 'press <kbd>E</kbd>'} to sell your haul and buy upgrades.</li>
             <li>Sail to the buoy at the end of a zone and ${this.touch ? 'tap <b>Map</b>' : 'press <kbd>E</kbd>'} to open the route map. Pick where to sail next; some ends have more than one route.</li>
           </ul>
-        </section>
-        <section>
-          <h3>Sound</h3>
+          <h4 class="howto-title">Submarine</h4>
+          <ul class="howto">
+            <li>${this.touch ? 'Drag on the left side of the screen' : '<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>'} to steer. The spotlight follows where you head.</li>
+            <li>${this.touch ? 'Tap <b>Grab</b>' : 'Press <kbd>Space</kbd>'} to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
+            <li>Below about 40 m the sub starts to sink. ${this.touch ? '' : 'Press <kbd>E</kbd> or <kbd>.</kbd> to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.'}</li>
+            ${g.save.weights ? `<li>${this.touch ? 'Tap <b>Drop</b>' : 'Press <kbd>Q</kbd> or <kbd>/</kbd>'} to drop the dive weights for a quick ride up.</li>` : ''}
+            <li>Surface anywhere to refill your air.</li>
+            <li>When the battery runs out, ${this.touch ? 'tap the <b>E</b> and <b>R</b> buttons' : 'press <kbd>E</kbd> and <kbd>R</kbd>'} back and forth to hand-crank.</li>
+            <li>${this.touch ? 'Tap <b>Menu</b>' : 'Press <kbd>Esc</kbd> or <kbd>P</kbd>'} to pause.</li>
+          </ul>
+        </details>
+        <details class="acc">
+          <summary>Sound</summary>
           <label class="sound-row"><input type="checkbox" id="sound-on" ${g.audio.muted ? '' : 'checked'}> Sound on</label>
           <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}"></label>
           <label class="sound-row">Music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}"></label>
-        </section>
-        <section>
-          <h3>Save code</h3>
+        </details>
+        <details class="acc">
+          <summary>Save code</summary>
           <p class="muted">Your game saves in this browser automatically. Copy this code to back it up or move it to another device.</p>
           <textarea id="save-out" readonly rows="3">${exportCode(g.save)}</textarea>
           <div class="row"><button class="btn small blue" data-act="copy">Copy code</button><span class="muted" id="copy-msg"></span></div>
-        </section>
-        <section>
-          <h3>Load a save code</h3>
+        </details>
+        <details class="acc">
+          <summary>Load a save code</summary>
           <textarea id="save-in" rows="3" placeholder="Paste a code that starts with SUBMERGE1-"></textarea>
           <div class="row"><button class="btn small blue" data-act="load">Load game</button><span class="error" id="load-msg"></span></div>
-        </section>
-        <section>
-          <h3>Start over</h3>
+        </details>
+        <details class="acc">
+          <summary>Start over</summary>
           <div class="row"><button class="btn small ghost" data-act="new">New game</button></div>
           <div class="confirm" hidden>
             <p>This erases your saved sub, money and upgrades in this browser.</p>
             <div class="row"><button class="btn small danger" data-act="erase">Erase and start over</button><button class="btn small ghost" data-act="cancel">Cancel</button></div>
           </div>
-        </section>
+        </details>
       </div>`,
     );
     this.modal.oninput = (e) => {
@@ -990,7 +1057,7 @@ export class UI {
       }
       if (act === 'buy') {
         const id = btn.dataset.id as UpgradeId;
-        if (this.game.buy(id)) {
+        if (this.game.buy(id, this.shopIsland)) {
           const lvl = UPGRADES[id].levels[this.game.up[id]];
           this.toast(`Installed ${lvl.name}`);
           this.shopPreview = null;
@@ -1039,7 +1106,10 @@ export class UI {
       const now = def.levels[lvl];
       const next = def.levels[lvl + 1];
       const pips = def.levels.map((_, i) => `<i class="${i <= lvl ? 'on' : ''}"></i>`).join('');
-      const action = next
+      const elsewhere = next?.soldAt && !next.soldAt.includes(this.shopIsland) ? next.soldAt : null;
+      const action = elsewhere
+        ? `<span class="maxed-tag">Sold at ${esc(elsewhere.join(' or '))}</span>`
+        : next
         ? `<button class="btn small" data-act="buy" data-id="${id}" ${g.save.money < next.cost ? 'disabled' : ''}>Buy ${money(next.cost)}</button>`
         : `<span class="maxed-tag">Maxed out</span>`;
       return `<div class="upg ${next ? '' : 'maxed'}" data-id="${id}" tabindex="-1">

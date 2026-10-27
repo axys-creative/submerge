@@ -1,10 +1,10 @@
 import type { Game } from '../game/game';
-import { COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE } from '../config';
+import { ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE } from '../config';
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
 import { buoyLabel, routesFrom } from '../data/routes';
 import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, runningLights, LAMP, ANCHOR, COCKPIT, REAR_LAMP } from '../art/sub';
-import { drawShip, drawIsland, drawCloud, cloudShape, drawBuoy, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
+import { drawShip, drawIsland, DOCK_POLES, drawCloud, cloudShape, drawBuoy, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
 import { BACKGROUND_KINDS, CREATURE_EXTENT } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
@@ -17,10 +17,11 @@ const DIM_W = 640;
 const DIM_H = 560;
 const DIM_OX = 320;
 const DIM_OY = 440;
+const DIM_SCALE = 0.75;
 const dimCanvas = document.createElement('canvas');
 
-/** Draws something at the current origin; when `dim` is set it is shaded darker, so it reads as sitting back in a tunnel mouth instead of blocking it. */
-function drawDimmed(ctx: CanvasRenderingContext2D, dim: boolean, draw: (c: CanvasRenderingContext2D) => void) {
+/** Draws something at the current origin; when `dim` is set it is shaded darker and shrunk toward its base at `baseY`, so it reads as sitting back in a tunnel mouth instead of blocking it. */
+function drawDimmed(ctx: CanvasRenderingContext2D, dim: boolean, draw: (c: CanvasRenderingContext2D) => void, baseY = 0) {
   if (!dim) {
     draw(ctx);
     return;
@@ -38,6 +39,9 @@ function drawDimmed(ctx: CanvasRenderingContext2D, dim: boolean, draw: (c: Canva
   c.globalCompositeOperation = 'source-over';
   c.clearRect(0, 0, w, h);
   c.setTransform(sc, 0, 0, sc, DIM_OX * sc, DIM_OY * sc);
+  c.translate(0, baseY);
+  c.scale(DIM_SCALE, DIM_SCALE);
+  c.translate(0, -baseY);
   draw(c);
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalCompositeOperation = 'source-atop';
@@ -51,22 +55,8 @@ const DEG = Math.PI / 180;
 /** Lowest-aimed beam angles at rest, below the sub's heading; each beam in turn sweeps down to straight below the sub. */
 const FRONT_BEAM_DOWN = 15 * DEG;
 const REAR_BEAM_DOWN = 20 * DEG;
-const UNDER = 90 * DEG;
-/** Seconds for one beam to swing down, to stay under the sub, and to swing back; the front goes first, then the rear. */
-const SWEEP_DOWN = 10;
-const SWEEP_HOLD = 1;
-const SWEEP_UP = 10;
-const SWEEP_TURN = SWEEP_DOWN + SWEEP_HOLD + SWEEP_UP;
-
-const ease = (u: number) => u * u * (3 - 2 * u);
-
-/** 0 (at rest) to 1 (straight under the sub) for one beam, `c` seconds into its turn. */
-const beamSweep = (c: number) => {
-  if (c < 0 || c >= SWEEP_TURN) return 0;
-  if (c < SWEEP_DOWN) return ease(c / SWEEP_DOWN);
-  if (c < SWEEP_DOWN + SWEEP_HOLD) return 1;
-  return 1 - ease((c - SWEEP_DOWN - SWEEP_HOLD) / SWEEP_UP);
-};
+/** Seconds for the beam to sway once each way and back. */
+const SWAY_PERIOD = 8;
 
 const MOON_CRATERS = [
   { dx: -11, dy: -9, r: 7.5 },
@@ -218,10 +208,10 @@ export function renderScene(g: Game) {
   }
 
   for (const isl of def.islands) {
-    if (!inView(isl.x, 300)) continue;
+    if (!inView(isl.x, 300 * ISLAND_WIDTH)) continue;
     ctx.save();
     ctx.translate(isl.x, 0);
-    drawIsland(ctx, t, isl.name);
+    drawIsland(ctx, t, isl.name, lampNight);
     ctx.restore();
   }
 
@@ -284,7 +274,7 @@ export function renderScene(g: Game) {
 
   // Each island is the peak of a faint mountain that keeps going down behind everything.
   const peakDepth = world.floorMax + 200;
-  const mountains = def.islands.filter((isl) => inView(isl.x, 1400));
+  const mountains = def.islands.filter((isl) => inView(isl.x, (250 + peakDepth * 0.25 + 40) * ISLAND_WIDTH));
   if (mountains.length) {
     ctx.save();
     ctx.beginPath();
@@ -300,7 +290,7 @@ export function renderScene(g: Game) {
     fade.addColorStop(1, mixColor(water1, abyss, 0.3));
     for (const isl of mountains) {
       if (y1 <= y0) continue;
-      const half = (y: number) => 250 + y * 0.25 + Math.sin(y * 0.01 + isl.x) * 18 * Math.min(1, y / 200);
+      const half = (y: number) => (250 + y * 0.25 + Math.sin(y * 0.01 + isl.x) * 18 * Math.min(1, y / 200)) * ISLAND_WIDTH;
       const rows: number[] = [y0];
       for (let y = Math.floor(y0 / 60) * 60 + 60; y <= y1; y += 60) if (y > y0) rows.push(y);
       ctx.beginPath();
@@ -314,6 +304,21 @@ export function renderScene(g: Game) {
       for (const dir of [-1, 1]) {
         ctx.beginPath();
         for (const y of rows) ctx.lineTo(isl.x + dir * half(y), y);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = mixColor('#6B4A2B', water0, 0.45);
+      ctx.lineWidth = 9;
+      ctx.lineCap = 'round';
+      for (const off of DOCK_POLES) {
+        let px = isl.x + off;
+        let py = 0;
+        while (px > isl.x + half(py) - 12 && py < 500) {
+          px -= 3;
+          py += 3.6;
+        }
+        ctx.beginPath();
+        ctx.moveTo(isl.x + off, -4);
+        ctx.lineTo(px, py);
         ctx.stroke();
       }
     }
@@ -404,7 +409,7 @@ export function renderScene(g: Game) {
           const a = Math.max(0, Math.sin(t * 2.2 + it.phase * 3));
           if (a > 0.6) drawSparkle(c, 10, -12, 6 * a, a);
         }
-      });
+      }, ITEMS[it.kind].size * 0.45);
       ctx.restore();
     }
   }
@@ -431,8 +436,9 @@ export function renderScene(g: Game) {
   const s = g.sub;
   const subY = s.y + g.surfaceBob;
   {
-    const tipX = g.ship.x + CRANE_TIP.x * g.ship.facing;
-    const tipY = CRANE_TIP.y + bob;
+    const lean = Math.sin(t * 0.9) * 0.02 + g.shipPitch;
+    const tipX = g.ship.x + g.ship.facing * (CRANE_TIP.x * Math.cos(lean) - CRANE_TIP.y * Math.sin(lean));
+    const tipY = bob + CRANE_TIP.x * Math.sin(lean) + CRANE_TIP.y * Math.cos(lean);
     const docked = g.mode === 'docked';
     const cos = Math.cos(s.tilt);
     const sin = Math.sin(s.tilt);
@@ -662,9 +668,10 @@ export function renderScene(g: Game) {
   const lit = !!spot && power > 0.02 && g.lampLevel > 0.02;
   const reach = 0.35 + 0.65 * power;
   const fade = Math.min(1, power * 2.5) * g.lampLevel * alive;
-  const turn = g.lampClock % (SWEEP_TURN * 2);
-  const frontDown = FRONT_BEAM_DOWN + (UNDER - FRONT_BEAM_DOWN) * beamSweep(turn);
-  const rearDown = REAR_BEAM_DOWN + (UNDER - REAR_BEAM_DOWN) * beamSweep(turn - SWEEP_TURN);
+  const sway = Math.sin((g.lampClock / SWAY_PERIOD) * Math.PI * 2);
+  const aimed = (g.lampPitch + g.lampSway * sway) * DEG;
+  const frontDown = aimed + (Math.PI / 2 - s.tilt - aimed) * g.lampDown;
+  const rearDown = REAR_BEAM_DOWN + g.lampSway * DEG * sway;
   const cockpitPower = Math.max(
     COCKPIT_MIN,
     Math.min(1, (s.battery / g.maxBattery / 0.5) * 2.5),
@@ -704,12 +711,21 @@ export function renderScene(g: Game) {
       });
     }
   }
+  const shipLean = Math.sin(t * 0.9) * 0.02 + g.shipPitch;
+  const lc = Math.cos(shipLean);
+  const ls = Math.sin(shipLean);
   const shipBeams = lampNight > 0.05
-    ? SHIP_LAMPS.map((l) => ({
-        x: g.ship.x + l.x * g.ship.facing,
-        y: g.shipBob + l.y,
-        angle: Math.PI / 2 - l.dir * g.ship.facing * l.a,
-      }))
+    ? SHIP_LAMPS.map((l) => {
+        const lx = l.x + l.dir * 2;
+        const ly = l.y - 1;
+        const vx = Math.sin(l.dir * l.a);
+        const vy = Math.cos(l.dir * l.a);
+        return {
+          x: g.ship.x + g.ship.facing * (lx * lc - ly * ls),
+          y: g.shipBob + lx * ls + ly * lc,
+          angle: Math.atan2(vx * ls + vy * lc, g.ship.facing * (vx * lc - vy * ls)),
+        };
+      })
     : [];
   for (const b of shipBeams) {
     lights.push({ x: b.x, y: b.y, r: SHIP_BEAM_RANGE, angle: b.angle, spread: SHIP_BEAM_SPREAD, a: lampNight });
@@ -838,6 +854,18 @@ export function renderScene(g: Game) {
         drawDeco(f, 'lungsub', 1, 0.5, 0);
       });
       g.sonarShape.draw(ctx, k, b.x * k + ox, (b.y - 60) * k + oy, b.sprite, a * open);
+      continue;
+    }
+    if (b.bone) {
+      const { kind, size, tint, push } = b.bone;
+      const lift = 40 * size;
+      const open = 1 - lightCover(lights, b.x, b.y - lift);
+      if (open <= 0.02) continue;
+      b.sprite ??= g.sonarShape.outline(`bone|${kind}|${size.toFixed(1)}|${tint.toFixed(1)}|${push.toFixed(1)}|${k.toFixed(2)}`, 260 * size, k, '210,225,255', (f) => {
+        f.translate(0, lift);
+        drawDeco(f, kind, size, tint, 0, push);
+      });
+      g.sonarShape.draw(ctx, k, b.x * k + ox, (b.y - lift) * k + oy, b.sprite, a * open);
       continue;
     }
     if (b.shape) {

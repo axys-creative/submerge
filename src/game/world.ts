@@ -570,6 +570,7 @@ export class World {
       const x = rand(r, 250, this.width - 250);
       const floor = this.floorAt(x);
       if (Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 20) continue;
+      if (this.atMouth(x, floor)) continue;
       if (this.items.some((o) => o !== it && o.alive && Math.abs(o.x - x) < ITEM_SPACING)) continue;
       const kind = this.pickKind(floor / PX_PER_M);
       if (!kind) continue;

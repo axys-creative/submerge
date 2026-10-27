@@ -102,7 +102,7 @@ export const ZONES: ZoneDef[] = [
     ],
     islands: [
       { x: 650, name: 'Coral Cove', sells: ['plating', 'oxygen'] },
-      { x: 6100, name: 'Gull Rock', sells: ['battery', 'propeller'] },
+      { x: 6100, name: 'Gull Rock', sells: ['battery'] },
     ],
     wrecks: [{ x: 4400, kind: 'sloop' }],
     caves: [{
@@ -171,7 +171,7 @@ export const ZONES: ZoneDef[] = [
   {
     name: 'Coral Gardens',
     diveZoom: 0.85,
-    map: { x: 92, y: 70 },
+    map: { x: 92, y: 110 },
     width: 9500,
     floor: [40, 60, 90, 130, 110, 95, 140, 180, 160, 120, 150, 190, 170, 110, 70, 45],
     sky: ['#7FD6E8', '#F0FBFF'],
@@ -235,7 +235,7 @@ export const ZONES: ZoneDef[] = [
   {
     name: 'Kelp Canyons',
     diveZoom: 0.7,
-    map: { x: 154, y: 120 },
+    map: { x: 175, y: 55 },
     width: 10000,
     floor: [50, 90, 160, 230, 190, 250, 320, 370, 300, 230, 280, 350, 410, 320, 190, 90],
     sky: ['#79C6E6', '#E2F7EF'],
@@ -266,7 +266,7 @@ export const ZONES: ZoneDef[] = [
   {
     name: 'Midnight Trench',
     diveZoom: 0.6,
-    map: { x: 216, y: 70 },
+    map: { x: 175, y: 150 },
     width: 11000,
     floor: [70, 160, 300, 450, 580, 680, 640, 540, 660, 780, 740, 600, 420, 240, 110],
     sky: ['#F49B7A', '#FFE2B8'],
@@ -296,7 +296,7 @@ export const ZONES: ZoneDef[] = [
     name: 'Moana Deep',
     sellsWeights: true,
     diveZoom: 0.5,
-    map: { x: 278, y: 110 },
+    map: { x: 255, y: 110 },
     width: 10500,
     floor: MOANA_FLOOR,
     sky: ['#9FB8E6', '#E6EEFF'],
@@ -325,7 +325,7 @@ export const ZONES: ZoneDef[] = [
     name: 'Crimson Sea',
     space: true,
     diveZoom: 0.75,
-    map: { x: 336, y: 75 },
+    map: { x: 330, y: 110 },
     width: 9000,
     floor: [120, 140, 180, 210, 250, 230, 200, 240, 270, 250, 220, 190, 170, 150, 130, 110],
     sky: ['#000000', '#04050A'],

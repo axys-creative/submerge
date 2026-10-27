@@ -15,7 +15,8 @@ export interface Endpoint {
 export const ROUTES: [Endpoint, Endpoint][] = [
   [{ zone: 0, side: 'east' }, { zone: 1, side: 'west' }],
   [{ zone: 1, side: 'east' }, { zone: 2, side: 'west' }],
-  [{ zone: 2, side: 'east' }, { zone: 3, side: 'west' }],
+  [{ zone: 1, side: 'east' }, { zone: 3, side: 'west' }],
+  [{ zone: 2, side: 'east' }, { zone: 4, side: 'west' }],
   [{ zone: 3, side: 'east' }, { zone: 4, side: 'west' }],
   [{ zone: 4, side: 'east' }, { zone: 5, side: 'west' }],
 ];

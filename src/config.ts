@@ -5,7 +5,7 @@ export const SUB_RADIUS = 28;
 /** Where the sub hangs from the ship's crane, relative to the ship's center. */
 export const SUB_DOCK_OFFSET = -215;
 /** How far either side of the crane the sub can be to dock, in px. */
-export const DOCK_RANGE = 160;
+export const DOCK_RANGE = 25;
 export const SAVE_KEY = 'submerge.save.v1';
 /** Seconds the spotlight stutters after a bump. */
 export const FLICKER_TIME = 0.5;
@@ -37,6 +37,8 @@ export const SWITCH_SLACK = 7;
 
 /** How far around the sub (or ship) the minimap is revealed, in px. */
 export const MAP_REVEAL_RADIUS = 450;
+/** Fraction of a zone's dim-to-full darkness range at which the map stops revealing without a light (about 5% of daylight left). */
+export const MAP_BLIND_DEPTH = 0.95;
 
 /** Seconds the sub takes to crumple before the flash, and until the wreck message appears. */
 export const IMPLODE_COLLAPSE = 0.05;
@@ -86,3 +88,21 @@ export const BOOST_ZOOM = 0.62;
 
 /** Seconds the crane hook takes to reel all the way up or down. */
 export const HOOK_TIME = 1;
+
+/** Spotlight aim: degrees below the heading after a tap of down, seconds of holding down before it points straight below, total sway in degrees when idle and when steering, and how quickly it tilts. */
+export const LAMP_PITCH_DOWN = 70;
+export const LAMP_PITCH_FORWARD = 12;
+export const LAMP_HOLD_TIME = 0.35;
+export const LAMP_SWAY_IDLE = 7.5;
+export const LAMP_SWAY_STEER = 1.5;
+export const LAMP_TILT_RATE = 1.5;
+/** How quickly the beam moves between aims (down vs forward); lower is slower. */
+export const LAMP_AIM_RATE = 0.7;
+
+/** Battery spent per second while the sub holds its depth. */
+export const DEPTH_HOLD_DRAIN = 5;
+/** Propeller sound level while the sub holds its depth, as a fraction of its driving volume. */
+export const HOLD_MOTOR_VOLUME = 0.5;
+
+/** How many times wider than the original design the islands are, above and below the waterline. */
+export const ISLAND_WIDTH = 2;

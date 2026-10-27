@@ -1,4 +1,5 @@
-import { mulberry32, rrect } from '../util';
+import { mixColor, mulberry32, rrect } from '../util';
+import { ISLAND_WIDTH } from '../config';
 import { drawTankShape } from './sub';
 import { drawBones, type BoneKind } from './bones';
 
@@ -328,38 +329,95 @@ function drawSternBumper(ctx: CanvasRenderingContext2D) {
   ctx.stroke();
 }
 
-export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: string) {
+/** Where the dock's slanted poles meet the water, as offsets from the island center; they run on down into the underwater mountain. */
+export const DOCK_POLES = [0.5, 0.7, 0.9].map((f) => 250 * ISLAND_WIDTH - 100 + 250 * f + 5);
+
+export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: string, night = 0) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  ctx.fillStyle = '#F5D58A';
+  const d = (c: string) => (night > 0 ? mixColor(c, '#0B1430', night * 0.55) : c);
+  const glass = (x: number, y: number, w: number, h: number) => {
+    if (night > 0.05) {
+      const glow = ctx.createRadialGradient(x + w / 2, y + h / 2, 1, x + w / 2, y + h / 2, w * 2.2);
+      glow.addColorStop(0, `rgba(255,214,120,${0.55 * night})`);
+      glow.addColorStop(1, 'rgba(255,214,120,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(x - w * 2, y - w * 2, w * 5, h + w * 4);
+    }
+    ctx.fillStyle = night > 0.05 ? mixColor('#BFE8F2', '#FFD36B', night) : '#BFE8F2';
+    rrect(ctx, x, y, w, h, 2);
+    ctx.fill();
+  };
+
+  ctx.save();
+  ctx.scale(ISLAND_WIDTH, 1);
+  ctx.fillStyle = d('#F5D58A');
   ctx.beginPath();
   ctx.moveTo(-250, 6);
   ctx.quadraticCurveTo(-160, -62, 0, -66);
   ctx.quadraticCurveTo(170, -62, 250, 6);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = '#6CC57A';
+  ctx.fillStyle = d('#6CC57A');
   ctx.beginPath();
   ctx.moveTo(-170, -40);
   ctx.quadraticCurveTo(-60, -96, 40, -70);
   ctx.quadraticCurveTo(110, -60, 150, -38);
   ctx.quadraticCurveTo(0, -56, -170, -40);
   ctx.fill();
+  ctx.restore();
 
-  palm(ctx, -120, -44, 1, t);
-  palm(ctx, 150, -34, -0.8, t + 1);
+  const reach = 250 * ISLAND_WIDTH;
+  const deckL = reach - 100;
+  const deckR = reach + 150;
+  const deckY = -9;
+  ctx.fillStyle = d('#6B4A2B');
+  for (let x = deckL + 14; x < deckR; x += 46) {
+    rrect(ctx, x, deckY + 4, 7, 40, 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = d('#B98A55');
+  rrect(ctx, deckL, deckY, deckR - deckL, 7, 2);
+  ctx.fill();
+  ctx.strokeStyle = d('#8A6238');
+  ctx.lineWidth = 1.5;
+  for (let x = deckL + 12; x < deckR; x += 12) {
+    ctx.beginPath();
+    ctx.moveTo(x, deckY);
+    ctx.lineTo(x, deckY + 7);
+    ctx.stroke();
+  }
+  ctx.fillStyle = d('#7A5330');
+  rrect(ctx, deckR - 8, deckY - 26, 7, 28, 2);
+  ctx.fill();
+  if (night > 0.05) {
+    const glow = ctx.createRadialGradient(deckR - 4, deckY - 30, 1, deckR - 4, deckY - 30, 34);
+    glow.addColorStop(0, `rgba(255,214,120,${0.5 * night})`);
+    glow.addColorStop(1, 'rgba(255,214,120,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(deckR - 40, deckY - 66, 72, 72);
+  }
+  ctx.fillStyle = night > 0.05 ? mixColor('#E8E0C8', '#FFD36B', night) : '#E8E0C8';
+  rrect(ctx, deckR - 9, deckY - 36, 9, 10, 3);
+  ctx.fill();
+
+  const spread = 170 * (ISLAND_WIDTH - 1);
+  palm(ctx, -120 - spread, -44, 1, t, d);
+  palm(ctx, 150 + spread, -34, -0.8, t + 1, d);
+  if (spread) {
+    palm(ctx, -120, -44, 1, t + 2, d);
+    palm(ctx, 150, -34, -0.8, t + 3, d);
+  }
 
   // A smaller second hut beside the shop
-  ctx.fillStyle = '#B9784A';
+  ctx.fillStyle = d('#B9784A');
   rrect(ctx, -78, -84, 40, 30, 4);
   ctx.fill();
-  ctx.fillStyle = '#7A4B2E';
+  ctx.fillStyle = d('#7A4B2E');
   rrect(ctx, -62, -70, 10, 16, [3, 3, 0, 0]);
   ctx.fill();
-  ctx.fillStyle = '#BFE8F2';
-  rrect(ctx, -75, -78, 9, 9, 2);
-  ctx.fill();
-  ctx.fillStyle = '#8A3B2E';
+  glass(-75, -78, 9, 9);
+  ctx.fillStyle = d('#8A3B2E');
   ctx.beginPath();
   ctx.moveTo(-84, -84);
   ctx.lineTo(-58, -102);
@@ -367,14 +425,32 @@ export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: strin
   ctx.closePath();
   ctx.fill();
 
-  ctx.fillStyle = '#C98B52';
+  // A third hut on the other side of the shop
+  ctx.fillStyle = d('#A9C0C9');
+  rrect(ctx, 96, -84, 40, 30, 4);
+  ctx.fill();
+  ctx.fillStyle = d('#5C7A86');
+  rrect(ctx, 106, -70, 10, 16, [3, 3, 0, 0]);
+  ctx.fill();
+  glass(122, -78, 9, 9);
+  ctx.fillStyle = d('#2F7C86');
+  ctx.beginPath();
+  ctx.moveTo(90, -84);
+  ctx.lineTo(116, -102);
+  ctx.lineTo(142, -84);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = d('#C98B52');
   rrect(ctx, -10, -108, 84, 52, 6);
   ctx.fill();
-  ctx.fillStyle = '#8A5A3B';
+  ctx.fillStyle = d('#8A5A3B');
   rrect(ctx, 22, -88, 20, 32, [4, 4, 0, 0]);
   ctx.fill();
+  glass(-1, -84, 14, 14);
+  glass(52, -84, 14, 14);
   for (let i = 0; i < 6; i++) {
-    ctx.fillStyle = i % 2 ? '#FFFFFF' : '#EC5B7F';
+    ctx.fillStyle = d(i % 2 ? '#FFFFFF' : '#EC5B7F');
     ctx.beginPath();
     ctx.moveTo(-18 + i * 17, -108);
     ctx.lineTo(-1 + i * 17, -108);
@@ -383,7 +459,7 @@ export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: strin
     ctx.closePath();
     ctx.fill();
   }
-  ctx.fillStyle = '#2B4C8C';
+  ctx.fillStyle = d('#2B4C8C');
   ctx.beginPath();
   ctx.moveTo(-22, -108);
   ctx.lineTo(32, -136);
@@ -404,12 +480,12 @@ export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: strin
   ctx.textAlign = 'left';
 }
 
-function palm(ctx: CanvasRenderingContext2D, x: number, y: number, lean: number, t: number) {
+function palm(ctx: CanvasRenderingContext2D, x: number, y: number, lean: number, t: number, d: (c: string) => string = (c) => c) {
   const topX = x + lean * 26;
   const topY = y - 92;
   const cx = x + lean * 4;
   const cy = y - 50;
-  ctx.strokeStyle = '#9C6B3F';
+  ctx.strokeStyle = d('#9C6B3F');
   ctx.lineWidth = 9;
   ctx.beginPath();
   ctx.moveTo(x, y);
@@ -436,17 +512,17 @@ function palm(ctx: CanvasRenderingContext2D, x: number, y: number, lean: number,
     ctx.rotate(a);
     ctx.translate(26, 0);
     ctx.rotate(0.25);
-    ctx.fillStyle = '#3FA86B';
+    ctx.fillStyle = d('#3FA86B');
     ctx.beginPath();
     ctx.ellipse(0, 0, 30, 8, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = '#2E8553';
+    ctx.strokeStyle = d('#2E8553');
     ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.moveTo(-26, 0);
     ctx.lineTo(26, 0);
     ctx.stroke();
-    ctx.fillStyle = '#5CC285';
+    ctx.fillStyle = d('#5CC285');
     for (const px of [-14, 0, 14]) {
       ctx.beginPath();
       ctx.moveTo(px - 4, -5);
@@ -457,7 +533,7 @@ function palm(ctx: CanvasRenderingContext2D, x: number, y: number, lean: number,
     }
     ctx.restore();
   }
-  ctx.fillStyle = '#6B4423';
+  ctx.fillStyle = d('#6B4423');
   for (const [dx, dy] of [[-5, 4], [4, 6], [0, 9]]) {
     ctx.beginPath();
     ctx.arc(topX + dx, topY + dy, 4, 0, Math.PI * 2);

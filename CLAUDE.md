@@ -1,6 +1,6 @@
 # Submerge
 
-Canvas 2D submarine game (Vite + TypeScript). Zone data is in `src/data/zones.ts`, upgrades in `src/data/upgrades.ts`.
+Canvas 2D submarine game (Vite + TypeScript). Zone data is in `src/data/zones.ts`, upgrades in `src/data/upgrades.ts`. Shop descriptions for upgrades are built from the numbers in `STATS` there, so change a number once and the shop updates.
 
 ## Design guidelines
 
