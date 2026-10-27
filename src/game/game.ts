@@ -20,6 +20,7 @@ import {
   LAMP_HOLD_TIME,
   DEPTH_HOLD_DRAIN,
   HOLD_MOTOR_VOLUME,
+  SHIP_MARGIN,
   LAMP_PITCH_DOWN,
   LAMP_PITCH_FORWARD,
   LAMP_SWAY_IDLE,
@@ -217,8 +218,7 @@ const DEATH_FADE_END = 6;
 const SURFACE_Y = 8;
 const SURFACE_RAMP = 12;
 const SURFACE_GRAVITY = 1100;
-const SHIP_MARGIN = 160;
-const SAIL_ZONE = 260;
+const SAIL_ZONE = SHIP_MARGIN + 100;
 
 const WELCOMES = [
   "Welcome back!",
@@ -1022,6 +1022,17 @@ export class Game {
     }
     const airborne = s.y < SURFACE_Y;
     if (inp.pressed("drop") && this.weightsOn) this.dropWeights();
+    for (const [action, key, owned, label, color] of [
+      ["lamp", "lamp", this.up.light, "Spotlight", "#F7C948"],
+      ["sonar", "sonar", this.up.sonar, "Sonar", "#4FC98E"],
+    ] as const) {
+      if (!inp.pressed(action) || owned < 1) continue;
+      const modes: SwitchMode[] = ["off", "on", "auto"];
+      const next = modes[(modes.indexOf(this.save[key]) + 1) % modes.length];
+      this.setSwitch(key, next);
+      this.audio.play("menuTick");
+      this.say(`${label}: ${next}`, color);
+    }
     if (this.depthHeld && (Math.abs(a.y) > 0.1 || s.battery <= 0)) this.releaseDepth();
     else if (inp.pressed("hold")) {
       if (this.depthHeld) this.releaseDepth();
@@ -1074,9 +1085,9 @@ export class Game {
         s.battery - DEPTH_HOLD_DRAIN * (this.weightsOn ? WEIGHTS.holdDrain : 1) * dt,
       );
     } else if (sinkDepth > SINK_START) {
-      if (!this.holdHinted && !this.ui.touch) {
+      if (!this.holdHinted) {
         this.holdHinted = true;
-        this.say("Press 'E' or '.' to lock depth", "#9CF2C4");
+        this.say(this.ui.touch ? "Tap the depth to lock it" : "Press 'E' or '.', or click the depth, to lock it", "#9CF2C4");
       }
       const ramp = Math.min(1, (sinkDepth - SINK_START) / SINK_RAMP);
       s.vy +=

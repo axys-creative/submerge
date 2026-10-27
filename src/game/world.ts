@@ -1,7 +1,7 @@
 import { ZONES, type ZoneDef, type CreatureSpawn } from '../data/zones';
 import { ITEMS, ITEM_KINDS, type ItemKind } from '../data/items';
 import { CREATURES, type CreatureKind } from '../data/creatures';
-import { MONSTER_TRAIL, PX_PER_M } from '../config';
+import { MONSTER_TRAIL, PX_PER_M, SCENERY_DENSITY } from '../config';
 import { BONE_KINDS, BONE_WEIGHTS, type BoneKind } from '../art/bones';
 import { clamp, mulberry32, rand, type Rng } from '../util';
 
@@ -51,7 +51,7 @@ export interface CaveBlob {
 /** Distance in px between blobs along a tunnel. */
 const BLOB_SPACING = 22;
 /** Tunnels (not round rooms) are drawn this many times wider than their listed radius. */
-const TUNNEL_WIDEN = 1.5;
+const TUNNEL_WIDEN = 1;
 
 /**
  * Replaces each bend with either a diagonal cut or a curve, keeping the ends fixed.
@@ -121,13 +121,13 @@ export interface Creature {
 }
 
 export interface Deco {
-  kind: 'kelp' | 'coral' | 'rock' | 'lungsub' | BoneKind;
+  kind: 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'lungsub' | BoneKind;
   x: number;
   y: number;
   size: number;
   phase: number;
   tint: number;
-  /** Sideways bend in px from the sub brushing past (kelp only), and its speed. */
+  /** Sideways bend in px from the sub brushing past (kelp), the tilt in radians of bones and starfish, or the floor's slope for coral; and its speed. */
   push: number;
   pushV: number;
 }
@@ -469,7 +469,7 @@ export class World {
     const s = u * u * (3 - 2 * u);
     const m = f[i] + (f[i + 1] - f[i]) * s;
     const [a, b, c] = this.shape;
-    return m * PX_PER_M + Math.sin(x * 0.0041 + a) * 28 + Math.sin(x * 0.0113 + b) * 12 + Math.sin(x * 0.029 + c) * 5;
+    return m * PX_PER_M + (Math.sin(x * 0.0041 + a) * 28 + Math.sin(x * 0.0113 + b) * 12 + Math.sin(x * 0.029 + c) * 5) * (this.def.calm ?? 1);
   }
 
   /** Highest ground point within half a body width of x, so wide bodies stop at walls. */
@@ -504,18 +504,34 @@ export class World {
     }
   }
 
+  /** Rise of the sea floor per px sideways at x, limited so coral never leans past a steep face. */
+  private floorSlope(x: number) {
+    return clamp((this.floorAt(x + 30) - this.floorAt(x - 30)) / 60, -0.8, 0.8);
+  }
+
   private buildDeco(r: Rng) {
+    const scaled = (n: number) => Math.round(n * SCENERY_DENSITY);
     const add = (kind: Deco['kind'], count: number, maxDepth: number) => {
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < scaled(count); i++) {
         const x = rand(r, 100, this.width - 100);
         const y = this.floorAt(x);
         if (y / PX_PER_M > maxDepth) continue;
-        this.deco.push({ kind, x, y, size: rand(r, 0.7, 1.4), phase: r() * 10, tint: r(), push: 0, pushV: 0 });
+        this.deco.push({ kind, x, y, size: rand(r, 0.7, 1.4), phase: r() * 10, tint: r(), push: kind === 'coral' ? this.floorSlope(x) : 0, pushV: 0 });
       }
     };
     add('rock', this.def.rocks, Infinity);
     add('kelp', this.def.kelp, 260);
     add('coral', this.def.coral, 170);
+    for (let i = 0; i < scaled(this.def.reefs ?? 0); i++) {
+      const cx = rand(r, 400, this.width - 400);
+      const n = 10 + Math.floor(r() * 9);
+      for (let j = 0; j < n; j++) {
+        const x = cx + rand(r, -280, 280);
+        const y = this.floorAt(x);
+        if (y / PX_PER_M > 170 || this.atMouth(x, y) || Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 30) continue;
+        this.deco.push({ kind: 'coral', x, y, size: rand(r, 0.8, 1.9), phase: r() * 10, tint: r(), push: this.floorSlope(x), pushV: 0 });
+      }
+    }
     if (this.abyss) {
       const { x, y } = this.abyss.relic;
       let ground = y;
@@ -534,10 +550,10 @@ export class World {
       const slope = Math.atan2(ground(x + 40) - ground(x - 40), 80);
       this.deco.push({ kind: pickBone(), x, y: ground(x), size: rand(r, 0.8, 1.3), phase: r() * 10, tint: r(), push: clamp(slope, -0.5, 0.5), pushV: 0 });
     };
-    for (let i = 0; i < (this.def.bones ?? 0); i++) lay(rand(r, 100, this.width - 100), (v) => this.floorAt(v));
+    for (let i = 0; i < scaled(this.def.bones ?? 0); i++) lay(rand(r, 100, this.width - 100), (v) => this.floorAt(v));
 
     const cavern = (v: number) => this.abyssBottom(v);
-    for (let i = 0; i < (this.abyss?.bones ?? 0); i++) {
+    for (let i = 0; i < scaled(this.abyss?.bones ?? 0); i++) {
       const x = rand(r, 100, this.width - 100);
       if (this.caveSolid(x, cavern(x) + 12)) lay(x, cavern);
     }
@@ -548,7 +564,7 @@ export class World {
       while (g < y + 900 && !this.caveSolid(x, g + 4)) g += 4;
       return g;
     };
-    const caveBones = this.def.caves?.reduce((n, c) => n + (c.bones ?? 0), 0) ?? 0;
+    const caveBones = scaled(this.def.caves?.reduce((n, c) => n + (c.bones ?? 0), 0) ?? 0);
     for (let i = 0, placed = 0; placed < caveBones && i < caveBones * 12 && tunnels.length; i++) {
       const b = tunnels[Math.floor(r() * tunnels.length)];
       const x = b.x + rand(r, -b.r * 0.5, b.r * 0.5);
@@ -556,6 +572,23 @@ export class World {
       const g = floorBelow(x, b.y);
       if (g >= b.y + 900) continue;
       lay(x, (v) => floorBelow(v, g - 30));
+      placed++;
+    }
+    const caveSum = (key: 'stones' | 'starfish') => scaled(this.def.caves?.reduce((n, c) => n + (c[key] ?? 0), 0) ?? 0);
+    this.scatterCave(r, tunnels, floorBelow, 'stone', caveSum('stones'), 0.5, 1.7);
+    this.scatterCave(r, tunnels, floorBelow, 'starfish', caveSum('starfish'), 0.5, 1.6);
+  }
+
+  /** Scatters decorations over the cave floors, `count` per cave that lists them. */
+  private scatterCave(r: Rng, tunnels: { x: number; y: number; r: number }[], floorBelow: (x: number, y: number) => number, kind: 'stone' | 'starfish', count: number, lo: number, hi: number) {
+    for (let i = 0, placed = 0; placed < count && i < count * 12 && tunnels.length; i++) {
+      const b = tunnels[Math.floor(r() * tunnels.length)];
+      const x = b.x + rand(r, -b.r * 0.6, b.r * 0.6);
+      if (this.caveSolid(x, b.y)) continue;
+      const g = floorBelow(x, b.y);
+      if (g >= b.y + 900) continue;
+      const slope = Math.atan2(floorBelow(x + 40, g - 30) - floorBelow(x - 40, g - 30), 80);
+      this.deco.push({ kind, x, y: floorBelow(x, g - 30), size: rand(r, lo, hi), phase: r() * 10, tint: r(), push: kind === 'starfish' ? clamp(slope, -0.5, 0.5) : 0, pushV: 0 });
       placed++;
     }
   }
@@ -586,7 +619,7 @@ export class World {
 
   private placeChest(it: ItemInst) {
     const w = this.def.wrecks[it.wreck];
-    it.x = w.x + (w.kind === 'galleon' ? 170 : 110);
+    it.x = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 170 : 110);
     it.y = this.floorAt(it.x) - 16;
     it.alive = true;
   }

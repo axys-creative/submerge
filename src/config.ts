@@ -106,3 +106,9 @@ export const HOLD_MOTOR_VOLUME = 0.5;
 
 /** How many times wider than the original design the islands are, above and below the waterline. */
 export const ISLAND_WIDTH = 2;
+
+/** Fraction of the listed kelp, coral, rocks, reefs, bones and cave stones that actually get placed. */
+export const SCENERY_DENSITY = 0.3;
+
+/** How close the ship may sail to either end of a zone; enough that the sub's mount, SUB_DOCK_OFFSET behind it, is still inside the sub's reach. */
+export const SHIP_MARGIN = 300;

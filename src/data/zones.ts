@@ -28,6 +28,9 @@ export interface CaveDef {
   passages: CavePassage[];
   /** Skeleton pieces scattered on the floors of the tunnels above the cavern. */
   bones?: number;
+  /** Rocks and starfish lying on the floors of the tunnels. */
+  stones?: number;
+  starfish?: number;
   /** An open cavern with no rock in it, from a bumpy ceiling around `from` meters deep down to `to`, running the whole width of the cave region with no side walls; the view zooms out to `zoom` inside it. */
   abyss?: { from: number; to: number; zoom: number; lair: [number, number]; relic: [number, number]; bones: number };
 }
@@ -42,6 +45,8 @@ export interface ZoneDef {
   width: number;
   /** Sea floor depth in meters, spread evenly from the west edge to the east edge. */
   floor: number[];
+  /** Scales the small waves in the sea floor; below 1 makes it flatter. */
+  calm?: number;
   sky: [string, string];
   water: [string, string];
   ground: [string, string];
@@ -51,7 +56,7 @@ export interface ZoneDef {
   creatures: CreatureSpawn[];
   /** `sells` limits the island shop to those upgrades; without it the shop sells everything this zone offers. */
   islands: { x: number; name: string; sells?: UpgradeId[] }[];
-  wrecks: { x: number; kind: 'sloop' | 'galleon' }[];
+  wrecks: { x: number; kind: 'sloop' | 'galleon' | 'freighter' | 'containers' }[];
   /** Vertical cave shafts cut into the sea floor; width in px, depth in meters. */
   shafts?: { name: string; x: number; width: number; depth: number }[];
   caves?: CaveDef[];
@@ -61,6 +66,8 @@ export interface ZoneDef {
   sellsWeights?: boolean;
   kelp: number;
   coral: number;
+  /** Dense patches of vibrant coral on the sea floor. */
+  reefs?: number;
   rocks: number;
   /** Skeleton pieces (skulls, rib cages, bones, whole skeletons) scattered on the sea floor. */
   bones?: number;
@@ -107,16 +114,17 @@ export const ZONES: ZoneDef[] = [
     wrecks: [{ x: 4400, kind: 'sloop' }],
     caves: [{
       name: 'Echo Caverns',
+      stones: 40,
       x0: 5000,
       x1: 8600,
       hill: { x: 7300, half: 620, ramp: 220, height: 55 },
       passages: [
         { pts: [[6300, 55], [6700, 55], [6950, 58]], r: 190 },
         { pts: [[6950, 58], [6950, 120], [7100, 160], [7100, 205]], r: 190 },
-        { pts: [[7100, 205], [6600, 205], [6450, 225], [6450, 262]], r: 190 },
+        { pts: [[7100, 205], [6600, 205], [6450, 225], [6450, 262]], r: 95 },
         { pts: [[7100, 205], [7600, 215], [7900, 215], [7900, 250]], r: 190 },
         { pts: [[6450, 262], [7000, 270], [7500, 262], [7900, 250]], r: 190 },
-        { pts: [[7000, 270], [7000, 330]], r: 190 },
+        { pts: [[7000, 270], [7000, 330]], r: 95 },
         { pts: [[7500, 262], [7500, 310], [7800, 330]], r: 190 },
         { pts: [[7600, 215], [7600, 160]], r: 170, loot: 1 },
         { pts: [[6600, 205], [6340, 225]], r: 170, loot: 1 },
@@ -128,26 +136,28 @@ export const ZONES: ZoneDef[] = [
       ],
     }, {
       name: 'Tidewater Grotto',
+      stones: 28,
       x0: 2700,
       x1: 5200,
       hill: { x: 3900, half: 0, ramp: 1, height: 0 },
       passages: [
         { pts: [[3900, 75], [3900, 130], [3700, 170], [3500, 200]], r: 190 },
         { pts: [[3500, 200], [3200, 215], [3050, 250]], r: 190 },
-        { pts: [[3700, 170], [4100, 200], [4450, 230], [4800, 260]], r: 190 },
+        { pts: [[3700, 170], [4100, 200], [4450, 230], [4800, 260]], r: 95 },
         { pts: [[3500, 205]], r: 290, loot: 1 },
         { pts: [[3050, 255]], r: 270, loot: 2 },
         { pts: [[4800, 262]], r: 260, loot: 1 },
       ],
     }, {
       name: 'Sunken Vaults',
+      stones: 34,
       x0: 250,
       x1: 3300,
       hill: { x: 1500, half: 0, ramp: 1, height: 0 },
       passages: [
         { pts: [[1500, 50], [1450, 110], [1700, 160], [2000, 180]], r: 190 },
         { pts: [[2000, 180], [2400, 180], [2700, 215], [2700, 260]], r: 190 },
-        { pts: [[2000, 180], [1700, 230], [1500, 255]], r: 190 },
+        { pts: [[2000, 180], [1700, 230], [1500, 255]], r: 95 },
         { pts: [[2050, 182]], r: 260, loot: 1 },
         { pts: [[1500, 258]], r: 300, loot: 1 },
         { pts: [[2700, 265]], r: 280, loot: 2 },
@@ -156,6 +166,7 @@ export const ZONES: ZoneDef[] = [
       ],
     }, {
       name: 'Drowned Hall',
+      stones: 8,
       x0: 8350,
       x1: 8950,
       hill: { x: 8600, half: 0, ramp: 1, height: 0 },
@@ -166,6 +177,7 @@ export const ZONES: ZoneDef[] = [
     }],
     kelp: 60,
     coral: 40,
+    reefs: 5,
     rocks: 50,
   },
   {
@@ -191,6 +203,7 @@ export const ZONES: ZoneDef[] = [
     caves: [
       {
         name: 'Shell Hollows',
+        stones: 40,
         x0: 150,
         x1: 2800,
         hill: { x: 1450, half: 430, ramp: 260, height: 80 },
@@ -199,8 +212,8 @@ export const ZONES: ZoneDef[] = [
           { pts: [[1400, 84], [1500, 115], [1450, 150], [1550, 172]], r: 190 },
           { pts: [[1550, 172], [1150, 178], [950, 198], [950, 232]], r: 190 },
           { pts: [[1550, 172], [1900, 180], [2150, 180], [2200, 215]], r: 190 },
-          { pts: [[950, 232], [1500, 240], [1950, 232], [2200, 215]], r: 190 },
-          { pts: [[1500, 240], [1500, 288]], r: 190 },
+          { pts: [[950, 232], [1500, 240], [1950, 232], [2200, 215]], r: 95 },
+          { pts: [[1500, 240], [1500, 288]], r: 95 },
           { pts: [[1900, 180], [1900, 135]], r: 170, loot: 1 },
           { pts: [[1150, 178], [780, 160]], r: 170, loot: 1 },
           { pts: [[950, 240]], r: 270, loot: 1 },
@@ -210,16 +223,17 @@ export const ZONES: ZoneDef[] = [
       },
       {
         name: 'Pearl Depths',
+        stones: 40,
         x0: 7050,
         x1: 9300,
         hill: { x: 8200, half: 330, ramp: 240, height: 75 },
         passages: [
           { pts: [[7400, 100], [7850, 104], [8200, 118]], r: 190 },
           { pts: [[8200, 118], [8150, 160], [8300, 200], [8250, 240]], r: 190 },
-          { pts: [[8250, 240], [7850, 248], [7650, 270], [7650, 305]], r: 190 },
+          { pts: [[8250, 240], [7850, 248], [7650, 270], [7650, 305]], r: 95 },
           { pts: [[8250, 240], [8550, 250], [8800, 250], [8850, 285]], r: 190 },
           { pts: [[7650, 305], [8200, 312], [8650, 305], [8850, 285]], r: 190 },
-          { pts: [[8200, 312], [8200, 355]], r: 190 },
+          { pts: [[8200, 312], [8200, 355]], r: 95 },
           { pts: [[8550, 250], [8550, 205]], r: 170, loot: 1 },
           { pts: [[7850, 248], [7500, 230]], r: 170, loot: 1 },
           { pts: [[7650, 312]], r: 270, loot: 1 },
@@ -230,6 +244,7 @@ export const ZONES: ZoneDef[] = [
     ],
     kelp: 30,
     coral: 90,
+    reefs: 14,
     rocks: 40,
   },
   {
@@ -237,7 +252,8 @@ export const ZONES: ZoneDef[] = [
     diveZoom: 0.7,
     map: { x: 175, y: 55 },
     width: 10000,
-    floor: [50, 90, 160, 230, 190, 250, 320, 370, 300, 230, 280, 350, 410, 320, 190, 90],
+    floor: [50, 90, 160, 230, 190, 340, 340, 230, 520, 900, 900, 900, 900, 900, 520, 120],
+    calm: 0.35,
     sky: ['#79C6E6', '#E2F7EF'],
     water: ['#2FB3A0', '#0F2F5E'],
     ground: ['#C9B98A', '#4D5578'],
@@ -249,6 +265,7 @@ export const ZONES: ZoneDef[] = [
       { kind: 'hammerhead', count: 4, minDepth: 25, maxDepth: 320 },
       { kind: 'shark', count: 2, minDepth: 40, maxDepth: 320 },
       { kind: 'squid', count: 3, minDepth: 180, maxDepth: 420 },
+      { kind: 'jelly', count: 8, minDepth: 450, maxDepth: 880 },
       { kind: 'manta', count: 2, minDepth: 60, maxDepth: 300 },
     ],
     islands: [
@@ -256,11 +273,13 @@ export const ZONES: ZoneDef[] = [
       { x: 7300, name: 'Lantern Isle' },
     ],
     wrecks: [
-      { x: 3600, kind: 'galleon' },
-      { x: 8400, kind: 'sloop' },
+      { x: 3600, kind: 'containers' },
+      { x: 7300, kind: 'freighter' },
+      { x: 2200, kind: 'sloop' },
     ],
     kelp: 140,
     coral: 25,
+    reefs: 2,
     rocks: 60,
   },
   {
@@ -348,10 +367,10 @@ export const ZONES: ZoneDef[] = [
         { pts: [[950, 265], [1500, 300], [2100, 340], [2700, 350], [3100, 330], [3700, 345], [4300, 380], [4900, 400], [5400, 380], [5900, 350], [6500, 320], [7100, 300], [7800, 275]], r: 190 },
         { pts: [[7800, 275], [8300, 260], [8600, 240]], r: 190 },
         { pts: [[950, 265], [600, 290], [400, 322]], r: 190 },
-        { pts: [[1500, 300], [1500, 380], [1700, 430]], r: 190 },
+        { pts: [[1500, 300], [1500, 380], [1700, 430]], r: 95 },
         { pts: [[1700, 430], [2300, 470], [2900, 450], [3100, 330]], r: 190 },
-        { pts: [[400, 322], [500, 400], [900, 450], [1700, 430]], r: 190 },
-        { pts: [[4300, 380], [4300, 450], [4700, 490], [5100, 470], [5400, 380]], r: 190 },
+        { pts: [[400, 322], [500, 400], [900, 450], [1700, 430]], r: 95 },
+        { pts: [[4300, 380], [4300, 450], [4700, 490], [5100, 470], [5400, 380]], r: 95 },
         { pts: [[6500, 320], [6700, 400], [7100, 430], [7500, 400], [7800, 275]], r: 190 },
         { pts: [[3700, 345], [3700, 420], [3400, 470]], r: 105 },
         { pts: [[5900, 350], [6100, 420], [6400, 480]], r: 105 },

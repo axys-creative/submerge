@@ -1640,6 +1640,15 @@ body:not(.is-touch) #ui .depth-meter {
   fill: currentColor;
 }
 
+.dm-depth {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.dm-depth:hover {
+  background: rgba(34, 54, 112, 0.95);
+}
+
 .dm-depth.pop {
   animation: dm-pop 0.3s ease-out;
 }
@@ -1804,4 +1813,13 @@ body:not(.is-touch) .dial-col:hover .dial-pop {
 
 .is-touch .seg button {
   padding: 3px 5px;
+}
+
+.card a {
+  color: var(--sea-dark);
+  font-weight: 700;
+}
+
+#ui.ui-dark .card.menu a {
+  color: #7fd0ea;
 }

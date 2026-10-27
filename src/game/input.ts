@@ -1,4 +1,4 @@
-export type Action = 'left' | 'right' | 'up' | 'down' | 'dive' | 'action' | 'crankJ' | 'crankK' | 'menu' | 'drop' | 'hold';
+export type Action = 'left' | 'right' | 'up' | 'down' | 'dive' | 'action' | 'crankJ' | 'crankK' | 'menu' | 'drop' | 'hold' | 'lamp' | 'sonar';
 
 const KEYMAP: Record<string, Action> = {
   ArrowLeft: 'left',
@@ -17,6 +17,8 @@ const KEYMAP: Record<string, Action> = {
   KeyQ: 'drop',
   Slash: 'drop',
   Period: 'hold',
+  KeyL: 'lamp',
+  KeyO: 'sonar',
   Escape: 'menu',
   KeyP: 'menu',
 };

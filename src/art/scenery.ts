@@ -3,7 +3,7 @@ import { ISLAND_WIDTH } from '../config';
 import { drawTankShape } from './sub';
 import { drawBones, type BoneKind } from './bones';
 
-export type DecoKind = 'kelp' | 'coral' | 'rock' | 'lungsub' | BoneKind;
+export type DecoKind = 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'lungsub' | BoneKind;
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a: number) {
   ctx.save();
@@ -621,7 +621,9 @@ export function drawBuoy(ctx: CanvasRenderingContext2D, t: number, label: string
   ctx.textAlign = 'left';
 }
 
-export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleon') {
+export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleon' | 'freighter' | 'containers') {
+  if (kind === 'freighter') return drawFreighter(ctx);
+  if (kind === 'containers') return drawContainers(ctx);
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -690,6 +692,169 @@ export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleo
   ctx.restore();
 }
 
+/** Shipping containers spilled across the sea floor: a lopsided stack, a few toppled ones and a lid knocked loose. */
+function drawContainers(ctx: CanvasRenderingContext2D) {
+  const tones = ['#B8432F', '#D49A36', '#386FA8', '#3E8F68', '#8A8F99', '#7A4F9E'];
+  const box = (x: number, y: number, rot: number, tone: number, open = false) => {
+    const w = 130;
+    const h = 52;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.fillStyle = tones[tone];
+    ctx.fillRect(-w / 2, -h, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    for (let k = 1; k < 14; k++) ctx.fillRect(-w / 2 + k * (w / 14), -h, 2.5, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(-w / 2, -h, w, 5);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(-w / 2, -h, 6, h);
+    ctx.fillRect(w / 2 - 6, -h, 6, h);
+    ctx.fillStyle = 'rgba(150,70,25,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(-w * 0.15, -h * 0.4, 24, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (open) {
+      ctx.fillStyle = '#1B1A20';
+      ctx.fillRect(w / 2 - 6, -h + 4, 6, h - 8);
+    }
+    ctx.restore();
+  };
+  ctx.save();
+  box(-110, 14, -0.02, 0);
+  box(30, 16, 0.03, 2);
+  box(-40, -38, 0.04, 1);
+  box(100, -36, -0.05, 4, true);
+  box(-90, -92, -0.12, 3);
+  box(-250, 18, 0.06, 5);
+  box(185, 20, 1.45, 0, true);
+  box(300, 24, -0.04, 2);
+  ctx.restore();
+}
+
+/** A modern container ship broken on the sea floor, about 2,600 px long: stern bridge and funnel on the left, bow on the right. */
+function drawFreighter(ctx: CanvasRenderingContext2D) {
+  const rnd = mulberry32(2718);
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.scale(2, 2);
+  ctx.rotate(-0.04);
+
+  const hull = (x0: number, x1: number, bowRake: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x0, -78);
+    ctx.lineTo(x1 + bowRake, -88);
+    ctx.lineTo(x1, 12);
+    ctx.lineTo(x0 + 14, 14);
+    ctx.closePath();
+  };
+  const section = (x0: number, x1: number, bowRake: number, drop: number) => {
+    ctx.save();
+    ctx.translate(0, drop);
+    hull(x0, x1, bowRake);
+    ctx.fillStyle = '#7C2F2B';
+    ctx.fill();
+    ctx.save();
+    hull(x0, x1, bowRake);
+    ctx.clip();
+    ctx.fillStyle = '#2B2326';
+    ctx.fillRect(x0 - 20, -22, x1 - x0 + 120, 50);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(x0 - 20, -84, x1 - x0 + 120, 5);
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = 2;
+    for (let x = x0 + 40; x < x1; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x, -86);
+      ctx.lineTo(x, 14);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(190,80,30,0.35)';
+    for (let i = 0; i < 12; i++) {
+      ctx.beginPath();
+      ctx.ellipse(x0 + rnd() * (x1 - x0), -70 + rnd() * 80, 10 + rnd() * 26, 5 + rnd() * 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.restore();
+  };
+  section(-650, -90, 0, 0);
+  section(-70, 640, 70, 16);
+
+  ctx.fillStyle = '#16181E';
+  ctx.beginPath();
+  ctx.moveTo(-96, -92);
+  ctx.lineTo(-64, -80);
+  ctx.lineTo(-84, -56);
+  ctx.lineTo(-58, -30);
+  ctx.lineTo(-80, -4);
+  ctx.lineTo(-62, 18);
+  ctx.lineTo(-100, 18);
+  ctx.closePath();
+  ctx.fill();
+
+  const tones = ['#D9503F', '#E6A23C', '#3E7FC4', '#4FA67A', '#C9CED6', '#8A5FB5', '#D96B2B'];
+  const stacks = (x0: number, x1: number, drop: number, tilt: number) => {
+    ctx.save();
+    ctx.translate(0, drop);
+    ctx.rotate(tilt);
+    for (let x = x0; x < x1; x += 46) {
+      const rows = 1 + Math.floor(rnd() * 4);
+      for (let r = 0; r < rows; r++) {
+        if (rnd() < 0.08) continue;
+        ctx.fillStyle = tones[Math.floor(rnd() * tones.length)];
+        ctx.fillRect(x, -88 - (r + 1) * 28, 44, 27);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        for (let k = 1; k < 5; k++) ctx.fillRect(x + k * 8.5, -88 - (r + 1) * 28, 1.5, 27);
+      }
+    }
+    ctx.restore();
+  };
+  stacks(-330, -100, 0, 0);
+  stacks(-60, 560, 16, 0.03);
+
+  ctx.fillStyle = '#E9ECF1';
+  ctx.fillRect(-600, -200, 190, 122);
+  ctx.fillRect(-584, -246, 150, 46);
+  ctx.fillRect(-596, -226, 174, 12);
+  ctx.fillStyle = '#2C4A6B';
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 7; i++) ctx.fillRect(-590 + i * 26, -190 + row * 34, 16, 14);
+  }
+  for (let i = 0; i < 6; i++) ctx.fillRect(-576 + i * 24, -238, 15, 22);
+  ctx.fillStyle = '#C9341F';
+  ctx.fillRect(-520, -300, 54, 56);
+  ctx.fillStyle = '#16181E';
+  ctx.fillRect(-520, -308, 54, 12);
+  ctx.strokeStyle = '#2B2326';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-500, -246);
+  ctx.lineTo(-500, -330);
+  ctx.moveTo(-514, -330);
+  ctx.lineTo(-486, -330);
+  ctx.stroke();
+
+  ctx.lineWidth = 7;
+  ctx.strokeStyle = '#D9A23C';
+  for (const [x, lean] of [[110, 0.05], [340, -0.04]] as const) {
+    ctx.beginPath();
+    ctx.moveTo(x, -78);
+    ctx.lineTo(x + lean * 100, -190);
+    ctx.lineTo(x + 70, -162);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = 'rgba(255,230,160,0.65)';
+  for (let x = -380; x < 600; x += 56) {
+    ctx.beginPath();
+    ctx.arc(x, -50 + (x > -80 ? 16 : 0), 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 /** Traces one of four rock outlines (circle, rounded square, blob, chunky polygon); returns true if it needs a rounded stroke. */
 function rockPath(ctx: CanvasRenderingContext2D, R: number, tint: number) {
   const variant = Math.floor(((tint * 1000) % 1) * 4);
@@ -732,7 +897,7 @@ function rockPath(ctx: CanvasRenderingContext2D, R: number, tint: number) {
   return false;
 }
 
-const CORAL = ['#FF8FA3', '#FFB070', '#B48CFF', '#FF6F91'];
+const CORAL = ['#FF5C8A', '#FF8A3D', '#FFC83D', '#B36BFF', '#3DD6C6', '#FF6F91', '#5CC8FF', '#9BE564', '#FF4D6D', '#F7A8FF'];
 
 /** A rusted iron-lung submarine lying on twin ballast tanks, its flattened front caved in, with bite punctures, claw gashes and torn plating. */
 function lungSub(ctx: CanvasRenderingContext2D, size: number) {
@@ -944,6 +1109,56 @@ function lungSub(ctx: CanvasRenderingContext2D, size: number) {
   ctx.restore();
 }
 
+const STARFISH = ['#F28C38', '#E5484D', '#F58FB0', '#8E6CCF', '#F7C948', '#D9A066', '#4F8FD8', '#FF6F61'];
+const STAR_ARMS = [5, 5, 5, 5, 6, 7, 9, 12];
+const frac = (v: number) => v - Math.floor(v);
+
+/** A starfish lying on the floor; its color, number of arms, plumpness and angle all come from `tint`, so each one looks different. */
+function drawStarfish(ctx: CanvasRenderingContext2D, size: number, tint: number) {
+  const color = STARFISH[Math.floor(frac(tint * 8.7) * STARFISH.length)];
+  const arms = STAR_ARMS[Math.floor(frac(tint * 31.3) * STAR_ARMS.length)];
+  const inner = 0.3 + frac(tint * 57.1) * 0.25;
+  const spin = frac(tint * 113.7) * Math.PI * 2;
+  const R = 18 * size;
+  ctx.save();
+  ctx.translate(0, -3 * size);
+  ctx.scale(1, 0.55);
+  const star = () => {
+    ctx.beginPath();
+    for (let i = 0; i < arms * 2; i++) {
+      const a = spin + (i * Math.PI) / arms;
+      const r = i % 2 ? R * inner : R;
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+  };
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = mixColor(color, '#2A1A10', 0.45);
+  ctx.lineWidth = R * 0.34;
+  star();
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = R * 0.2;
+  star();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = mixColor(color, '#FFFFFF', 0.45);
+  for (let i = 0; i < arms; i++) {
+    const a = spin + (i * 2 * Math.PI) / arms;
+    for (const f of [0.35, 0.6, 0.82]) {
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * R * f, Math.sin(a) * R * f, R * 0.05, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.fillStyle = mixColor(color, '#2A1A10', 0.3);
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 0.14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: number, tint: number, t: number, push = 0, pale = false) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -951,6 +1166,11 @@ export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: nu
     lungSub(ctx, size);
     return;
   }
+  if (kind === 'starfish') {
+    drawStarfish(ctx, size, tint);
+    return;
+  }
+  if (kind === 'stone') kind = 'rock';
   if (kind !== 'kelp' && kind !== 'coral' && kind !== 'rock') {
     drawBones(ctx, kind, size, tint, push);
     return;
@@ -995,24 +1215,108 @@ export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: nu
       ctx.fill();
     }
   } else {
-    const c = CORAL[Math.floor(tint * CORAL.length)];
+    const c = CORAL[Math.floor(tint * CORAL.length) % CORAL.length];
+    const light = mixColor(c, '#FFFFFF', 0.4);
+    const dark = mixColor(c, '#3A1030', 0.35);
+    const type = frac(tint * 17.3);
+    ctx.save();
     ctx.strokeStyle = c;
     ctx.fillStyle = c;
-    ctx.lineWidth = 7 * size;
-    const branches: [number, number][] = [
-      [-14, -30],
-      [0, -44],
-      [14, -32],
-      [-6, -22],
-    ];
-    for (const [x, y] of branches) {
+    if (type < 0.35) {
+      const n = 4 + Math.floor(frac(tint * 5.1) * 4);
+      ctx.lineWidth = 7 * size;
+      for (let i = 0; i < n; i++) {
+        const x = (i - (n - 1) / 2) * 11 * size;
+        const y = -(24 + 22 * frac(tint * (i + 3) * 13.7)) * size;
+        ctx.strokeStyle = c;
+        ctx.beginPath();
+        ctx.moveTo(0, 4);
+        ctx.quadraticCurveTo(x * 0.3, y * 0.5, x, y);
+        ctx.stroke();
+        if (y < -36 * size) {
+          ctx.lineWidth = 4.5 * size;
+          ctx.beginPath();
+          ctx.moveTo(x * 0.6, y * 0.55);
+          ctx.lineTo(x + 9 * size * (i % 2 ? 1 : -1), y - 8 * size);
+          ctx.stroke();
+          ctx.lineWidth = 7 * size;
+        }
+        ctx.fillStyle = light;
+        ctx.beginPath();
+        ctx.arc(x, y, 5 * size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (type < 0.6) {
+      const R = 36 * size;
+      const sway = Math.sin(t * 1.2 + tint * 9) * 0.05;
+      ctx.lineWidth = 4 * size;
       ctx.beginPath();
       ctx.moveTo(0, 4);
-      ctx.quadraticCurveTo(x * 0.3 * size, y * 0.5 * size, x * size, y * size);
+      ctx.lineTo(0, -10 * size);
       ctx.stroke();
+      ctx.translate(0, -10 * size);
+      ctx.globalAlpha = 0.35;
       ctx.beginPath();
-      ctx.arc(x * size, y * size, 5 * size, 0, Math.PI * 2);
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, R, Math.PI * 1.15 + sway, Math.PI * 1.85 + sway);
+      ctx.closePath();
       ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 2.2 * size;
+      for (let i = 0; i < 9; i++) {
+        const a = Math.PI * (1.15 + (i / 8) * 0.7) + sway;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = light;
+      ctx.lineWidth = 1.6 * size;
+      for (const f of [0.5, 0.75, 1]) {
+        ctx.beginPath();
+        ctx.arc(0, 0, R * f, Math.PI * 1.15 + sway, Math.PI * 1.85 + sway);
+        ctx.stroke();
+      }
+    } else if (type < 0.8) {
+      const rx = 24 * size;
+      const ry = 18 * size;
+      ctx.beginPath();
+      ctx.ellipse(0, 4, rx, ry, 0, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = dark;
+      ctx.lineWidth = 1.8 * size;
+      for (let i = 0; i < 4; i++) {
+        const y = 2 - i * 4.5 * size;
+        const w = rx * (1 - i * 0.2) * 0.86;
+        ctx.beginPath();
+        ctx.moveTo(-w, y);
+        for (let k = 1; k <= 6; k++) ctx.quadraticCurveTo(-w + ((k - 0.5) * 2 * w) / 6, y + (k % 2 ? -3 : 3) * size, -w + (k * 2 * w) / 6, y);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.beginPath();
+      ctx.ellipse(-rx * 0.35, -ry * 0.55, rx * 0.3, ry * 0.18, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      const n = 4 + Math.floor(frac(tint * 9.3) * 2);
+      for (let i = 0; i < n; i++) {
+        const x = (i - (n - 1) / 2) * 11 * size;
+        const h = (22 + 20 * frac(tint * (i + 2) * 19.1)) * size;
+        const w = 8 * size;
+        const base = 4 + push * x + Math.abs(push) * w * 0.5 + 2;
+        ctx.fillStyle = c;
+        rrect(ctx, x - w / 2, base - h, w, h, [w / 2, w / 2, 0, 0]);
+        ctx.fill();
+        ctx.fillStyle = light;
+        rrect(ctx, x - w / 2 + 1.5 * size, base - h + 3 * size, 2 * size, h - 6 * size, 1);
+        ctx.fill();
+        ctx.fillStyle = dark;
+        ctx.beginPath();
+        ctx.ellipse(x, base - h + 2.5 * size, w * 0.32, w * 0.22, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
+    ctx.restore();
   }
 }

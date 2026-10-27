@@ -1,5 +1,5 @@
 import type { Game } from '../game/game';
-import { ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE } from '../config';
+import { SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE } from '../config';
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
 import { buoyLabel, routesFrom } from '../data/routes';
@@ -333,7 +333,7 @@ export function renderScene(g: Game) {
   // Sea floor
   if (bottom > 200) {
     def.wrecks.forEach((w) => {
-      if (!inView(w.x, 300)) return;
+      if (!inView(w.x, 1700)) return;
       ctx.save();
       ctx.translate(w.x, world.floorAt(w.x) + 16);
       drawWreck(ctx, w.kind);
@@ -341,9 +341,9 @@ export function renderScene(g: Game) {
     });
 
     for (const d of world.deco) {
-      if (d.kind !== 'rock' || !inView(d.x)) continue;
+      if (d.kind !== 'rock' || d.phase >= 5 || !inView(d.x)) continue;
       ctx.save();
-      ctx.translate(d.x, d.y + 2);
+      ctx.translate(d.x, d.y + 2 + 10 * d.size);
       drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, 0, space));
       ctx.restore();
     }
@@ -388,11 +388,24 @@ export function renderScene(g: Game) {
         }
         ctx.fill();
       }
+      ctx.beginPath();
+      for (const b of blobs) {
+        ctx.moveTo(b.x + b.r, b.y);
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      }
+      ctx.clip();
+      for (const d of world.deco) {
+        if (d.kind !== 'stone' || d.phase >= 5 || !inView(d.x)) continue;
+        ctx.save();
+        ctx.translate(d.x, d.y + 2 + 10 * d.size);
+        drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, 0, space));
+        ctx.restore();
+      }
       ctx.restore();
     }
 
     for (const d of world.deco) {
-      if (d.kind === 'rock' || !inView(d.x)) continue;
+      if (!inView(d.x) || ((d.kind === 'rock' || d.kind === 'stone') && d.phase < 5)) continue;
       ctx.save();
       ctx.translate(d.x, d.y + 2);
       drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, d.push, space));
@@ -418,15 +431,15 @@ export function renderScene(g: Game) {
 
   // Zone exits
   const z = g.save.zone;
-  if (routesFrom(z, 'east').length && inView(world.width - 200)) {
+  if (routesFrom(z, 'east').length && inView(world.width - SHIP_MARGIN - 40)) {
     ctx.save();
-    ctx.translate(world.width - 200, waveY(world.width - 200, t));
+    ctx.translate(world.width - SHIP_MARGIN - 40, waveY(world.width - SHIP_MARGIN - 40, t));
     drawBuoy(ctx, t, buoyLabel(z, 'east'), 1);
     ctx.restore();
   }
-  if (routesFrom(z, 'west').length && inView(200)) {
+  if (routesFrom(z, 'west').length && inView(SHIP_MARGIN + 40)) {
     ctx.save();
-    ctx.translate(200, waveY(200, t));
+    ctx.translate(SHIP_MARGIN + 40, waveY(SHIP_MARGIN + 40, t));
     drawBuoy(ctx, t, buoyLabel(z, 'west'), -1);
     ctx.restore();
   }
