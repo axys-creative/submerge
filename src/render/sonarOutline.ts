@@ -52,10 +52,9 @@ export class SonarOutline {
 
     const ab = world.abyss;
     const cavern = (extra: number) => {
-      const x0 = Math.floor(left / 12) * 12;
-      c.moveTo(x0, ab!.to + extra);
-      for (let x = x0; x <= right; x += 12) c.lineTo(x, world.abyssTop(x) - extra);
-      c.lineTo(right, ab!.to + extra);
+      const pts = world.abyssOutline(Math.floor(left / 12) * 12, right, 12, extra);
+      c.moveTo(pts[0][0], pts[0][1]);
+      for (const [x, y] of pts) c.lineTo(x, y);
       c.closePath();
     };
     c.fillStyle = '#78FFD2';

@@ -1,5 +1,6 @@
 import type { Creature } from '../game/world';
 import { MONSTER_SCALE as MS, MONSTER_TRAIL } from '../config';
+import { leviathanSpine } from '../data/leviathan';
 import { BLUE_WHALE_SCALE, COLOSSAL_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
 
 const FISH = ['#FFB547', '#FF7A6B', '#7BDFF2', '#B9F18C'];
@@ -24,7 +25,9 @@ export function anglerLure(c: Creature) {
   };
 }
 
-export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature) {
+export type LeviathanPart = 'all' | 'back' | 'front';
+
+export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: LeviathanPart = 'all') {
   ctx.save();
   ctx.translate(c.x, c.y);
   ctx.lineJoin = 'round';
@@ -62,7 +65,8 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature) {
       bigfin(ctx, c);
       break;
     case 'leviathan':
-      leviathan(ctx, c);
+      if (part !== 'front') leviathan(ctx, c, 'back');
+      if (part !== 'back') leviathan(ctx, c, 'front');
       break;
     case 'bluewhale':
       ctx.scale(c.facing * BLUE_WHALE_SCALE, BLUE_WHALE_SCALE);
@@ -260,111 +264,94 @@ function manta(ctx: CanvasRenderingContext2D, c: Creature) {
  * The Crimson Sea leviathan: a huge ridged worm whose body follows the path of its head, with a gaping mouth ringed in fine teeth
  * and pale root-like tendrils streaming from its neck.
  */
-function leviathan(ctx: CanvasRenderingContext2D, c: Creature) {
+function leviathan(ctx: CanvasRenderingContext2D, c: Creature, part: LeviathanPart) {
   const t = c.phase;
-  /** The body's points, spaced evenly along the head's path starting at the head itself, so they glide instead of stepping as new path points are recorded. */
-  const path = [{ x: c.x, y: c.y }, ...(c.trail ?? [])];
-  const trail: { x: number; y: number }[] = [];
-  let walked = 0;
-  let from = 0;
-  for (let k = 0; k < MONSTER_TRAIL; k++) {
-    const want = k * 16;
-    while (from < path.length - 1) {
-      const len = Math.hypot(path[from + 1].x - path[from].x, path[from + 1].y - path[from].y);
-      if (walked + len >= want) break;
-      walked += len;
-      from++;
-    }
-    if (from >= path.length - 1) break;
-    const a = path[from];
-    const b = path[from + 1];
-    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    const u = (want - walked) / len;
-    trail.push({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
-  }
-  const n = trail.length;
-  const at = (k: number) => {
-    const p = trail[Math.min(k, n - 1)];
-    const a = trail[Math.min(k + 1, n - 1)];
-    const b = trail[Math.max(k - 1, 0)];
-    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    const nx = -(b.y - a.y) / len;
-    const ny = (b.x - a.x) / len;
-    const sway = Math.sin(t * 2 - k * 0.3) * 7 * MS * Math.min(1, k / 12);
-    return { x: p.x - c.x + nx * sway, y: p.y - c.y + ny * sway, nx, ny };
-  };
-  const radius = (k: number) => (8 + 80 * (1 - k / MONSTER_TRAIL) ** 0.8) * MS;
+  const { n, at, radius } = leviathanSpine(c);
 
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  for (let k = n - 1; k >= 3; k--) {
-    const p = at(k);
-    const r = radius(k);
-    ctx.fillStyle = k % 4 < 2 ? '#5D626C' : '#484C55';
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    if (k % 2 === 0) {
-      ctx.strokeStyle = 'rgba(15,16,20,0.45)';
-      ctx.lineWidth = 3;
+  if (part !== 'front') {
+    for (let k = n - 1; k >= 3; k--) {
+      const p = at(k);
+      const r = radius(k);
+      ctx.fillStyle = k % 4 < 2 ? '#5D626C' : '#484C55';
       ctx.beginPath();
-      ctx.moveTo(p.x + p.nx * r, p.y + p.ny * r);
-      ctx.lineTo(p.x - p.nx * r, p.y - p.ny * r);
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      if (k % 2 === 0) {
+        ctx.strokeStyle = 'rgba(15,16,20,0.45)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(p.x + p.nx * r, p.y + p.ny * r);
+        ctx.lineTo(p.x - p.nx * r, p.y - p.ny * r);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(190,196,206,0.12)';
+      ctx.beginPath();
+      ctx.arc(p.x - p.nx * r * 0.35, p.y - p.ny * r * 0.35, r * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = 'rgba(236,236,226,0.8)';
+    for (let j = 6; j < 40; j += 3) {
+      if (j >= n) break;
+      const p = at(j);
+      const side = j % 2 ? 1 : -1;
+      const len = (110 + ((j * 53) % 120)) * MS;
+      const sx = p.x + p.nx * side * radius(j) * 0.8;
+      const sy = p.y + p.ny * side * radius(j) * 0.8;
+      const sway = Math.sin(t * 1.4 + j) * 22;
+      const ex = sx + p.nx * side * len * 0.8 + sway;
+      const ey = sy + p.ny * side * len * 0.8 + len * 0.7;
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(sx + p.nx * side * len * 0.7, sy + len * 0.2, ex, ey);
+      ctx.stroke();
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo((sx + ex) / 2, (sy + ey) / 2);
+      ctx.quadraticCurveTo(ex + 20 * side, ey - 10, ex + side * 50 + sway, ey + 50);
       ctx.stroke();
     }
-    ctx.fillStyle = 'rgba(190,196,206,0.12)';
-    ctx.beginPath();
-    ctx.arc(p.x - p.nx * r * 0.35, p.y - p.ny * r * 0.35, r * 0.45, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.strokeStyle = 'rgba(236,236,226,0.8)';
-  for (let j = 6; j < 40; j += 3) {
-    if (j >= n) break;
-    const p = at(j);
-    const side = j % 2 ? 1 : -1;
-    const len = (110 + ((j * 53) % 120)) * MS;
-    const sx = p.x + p.nx * side * radius(j) * 0.8;
-    const sy = p.y + p.ny * side * radius(j) * 0.8;
-    const sway = Math.sin(t * 1.4 + j) * 22;
-    const ex = sx + p.nx * side * len * 0.8 + sway;
-    const ey = sy + p.ny * side * len * 0.8 + len * 0.7;
-    ctx.lineWidth = 2.6;
-    ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.quadraticCurveTo(sx + p.nx * side * len * 0.7, sy + len * 0.2, ex, ey);
-    ctx.stroke();
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo((sx + ex) / 2, (sy + ey) / 2);
-    ctx.quadraticCurveTo(ex + 20 * side, ey - 10, ex + side * 50 + sway, ey + 50);
-    ctx.stroke();
   }
 
   ctx.save();
   ctx.rotate(c.angle);
   if (Math.cos(c.angle) < 0) ctx.scale(1, -1);
   ctx.scale(MS, MS);
-  ctx.fillStyle = '#656B76';
+  const open = (0.85 + 0.15 * Math.sin(t * 3)) * (1 - (c.bite ?? 0));
+  const up = { x0: 6, y0: -4, cx: 80, cy: -92 * open, x1: 142, y1: -66 * open };
+  const down = { x0: 6, y0: 4, cx: 80, cy: 92 * open, x1: 142, y1: 66 * open };
+  const mouth = () => {
+    ctx.moveTo(up.x0, up.y0);
+    ctx.quadraticCurveTo(up.cx, up.cy, up.x1, up.y1);
+    ctx.quadraticCurveTo(168, 0, down.x1, down.y1);
+    ctx.quadraticCurveTo(down.cx, down.cy, down.x0, down.y0);
+    ctx.closePath();
+  };
+  if (part !== 'front') {
+    ctx.fillStyle = '#090A0D';
+    ctx.beginPath();
+    mouth();
+    ctx.fill();
+  }
+  if (part === 'back') {
+    ctx.restore();
+    return;
+  }
+  ctx.save();
   ctx.beginPath();
   ctx.ellipse(-8, 0, 104, 84, 0, 0, Math.PI * 2);
-  ctx.fill();
+  mouth();
+  ctx.clip('evenodd');
+  ctx.fillStyle = '#656B76';
+  ctx.fillRect(-120, -90, 240, 180);
   ctx.fillStyle = 'rgba(190,196,206,0.14)';
   ctx.beginPath();
   ctx.ellipse(-20, -30, 70, 28, 0, 0, Math.PI * 2);
   ctx.fill();
-
-  const open = 0.85 + 0.15 * Math.sin(t * 3);
-  const up = { x0: 6, y0: -4, cx: 80, cy: -92 * open, x1: 142, y1: -66 * open };
-  const down = { x0: 6, y0: 4, cx: 80, cy: 92 * open, x1: 142, y1: 66 * open };
-  ctx.fillStyle = '#090A0D';
-  ctx.beginPath();
-  ctx.moveTo(up.x0, up.y0);
-  ctx.quadraticCurveTo(up.cx, up.cy, up.x1, up.y1);
-  ctx.quadraticCurveTo(168, 0, down.x1, down.y1);
-  ctx.quadraticCurveTo(down.cx, down.cy, down.x0, down.y0);
-  ctx.closePath();
-  ctx.fill();
+  ctx.restore();
   ctx.strokeStyle = '#8A909B';
   ctx.lineWidth = 10;
   for (const jaw of [up, down]) {
@@ -393,15 +380,12 @@ function leviathan(ctx: CanvasRenderingContext2D, c: Creature) {
       ctx.stroke();
     }
   }
-  ctx.fillStyle = '#F6F8F2';
-  ctx.shadowColor = 'rgba(255,255,255,0.9)';
-  ctx.shadowBlur = 14;
+  ctx.fillStyle = '#B8BDB8';
   for (const side of [-1, 1]) {
     ctx.beginPath();
     ctx.arc(34, side * 62, 9, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
@@ -955,5 +939,48 @@ export function drawLureBulb(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+}
+
+/** The leviathan's bioluminescence in world coordinates: its eyes and the rows of lights down both sides of its body. */
+export function leviathanGlows(c: Creature) {
+  const { n, at, radius } = leviathanSpine(c);
+  const glows: { x: number; y: number; r: number; core: number; power: number }[] = [];
+  const power = c.glow ?? 1;
+  if (power < 0.02) return glows;
+  const cos = Math.cos(c.angle);
+  const sin = Math.sin(c.angle);
+  for (const side of [-1, 1]) {
+    const ex = 34 * MS;
+    const ey = side * 62 * MS;
+    glows.push({ x: c.x + ex * cos - ey * sin, y: c.y + ex * sin + ey * cos, r: 150, core: 11 * MS, power });
+  }
+  for (let k = 4; k < n; k += 5) {
+    const p = at(k);
+    const r = radius(k);
+    for (const side of [-1, 1]) {
+      glows.push({ x: c.x + p.x + p.nx * side * r * 0.6, y: c.y + p.y + p.ny * side * r * 0.6, r: Math.max(50, r * 0.7), core: Math.max(3, r * 0.07), power });
+    }
+  }
+  return glows;
+}
+
+export function drawLeviathanGlows(ctx: CanvasRenderingContext2D, glows: ReturnType<typeof leviathanGlows>, t: number) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  glows.forEach((g, i) => {
+    const pulse = (0.8 + 0.2 * Math.sin(t * 1.5 + i * 0.7)) * g.power;
+    const halo = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, g.r * 0.6);
+    halo.addColorStop(0, `rgba(200,225,245,${0.175 * pulse})`);
+    halo.addColorStop(1, 'rgba(200,225,245,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, g.r * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(240,248,255,${0.425 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, g.core, 0, Math.PI * 2);
+    ctx.fill();
+  });
   ctx.restore();
 }

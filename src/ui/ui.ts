@@ -2,7 +2,7 @@ import type { Game } from '../game/game';
 import type { Action } from '../game/input';
 import { exportCode, importCode, type SwitchMode } from '../game/save';
 import { CELL } from '../game/explored';
-import { BREATH_TIME, CRUSH_DEPTH_SHOWN, DEPTH_WARN_RANGE, MAP_SURFACE_FADE, PX_PER_M } from '../config';
+import { BREATH_TIME, GLITCH_TIME, CRUSH_DEPTH_SHOWN, DEPTH_WARN_RANGE, MAP_SURFACE_FADE, PX_PER_M } from '../config';
 import { GEAR, STATS, UPGRADES, UPGRADE_FIRST_ZONE, UPGRADE_ORDER, WEIGHTS, type GearId, type Loadout, type UpgradeId } from '../data/upgrades';
 import { ZONES } from '../data/zones';
 import { DEPTH_ZONES, METER_WINDOW, zoneIndexAt } from '../data/depthZones';
@@ -73,6 +73,7 @@ export class UI {
           <button class="round-btn crank" data-act="crankJ" hidden>E</button>
           <button class="round-btn crank" data-act="crankK" hidden>R</button>
           <button class="round-btn secondary" id="btn-drop" data-act="drop" hidden>Drop</button>
+<button class="round-btn secondary" id="btn-boost" data-act="drop" data-hold hidden>Boost</button>
           <button class="round-btn secondary" id="btn-spot" data-act="action" hidden>Shop</button>
           <button class="round-btn primary" id="btn-dive" data-act="dive" hidden>Dive</button>
         </div>
@@ -93,9 +94,13 @@ export class UI {
     this.modal = $(this.root, '#modal');
 
     $(this.root, '#debug-up').onclick = (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-dbg], [data-zone], [data-all], [data-weights], [data-gear]');
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-dbg], [data-zone], [data-all], [data-weights], [data-gear], [data-fast]');
       if (!btn) return;
       btn.blur();
+      if (btn.dataset.fast) {
+        this.game.debugFast = btn.dataset.fast === '1';
+        return;
+      }
       if (btn.dataset.weights) {
         this.game.setWeights(btn.dataset.weights === '1');
         return;
@@ -202,6 +207,9 @@ export class UI {
       .join('');
   }
 
+  private glitchAt = 0;
+  private glitchNoise = 0;
+  private staticCanvas: HTMLCanvasElement | null = null;
   private deepestZone = 0;
   private trackHeight = 0;
 
@@ -233,13 +241,24 @@ export class UI {
       crush.style.top = `${g.depthRating * ppm}px`;
       crush.style.height = `${CRUSH_DEPTH_SHOWN * ppm}px`;
     });
-    const shift = `translateY(${(height / 2 - depth * ppm).toFixed(1)}px)`;
+    let shown = depth;
+    let scaleAt = depth;
+    if (g.glitch > 0) {
+      if (performance.now() > this.glitchAt) {
+        this.glitchAt = performance.now() + 60 + Math.random() * 90;
+        this.glitchNoise = Math.random();
+      }
+      const surge = Math.sin((Math.PI * (GLITCH_TIME - g.glitch)) / GLITCH_TIME);
+      scaleAt = depth + surge * (1400 + this.glitchNoise * 600);
+      shown = Math.max(0, depth - surge * (500 + this.glitchNoise * 900));
+    }
+    const shift = `translateY(${(height / 2 - scaleAt * ppm).toFixed(1)}px)`;
     $(this.root, '#dm-scale').style.transform = shift;
     $(this.root, '#dm-labels').style.transform = shift;
     const over = depth > g.depthRating;
     meter.classList.toggle('danger', over);
-    this.set('dm-read', `${Math.round(depth)}|${g.depthRating}|${over}`, () => {
-      $(this.root, '#dm-depth').textContent = `${Math.round(depth)} m`;
+    this.set('dm-read', `${Math.round(shown)}|${g.depthRating}|${over}`, () => {
+      $(this.root, '#dm-depth').textContent = `${Math.round(shown)} m`;
       const tag = $(this.root, '#dm-limit-tag');
       tag.textContent = over ? 'Too deep!' : `Safe to ${g.depthRating.toLocaleString()} m`;
       tag.classList.toggle('danger', over);
@@ -268,13 +287,14 @@ export class UI {
         ICON.hull.replace('<svg', `<svg class="${i < s.hull ? '' : 'empty'}"`),
       ).join('');
     });
-    this.set('dbg', UPGRADE_ORDER.map((id) => g.save.upgrades[id]).join() + `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}`, () => {
+    this.set('dbg', UPGRADE_ORDER.map((id) => g.save.upgrades[id]).join() + `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}|${g.debugFast}`, () => {
       const zone = g.save.zone;
       const master = this.masterLevel();
       const off = (ok: boolean) => (ok && g.mode === 'docked' ? '' : ' disabled');
       $(this.root, '#debug-up').innerHTML =
         '<h4>Zone (test)</h4>' +
         `<div class="dbg-row"><button tabindex="-1" data-zone="-1"${off(zone > 0)}>◀</button><span><b>Zone ${zone + 1}/${ZONES.length}</b><small>${ZONES[zone].name}</small></span><button tabindex="-1" data-zone="1"${off(zone < ZONES.length - 1)}>▶</button></div>` +
+        `<div class="dbg-row"><button tabindex="-1" data-fast="0"${g.debugFast ? '' : ' disabled'}>−</button><span><b>Debug mode</b><small>${g.debugFast ? 'On: fast, lit, wide, map revealed' : 'Off'}</small></span><button tabindex="-1" data-fast="1"${g.debugFast ? ' disabled' : ''}>+</button></div>` +
         '<h4>Upgrades (test)</h4>' +
         `<div class="dbg-row all"><button tabindex="-1" data-all="-1"${master > 0 ? '' : ' disabled'}>−</button><span><b>All upgrades</b><small>Level ${master + 1}/${MAX_TEST_LEVEL + 1}</small></span><button tabindex="-1" data-all="1"${master < MAX_TEST_LEVEL ? '' : ' disabled'}>+</button></div>` +
         UPGRADE_ORDER.map((id) => {
@@ -335,6 +355,8 @@ export class UI {
         b.textContent = label;
         b.hidden = !label;
       });
+      const boost = g.mode === 'docked' && !this.modalKind && !g.travel;
+      this.set('t-boost', String(boost), () => ($(this.root, '#btn-boost').hidden = !boost));
       const drop = diving && g.weightsOn;
       this.set('t-drop', String(drop), () => ($(this.root, '#btn-drop').hidden = !drop));
       const crank = diving && s.battery <= 0;
@@ -349,7 +371,7 @@ export class UI {
     if (g.mode === 'docked') {
       if (spot?.kind === 'shop') return `${key('E')}Visit the ${esc(spot.name)} shop`;
       if (spot?.kind === 'sail') return `${key('E')}Open the route map`;
-      return this.touch ? 'Drag to sail · Tap Dive to dive' : '<kbd>←</kbd><kbd>→</kbd> Sail &nbsp;·&nbsp; <kbd>Space</kbd> Dive';
+      return this.touch ? 'Drag to sail · Tap Dive to dive' : '<kbd>←</kbd><kbd>→</kbd> Sail &nbsp;·&nbsp; <kbd>Q</kbd> Boost &nbsp;·&nbsp; <kbd>Space</kbd> Dive';
     }
     const s = g.sub;
     if (s.battery <= 0) return this.touch ? 'Battery empty! Tap E and R back and forth' : 'Battery empty! Tap <kbd>E</kbd><kbd>R</kbd> back and forth to crank';
@@ -442,9 +464,9 @@ export class UI {
         b.ellipse(mx(c.x), my(c.y), Math.max(1, c.r * sx), Math.max(1, c.r * sy), 0, 0, Math.PI * 2);
       }
       if (w.abyss) {
-        b.moveTo(0, fullH);
-        for (let px = 0; px <= W; px += 2) b.lineTo(px, my(w.abyssTop(px / sx)));
-        b.lineTo(W, fullH);
+        const pts = w.abyssOutline(0, W / sx, 2 / sx);
+        b.moveTo(mx(pts[0][0]), my(pts[0][1]));
+        for (const [x, y] of pts) b.lineTo(mx(x), my(y));
         b.closePath();
       }
       b.fill();
@@ -476,7 +498,7 @@ export class UI {
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(this.mapBg.canvas, 0, this.mapScroll, W, H, 0, 0, W, H);
     const fog = this.fogLayer(W, fullH, sy);
-    if (fog) ctx.drawImage(fog, 0, this.mapScroll, W, H, 0, 0, W, H);
+    if (fog && !g.debugFast) ctx.drawImage(fog, 0, this.mapScroll, W, H, 0, 0, W, H);
     ctx.save();
     ctx.translate(0, -this.mapScroll);
 
@@ -496,6 +518,28 @@ export class UI {
       ctx.fill();
       ctx.stroke();
     }
+    ctx.restore();
+    if (g.glitch > 0) this.drawStatic(ctx, W, H);
+  }
+
+  private drawStatic(ctx: CanvasRenderingContext2D, W: number, H: number) {
+    const noise = (this.staticCanvas ??= document.createElement('canvas'));
+    noise.width = W / 4;
+    noise.height = H / 4;
+    const n = noise.getContext('2d')!;
+    const img = n.createImageData(noise.width, noise.height);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.random() * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    n.putImageData(img, 0, 0);
+    const fade = Math.min(1, this.game.glitch / 0.4);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = 0.92 * fade;
+    ctx.drawImage(noise, 0, 0, W, H);
     ctx.restore();
   }
 
@@ -630,10 +674,14 @@ export class UI {
     this.root.querySelectorAll<HTMLButtonElement>('.round-btn').forEach((b) => {
       b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        this.game.input.tap(b.dataset.act as Action);
+        if (b.dataset.hold !== undefined) this.game.input.hold(b.dataset.act as Action, true);
+        else this.game.input.tap(b.dataset.act as Action);
         b.classList.add('pressed');
       });
-      const up = () => b.classList.remove('pressed');
+      const up = () => {
+        b.classList.remove('pressed');
+        if (b.dataset.hold !== undefined) this.game.input.hold(b.dataset.act as Action, false);
+      };
       b.addEventListener('pointerup', up);
       b.addEventListener('pointerleave', up);
     });

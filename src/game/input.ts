@@ -60,6 +60,14 @@ export class Input {
     }
   }
 
+  /** Holds an action down, for on-screen buttons that act as long as they are pressed. */
+  hold(a: Action, down: boolean) {
+    if (down) {
+      this.tap(a);
+      this.held.add(a);
+    } else this.held.delete(a);
+  }
+
   pressed(a: Action) {
     return this.hits.has(a);
   }

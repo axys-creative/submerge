@@ -26,8 +26,10 @@ export interface CaveDef {
   /** Raises the sea floor into a headland with steep sides, so the first tunnel can enter its side horizontally. */
   hill: { x: number; half: number; ramp: number; height: number };
   passages: CavePassage[];
+  /** Skeleton pieces scattered on the floors of the tunnels above the cavern. */
+  bones?: number;
   /** An open cavern with no rock in it, from a bumpy ceiling around `from` meters deep down to `to`, running the whole width of the cave region with no side walls; the view zooms out to `zoom` inside it. */
-  abyss?: { from: number; to: number; zoom: number };
+  abyss?: { from: number; to: number; zoom: number; lair: [number, number]; relic: [number, number]; bones: number };
 }
 
 export interface ZoneDef {
@@ -336,7 +338,8 @@ export const ZONES: ZoneDef[] = [
       x0: 0,
       x1: 9000,
       hill: { x: 4500, half: 0, ramp: 1, height: 0 },
-      abyss: { from: 560, to: 5250, zoom: 0.5 },
+      bones: 45,
+      abyss: { from: 560, to: 3000, zoom: 0.5, lair: [5150, 3900], relic: [3550, 3360], bones: 160 },
       passages: [
         { pts: [[700, 150], [700, 215], [950, 265]], r: 190 },
         { pts: [[3300, 222], [3300, 290], [3100, 330]], r: 190 },
@@ -364,6 +367,14 @@ export const ZONES: ZoneDef[] = [
         { pts: [[4700, 495], [4700, 575]], r: 260 },
         { pts: [[2300, 475], [2300, 575]], r: 250 },
         { pts: [[7100, 435], [7100, 575]], r: 240 },
+        { pts: [[4500, 2985], [4500, 3070], [4350, 3180], [4330, 3330], [4800, 3240], [5300, 3200], [5800, 3320], [6100, 3560], [6250, 3800], [6300, 3900]], r: 190 },
+        { pts: [[4350, 3180], [3950, 3250], [3600, 3330]], r: 190 },
+        { pts: [[3550, 3360]], r: 260 },
+        { pts: [[2600, 3900], [3400, 3905], [4300, 3900], [5200, 3900], [5800, 3905], [6300, 3900], [6900, 3905], [7600, 3900]], r: 190 },
+        { pts: [[2500, 3900]], r: 330 },
+        { pts: [[5100, 3900]], r: 380 },
+        { pts: [[7700, 3900]], r: 330 },
+        { pts: [[7700, 3900], [7800, 3650], [7850, 3300], [7800, 2985]], r: 190 },
       ],
     }],
     creatures: [],
@@ -371,7 +382,6 @@ export const ZONES: ZoneDef[] = [
     wrecks: [],
     kelp: 0,
     coral: 0,
-    rocks: 40,
-    bones: 30,
+    rocks: 70,
   },
 ];

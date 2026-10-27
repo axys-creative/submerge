@@ -2,7 +2,7 @@ import { mulberry32, rrect } from '../util';
 import { drawTankShape } from './sub';
 import { drawBones, type BoneKind } from './bones';
 
-export type DecoKind = 'kelp' | 'coral' | 'rock' | BoneKind;
+export type DecoKind = 'kelp' | 'coral' | 'rock' | 'lungsub' | BoneKind;
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a: number) {
   ctx.save();
@@ -658,9 +658,223 @@ function rockPath(ctx: CanvasRenderingContext2D, R: number, tint: number) {
 
 const CORAL = ['#FF8FA3', '#FFB070', '#B48CFF', '#FF6F91'];
 
+/** A rusted iron-lung submarine lying on twin ballast tanks, its flattened front caved in, with bite punctures, claw gashes and torn plating. */
+function lungSub(ctx: CanvasRenderingContext2D, size: number) {
+  ctx.save();
+  ctx.scale(size, size);
+  ctx.rotate(-0.06);
+  ctx.translate(0, -62);
+  ctx.rotate(Math.PI);
+  ctx.translate(0, 62);
+  const L = 150;
+  const H = 44;
+  const cy = -80;
+  const dark = '#160B0A';
+
+  const tank = (x0: number, x1: number, y: number, r: number, top: string, bottom: string) => {
+    const g = ctx.createLinearGradient(0, y - r, 0, y + r);
+    g.addColorStop(0, top);
+    g.addColorStop(1, bottom);
+    ctx.fillStyle = g;
+    ctx.fillRect(x0, y - r, x1 - x0, r * 2);
+    ctx.fillStyle = 'rgba(25,12,10,0.7)';
+    for (let x = x0 + 16; x < x1 - 10; x += 30) ctx.fillRect(x, y - r - 3, 7, r * 2 + 6);
+    ctx.fillStyle = bottom;
+    ctx.beginPath();
+    ctx.ellipse(x1, y, r * 0.35, r, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(15,8,7,0.6)';
+    ctx.beginPath();
+    ctx.ellipse(x0, y, r * 0.35, r, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  tank(-150, 95, -34, 14, '#5E382F', '#2B1714');
+  ctx.strokeStyle = '#2A1614';
+  ctx.lineWidth = 5;
+  for (const x of [-85, 70]) {
+    ctx.beginPath();
+    ctx.moveTo(x, cy + H - 2);
+    ctx.lineTo(x - 12, -24);
+    ctx.stroke();
+  }
+  tank(-120, 140, -14, 14, '#7A4A3E', '#3A201B');
+  ctx.fillStyle = '#2A1614';
+  ctx.fillRect(-135, -3, 22, 4);
+  ctx.fillRect(100, -3, 22, 4);
+
+  // Tail: rudder fin and a propeller hub.
+  ctx.fillStyle = '#4A2A25';
+  ctx.beginPath();
+  ctx.moveTo(-L + 10, cy - H);
+  ctx.lineTo(-L - 28, cy - H - 22);
+  ctx.lineTo(-L - 6, cy - H + 12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#3A201C';
+  ctx.beginPath();
+  ctx.ellipse(-L - 12, cy, 12, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#5E382F';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-L - 14, cy - 24);
+  ctx.lineTo(-L - 10, cy + 24);
+  ctx.stroke();
+
+  // Hull.
+  const hull = ctx.createLinearGradient(0, cy - H, 0, cy + H);
+  hull.addColorStop(0, '#80503F');
+  hull.addColorStop(0.5, '#5B342C');
+  hull.addColorStop(1, '#2C1714');
+  ctx.fillStyle = hull;
+  ctx.beginPath();
+  ctx.ellipse(-L, cy, 20, H, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(-L, cy - H, L * 2 - 6, H * 2);
+  ctx.fillStyle = 'rgba(160,92,52,0.22)';
+  for (const [x, y, rx, ry] of [[-100, cy - 20, 30, 12], [-30, cy + 24, 40, 10], [60, cy - 26, 26, 9], [95, cy + 12, 22, 14]] as const) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (const x of [-105, -15, 85]) {
+    ctx.fillStyle = '#6E4638';
+    ctx.fillRect(x, cy - H, 9, H * 2);
+    ctx.fillStyle = 'rgba(25,12,10,0.65)';
+    for (let y = cy - H + 8; y < cy + H; y += 16) {
+      ctx.beginPath();
+      ctx.arc(x + 4.5, y, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.fillStyle = 'rgba(214,186,172,0.32)';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText('SM-13', -88, cy - 22);
+  ctx.fillStyle = '#4C2A24';
+  ctx.fillRect(-36, cy - H - 8, 24, 9);
+  ctx.strokeStyle = '#2A1614';
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(-30, cy - H - 13, 12, 6);
+
+  // Gill vent with its flared fins.
+  ctx.fillStyle = dark;
+  ctx.fillRect(14, cy - 18, 40, 34);
+  ctx.fillStyle = '#9A6656';
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.moveTo(19 + i * 7.5, cy + 12);
+    ctx.lineTo(23 + i * 7.5, cy - 13);
+    ctx.lineTo(27 + i * 7.5, cy + 12);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Caved-in, flattened front: bent plate, exposed framework, a cracked porthole.
+  ctx.fillStyle = '#3E2420';
+  ctx.beginPath();
+  ctx.moveTo(L - 8, cy - H + 2);
+  ctx.lineTo(L + 10, cy - H + 14);
+  ctx.lineTo(L + 3, cy - 10);
+  ctx.lineTo(L + 13, cy + 10);
+  ctx.lineTo(L + 5, cy + H - 8);
+  ctx.lineTo(L - 8, cy + H);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#1E100E';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (const k of [0, 1, 2]) {
+    ctx.moveTo(L - 40 + k * 8, cy - H);
+    ctx.quadraticCurveTo(L + 6, cy - H + 4 + k * 4, L + 12 - k * 2, cy - H + 26 + k * 10);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#8B5C4E';
+  ctx.beginPath();
+  ctx.moveTo(L - 46, cy - H);
+  ctx.lineTo(L - 14, cy - H - 14);
+  ctx.lineTo(L - 22, cy - H + 4);
+  ctx.lineTo(L + 4, cy - H - 2);
+  ctx.lineTo(L - 12, cy - H + 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#20171A';
+  ctx.beginPath();
+  ctx.arc(L - 14, cy + 8, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#7A4A3E';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(210,225,235,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(L - 22, cy);
+  ctx.lineTo(L - 13, cy + 8);
+  ctx.lineTo(L - 16, cy + 18);
+  ctx.moveTo(L - 13, cy + 8);
+  ctx.lineTo(L - 4, cy + 4);
+  ctx.stroke();
+
+  // Bite marks: scalloped chunks torn from the hull edge, with rows of tooth punctures around them.
+  const bite = (bx: number, by: number, r: number, up: boolean) => {
+    const a0 = up ? Math.PI : 0;
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.arc(bx, by, r, a0, a0 + Math.PI);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#B27A66';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) {
+      const a = a0 + (i / 6) * Math.PI;
+      const rr = r + (i % 2 ? 4 : -1);
+      const x = bx + Math.cos(a) * rr;
+      const y = by + Math.sin(a) * rr;
+      if (i) ctx.lineTo(x, y);
+      else ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = dark;
+    ctx.strokeStyle = 'rgba(178,122,102,0.7)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 5; i++) {
+      const a = a0 + Math.PI * (0.12 + i * 0.19);
+      const x = bx + Math.cos(a) * (r + 15);
+      const y = by + Math.sin(a) * (r + 15);
+      ctx.beginPath();
+      ctx.arc(x, y, 3.2 + (i % 2), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  };
+  bite(-5, cy - H + 1, 22, false);
+  bite(112, cy + H - 1, 24, true);
+  bite(-120, cy + H - 1, 14, true);
+  ctx.lineCap = 'round';
+  for (const o of [0, 9, 18]) {
+    ctx.strokeStyle = dark;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(48 + o, cy - 30);
+    ctx.lineTo(78 + o, cy + 28);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(178,122,102,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(50 + o, cy - 30);
+    ctx.lineTo(80 + o, cy + 28);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: number, tint: number, t: number, push = 0, pale = false) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  if (kind === 'lungsub') {
+    lungSub(ctx, size);
+    return;
+  }
   if (kind !== 'kelp' && kind !== 'coral' && kind !== 'rock') {
     drawBones(ctx, kind, size, tint, push);
     return;

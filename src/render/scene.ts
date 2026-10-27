@@ -1,39 +1,51 @@
 import type { Game } from '../game/game';
-import { COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET } from '../config';
+import { COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE } from '../config';
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
 import { buoyLabel, routesFrom } from '../data/routes';
 import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, runningLights, LAMP, ANCHOR, COCKPIT, REAR_LAMP } from '../art/sub';
 import { drawShip, drawIsland, drawCloud, cloudShape, drawBuoy, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
 import { BACKGROUND_KINDS, CREATURE_EXTENT } from '../data/creatures';
-import { drawCreature, drawLureBulb, anglerLure, lureGlow } from '../art/creatures';
+import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
 import { waveY, mixColor, lerp, clamp } from '../util';
 import { BACK_LAYERS } from '../game/world';
 import { daylight, STARS } from './daylight';
 import { lightCover, type Light } from './lighting';
 
-const faceImg = new Image();
-faceImg.src = `${import.meta.env.BASE_URL}images/monster-face.jpg?v=2`;
+const DIM_W = 640;
+const DIM_H = 560;
+const DIM_OX = 320;
+const DIM_OY = 440;
+const dimCanvas = document.createElement('canvas');
 
-/** The face with its edges faded to nothing, so no square outline shows against the background. */
-let faceSoft: HTMLCanvasElement | null = null;
-const softFace = () => {
-  if (faceSoft || !faceImg.naturalWidth) return faceSoft;
-  const c = document.createElement('canvas');
-  c.width = faceImg.naturalWidth;
-  c.height = faceImg.naturalHeight;
-  const f = c.getContext('2d')!;
-  f.drawImage(faceImg, 0, 0);
-  const fade = f.createRadialGradient(c.width / 2, c.height / 2, c.width * 0.22, c.width / 2, c.height / 2, c.width * 0.5);
-  fade.addColorStop(0, 'rgba(0,0,0,1)');
-  fade.addColorStop(1, 'rgba(0,0,0,0)');
-  f.globalCompositeOperation = 'destination-in';
-  f.fillStyle = fade;
-  f.fillRect(0, 0, c.width, c.height);
-  faceSoft = c;
-  return c;
-};
+/** Draws something at the current origin; when `dim` is set it is shaded darker, so it reads as sitting back in a tunnel mouth instead of blocking it. */
+function drawDimmed(ctx: CanvasRenderingContext2D, dim: boolean, draw: (c: CanvasRenderingContext2D) => void) {
+  if (!dim) {
+    draw(ctx);
+    return;
+  }
+  const m = ctx.getTransform();
+  const sc = Math.hypot(m.a, m.b);
+  const w = Math.ceil(DIM_W * sc);
+  const h = Math.ceil(DIM_H * sc);
+  if (dimCanvas.width !== w || dimCanvas.height !== h) {
+    dimCanvas.width = w;
+    dimCanvas.height = h;
+  }
+  const c = dimCanvas.getContext('2d')!;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  c.clearRect(0, 0, w, h);
+  c.setTransform(sc, 0, 0, sc, DIM_OX * sc, DIM_OY * sc);
+  draw(c);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-atop';
+  c.fillStyle = 'rgba(0,0,0,0.55)';
+  c.fillRect(0, 0, w, h);
+  c.globalCompositeOperation = 'source-over';
+  ctx.drawImage(dimCanvas, -DIM_OX, -DIM_OY, DIM_W, DIM_H);
+}
 
 const DEG = Math.PI / 180;
 /** Lowest-aimed beam angles at rest, below the sub's heading; each beam in turn sweeps down to straight below the sub. */
@@ -310,7 +322,7 @@ export function renderScene(g: Game) {
 
   // Background creatures drift behind the sea floor and scenery, a little faded into the water.
   ctx.globalAlpha = 0.8;
-  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && BACKGROUND_KINDS.includes(c.kind)) drawCreature(ctx, c);
+  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && BACKGROUND_KINDS.includes(c.kind) && !c.front) drawCreature(ctx, c);
   ctx.globalAlpha = 1;
 
   // Sea floor
@@ -327,7 +339,7 @@ export function renderScene(g: Game) {
       if (d.kind !== 'rock' || !inView(d.x)) continue;
       ctx.save();
       ctx.translate(d.x, d.y + 2);
-      drawDeco(ctx, d.kind, d.size, d.tint, t, 0, space);
+      drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, 0, space));
       ctx.restore();
     }
 
@@ -364,10 +376,9 @@ export function renderScene(g: Game) {
           ctx.arc(b.x, b.y, b.r + extra, 0, Math.PI * 2);
         }
         if (world.abyss) {
-          const x0 = Math.floor((left - 30) / 12) * 12;
-          ctx.moveTo(x0, world.abyss.to + extra);
-          for (let x = x0; x <= right + 30; x += 12) ctx.lineTo(x, world.abyssTop(x) - extra);
-          ctx.lineTo(right + 30, world.abyss.to + extra);
+          const pts = world.abyssOutline(Math.floor((left - 30) / 12) * 12, right + 30, 12, extra);
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          for (const [x, y] of pts) ctx.lineTo(x, y);
           ctx.closePath();
         }
         ctx.fill();
@@ -379,7 +390,7 @@ export function renderScene(g: Game) {
       if (d.kind === 'rock' || !inView(d.x)) continue;
       ctx.save();
       ctx.translate(d.x, d.y + 2);
-      drawDeco(ctx, d.kind, d.size, d.tint, t, d.push, space);
+      drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, d.push, space));
       ctx.restore();
     }
 
@@ -387,16 +398,18 @@ export function renderScene(g: Game) {
       if (!it.alive || !inView(it.x)) continue;
       ctx.save();
       ctx.translate(it.x, it.y + (it.y < world.floorAt(it.x) - 60 ? Math.sin(t * 1.5 + it.phase) * 4 : 0));
-      drawItem(ctx, it.kind, t + it.phase);
-      if (ITEMS[it.kind].treasure) {
-        const a = Math.max(0, Math.sin(t * 2.2 + it.phase * 3));
-        if (a > 0.6) drawSparkle(ctx, 10, -12, 6 * a, a);
-      }
+      drawDimmed(ctx, world.atMouth(it.x, it.y), (c) => {
+        drawItem(c, it.kind, t + it.phase);
+        if (ITEMS[it.kind].treasure) {
+          const a = Math.max(0, Math.sin(t * 2.2 + it.phase * 3));
+          if (a > 0.6) drawSparkle(c, 10, -12, 6 * a, a);
+        }
+      });
       ctx.restore();
     }
   }
 
-  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && !BACKGROUND_KINDS.includes(c.kind)) drawCreature(ctx, c);
+  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && !BACKGROUND_KINDS.includes(c.kind) && !c.front) drawCreature(ctx, c, g.swallow && c.kind === 'leviathan' ? 'back' : 'all');
 
   // Zone exits
   const z = g.save.zone;
@@ -417,22 +430,55 @@ export function renderScene(g: Game) {
   const bob = g.shipBob;
   const s = g.sub;
   const subY = s.y + g.surfaceBob;
-  if (g.mode === 'docked') {
+  {
+    const tipX = g.ship.x + CRANE_TIP.x * g.ship.facing;
+    const tipY = CRANE_TIP.y + bob;
+    const docked = g.mode === 'docked';
+    const cos = Math.cos(s.tilt);
+    const sin = Math.sin(s.tilt);
+    const dockX = g.ship.x + SUB_DOCK_OFFSET * g.ship.facing;
+    const subX = s.x + s.facing * (ANCHOR.x * cos - ANCHOR.y * sin);
+    const subHookY = s.y + ANCHOR.x * sin + ANCHOR.y * cos;
+    const spotX = dockX + g.ship.facing * ANCHOR.x;
+    const spotY = -2 + bob + ANCHOR.y;
+    const grip = docked ? 1 : g.hookGrip;
+    const lowX = lerp(spotX, subX, grip);
+    const lowY = lerp(spotY, subHookY, grip);
+    const up = g.reel * g.reel * (3 - 2 * g.reel);
+    const hx = lerp(lowX, tipX + Math.sin(t * 2.1) * 3, up);
+    const hy = lerp(lowY, tipY + 18, up);
     ctx.strokeStyle = '#2B3A67';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(g.ship.x + CRANE_TIP.x * g.ship.facing, CRANE_TIP.y + bob);
-    const cos = Math.cos(s.tilt);
-    const sin = Math.sin(s.tilt);
-    ctx.lineTo(s.x + s.facing * (ANCHOR.x * cos - ANCHOR.y * sin), s.y + ANCHOR.x * sin + ANCHOR.y * cos);
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(hx, hy);
+    ctx.stroke();
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(hx, hy + 3, 3.5, 0, Math.PI * 2);
+    ctx.moveTo(hx, hy + 6.5);
+    ctx.lineTo(hx, hy + 11);
+    ctx.arc(hx + 6, hy + 11, 6, Math.PI, -Math.PI * 0.3, true);
     ctx.stroke();
   }
   ctx.save();
   ctx.translate(g.ship.x, bob);
   ctx.scale(g.ship.facing, 1);
-  ctx.rotate(Math.sin(t * 0.9) * 0.02);
+  ctx.rotate(Math.sin(t * 0.9) * 0.02 + g.shipPitch);
   drawShip(ctx, t, g.ship.facing, lampNight, Math.min(g.up.plating, g.up.oxygen), g.up.oxygen, g.treasureAlert);
   ctx.restore();
+
+  if (g.foam.length) {
+    const tone = Math.round(255 - night * 90);
+    for (const p of g.foam) {
+      const a = clamp(p.life / p.max, 0, 1);
+      ctx.fillStyle = `rgba(${tone},${tone},${tone},${(p.spray ? 0.85 : 0.5) * a})`;
+      ctx.beginPath();
+      if (p.spray) ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      else ctx.ellipse(p.x, p.y, p.r * 1.6, p.r * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
   for (const w of g.weightFx) {
     ctx.save();
@@ -455,9 +501,12 @@ export function renderScene(g: Game) {
     ctx.save();
     crumple(ctx);
     if (blink) ctx.globalAlpha = 0.4;
+    if (g.swallow) ctx.globalAlpha *= 1 - clamp((g.swallow.t - SWALLOW_CLOSE + 0.6) / 0.5, 0, 1);
     drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, scrubbers: g.save.scrubbers, electrolysis: g.save.electrolysis }, s.facing);
     ctx.restore();
   }
+  if (g.swallow) for (const c of world.creatures) if (c.kind === 'leviathan') drawCreature(ctx, c, 'front');
+  for (const c of world.creatures) if (c.front && inView(c.x, CREATURE_EXTENT[c.kind])) drawCreature(ctx, c);
   for (const d of g.debris) {
     ctx.save();
     ctx.translate(d.x, d.y + g.surfaceBob);
@@ -607,7 +656,8 @@ export function renderScene(g: Game) {
   let lamp: { x: number; y: number; angle: number } | null = null;
   const elapsed = FLICKER_TIME - g.flicker;
   const dip = g.flicker > 0 && ((elapsed > 0.05 && elapsed < 0.15) || (elapsed > 0.27 && elapsed < 0.37));
-  const a = dip ? 0.25 : 1;
+  const glitchDip = g.glitch > 0 && Math.sin(t * 47) + Math.sin(t * 29.3) > 0.4;
+  const a = dip || glitchDip ? 0.2 : 1;
   const power = g.lightPower;
   const lit = !!spot && power > 0.02 && g.lampLevel > 0.02;
   const reach = 0.35 + 0.65 * power;
@@ -622,7 +672,7 @@ export function renderScene(g: Game) {
   );
   if (diving) {
     if (spot && lit) {
-      lights.push({ x: s.x, y: subY, r: spot.glow * reach, a: fade, sub: true });
+      lights.push({ x: s.x, y: subY, r: spot.glow * reach, a: glitchDip ? fade * 0.4 : fade, sub: true });
       const cos = Math.cos(s.tilt);
       const sin = Math.sin(s.tilt);
       lamp = {
@@ -665,8 +715,9 @@ export function renderScene(g: Game) {
     lights.push({ x: b.x, y: b.y, r: SHIP_BEAM_RANGE, angle: b.angle, spread: SHIP_BEAM_SPREAD, a: lampNight });
   }
   const lures: { x: number; y: number; glow: number }[] = [];
+  const beastGlows: ReturnType<typeof leviathanGlows> = [];
   for (const c of world.creatures) {
-    if (!inView(c.x)) continue;
+    if (!inView(c.x) && c.kind !== 'leviathan') continue;
     if (c.kind === 'angler') {
       const glow = lureGlow(c);
       const l = { ...anglerLure(c), glow };
@@ -674,9 +725,15 @@ export function renderScene(g: Game) {
       if (glow > 0) lights.push({ x: l.x, y: l.y, r: 70 * (0.4 + 0.6 * glow), a: glow });
     } else if (c.kind === 'jelly') {
       lights.push({ x: c.x, y: c.y, r: 50 });
+    } else if (c.kind === 'leviathan') {
+      for (const gl of leviathanGlows(c)) {
+        if (!inView(gl.x)) continue;
+        beastGlows.push(gl);
+        lights.push({ x: gl.x, y: gl.y, r: gl.r, a: 0.35 * gl.power });
+      }
     }
   }
-  if (bottom > lerp(startPx, 0, night)) {
+  if (bottom > lerp(startPx, 0, night) && !g.debugFast) {
     g.lighting.render(ctx, { k, ox, oy, left, top, w: W, h: H }, startPx, deepPx, lights, night, space ? '22,2,5' : '3,7,24');
   }
   if (lamp && spot) {
@@ -741,6 +798,7 @@ export function renderScene(g: Game) {
     ctx.restore();
   }
   for (const l of lures) drawLureBulb(ctx, l.x, l.y, t, l.glow);
+  drawLeviathanGlows(ctx, beastGlows, t);
 
   // Sonar
   if (diving && g.sonar.ring >= 0) {
@@ -770,6 +828,16 @@ export function renderScene(g: Game) {
         drawWeight(f);
       });
       g.sonarShape.draw(ctx, k, b.x * k + ox, b.y * k + oy, b.sprite, a * open);
+      continue;
+    }
+    if (b.relic) {
+      const open = 1 - lightCover(lights, b.x, b.y - 60);
+      if (open <= 0.02) continue;
+      b.sprite ??= g.sonarShape.outline(`relic|${k.toFixed(2)}`, 200, k, '255,211,77', (f) => {
+        f.translate(0, 60);
+        drawDeco(f, 'lungsub', 1, 0.5, 0);
+      });
+      g.sonarShape.draw(ctx, k, b.x * k + ox, (b.y - 60) * k + oy, b.sprite, a * open);
       continue;
     }
     if (b.shape) {
@@ -809,25 +877,6 @@ export function renderScene(g: Game) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   const cw = g.canvas.width;
   const ch = g.canvas.height;
-  const face = g.monsterFace;
-  const softened = face.alpha > 0.01 ? softFace() : null;
-  if (softened) {
-    const size = ch * 0.22 * (0.9 + 0.2 * face.p);
-    const fx = cw / 2;
-    const fy = ch - size / 2 - ch * 0.05;
-    ctx.save();
-    const dim = ctx.createRadialGradient(fx, fy, size * 0.2, fx, fy, size * 1.1);
-    dim.addColorStop(0, `rgba(0,0,0,${0.7 * face.alpha})`);
-    dim.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = dim;
-    ctx.beginPath();
-    ctx.arc(fx, fy, size * 1.1, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.4 * face.alpha;
-    ctx.drawImage(softened, fx - size / 2, fy - size / 2, size, size);
-    ctx.restore();
-  }
   const choking = diving && s.oxygen <= 0 && !g.atSurface;
   const stress = (diving && g.depthM > g.depthRating) || choking ? 0.35 + Math.sin(t * 8) * 0.15 : 0;
   const red = Math.max(stress, g.hitFlash * 1.6);

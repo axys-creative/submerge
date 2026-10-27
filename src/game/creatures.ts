@@ -132,12 +132,13 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
       cruise(55, 500, 15, 30, 0.25, 18, 0.35, 0.6);
       break;
     case 'leviathan': {
-      if (!target) {
+      if (!target || c.state === 'rest') {
         steer(c, 0, 0, 1, dt);
         break;
       }
       const speed = d < 600 ? MONSTER_SURGE : MONSTER_SPEED;
-      const want = Math.atan2(dy, dx);
+      const stop = d > 400 && !world.clearLine(c.x, c.y, target.x, target.y) ? world.routeStep(c.x, c.y, target.x, target.y) : null;
+      const want = stop ? Math.atan2(stop.y - c.y, stop.x - c.x) : Math.atan2(dy, dx);
       let heading = want + Math.PI;
       for (const off of [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.6, -1.6]) {
         const a = want + off;

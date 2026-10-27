@@ -17,6 +17,7 @@ const FILES = {
   chime2: ["sound-chime-2.m4a"],
   seagulls: ["sound-seagulls.m4a"],
   music: ["sound-music-1.m4a"],
+  music2: ["sound-music-2.m4a"],
   whaleFar: ["sound-whale-far.m4a"],
   whaleNear: ["sound-whale-near.m4a"],
   lightSwitch: ["sound-spotlight-toggle-soft.m4a"],
@@ -25,8 +26,10 @@ const FILES = {
   holdBreath: ["sound-breathing-holding-breath.m4a"],
   heartbeat: ["sound-heartbeat.m4a"],
   wheeze: ["sound-breathing-wheezing.m4a"],
-  crimson: ["sound-crimson-sea-vibration.m4a"],
+  crimson: ["sound-crimson-sea-vibration-1.m4a"],
+  crimsonDeep: ["sound-crimson-sea-vibration-2.m4a"],
   monster: ["sound-crimson-sea-monster.m4a"],
+  static: ["sound-static.m4a"],
 } as const;
 
 type Sound = keyof typeof FILES;
@@ -40,7 +43,7 @@ const VOLUME: Record<Sound, number> = {
   surface: 0.7,
   depths: 0.7,
   propeller: 0.6,
-  sailing: 0.6,
+  sailing: 0.25,
   implosion: 1,
   horn: 0.8,
   clank1: 0.8,
@@ -51,6 +54,7 @@ const VOLUME: Record<Sound, number> = {
   chime2: 0.7,
   seagulls: 0.6,
   music: 0.5,
+  music2: 0.5,
   whaleFar: 0.7,
   whaleNear: 0.9,
   lightSwitch: 0.8,
@@ -60,13 +64,14 @@ const VOLUME: Record<Sound, number> = {
   heartbeat: 0.5,
   wheeze: 0.5,
   crimson: 0.6,
+  crimsonDeep: 0.6,
   monster: 0.9,
+  static: 0.6,
 };
 
 /** Which looping beds play in each scene. */
 const BEDS: Record<Scene, Sound[]> = { surface: ["surface"], dive: ["depths"] };
-const LOOPS: Sound[] = ["surface", "depths", "propeller", "sailing", "heartbeat", "crimson"];
-
+const LOOPS: Sound[] = ["surface", "depths", "propeller", "sailing", "heartbeat", "crimson", "crimsonDeep"];
 
 const HORN_GAP = 0.5;
 
@@ -77,7 +82,7 @@ const WHALE_FAR_PX = 3000;
 const WHALE_FAR_FROM_PX = 1500;
 
 /** Depth in meters at which the music is fully muffled, and the cutoff range it sweeps through. */
-const MUFFLE_DEPTH = 120;
+const MUFFLE_DEPTH = 220;
 const OPEN_HZ = 18000;
 const MUFFLED_HZ = 250;
 const MUFFLED_GAIN = 0.2;
@@ -98,6 +103,8 @@ export class AudioManager {
   private musicDepth: GainNode | null = null;
   private muffle = 0;
   private musicOff = false;
+  private musicTracks: GainNode[] = [];
+  private musicTrack = 0;
   private scene: Scene = "surface";
   private propeller = false;
   private hornTimer = 0;
@@ -144,7 +151,11 @@ export class AudioManager {
     if (off === this.musicOff) return;
     this.musicOff = off;
     if (this.ctx && this.musicBus) {
-      this.musicBus.gain.setTargetAtTime(off ? 0 : this.musicVolume * VOLUME.music, this.ctx.currentTime, 1.2);
+      this.musicBus.gain.setTargetAtTime(
+        off ? 0 : this.musicVolume * VOLUME.music,
+        this.ctx.currentTime,
+        1.2,
+      );
     }
   }
 
@@ -154,11 +165,12 @@ export class AudioManager {
     this.applyBeds();
   }
 
-  /** The Crimson Sea's low vibration, which fades in once the sub is under the surface there. */
-  setCrimson(on: boolean) {
-    const gain = this.beds.get("crimson");
-    if (!this.ctx || !gain) return;
-    gain.gain.setTargetAtTime(on ? VOLUME.crimson : 0, this.ctx.currentTime, 1.5);
+  /** The Crimson Sea's low vibration, which fades in once the sub is under the surface there and changes tone in the great cavern. */
+  setCrimson(on: boolean, cavern: boolean) {
+    if (!this.ctx) return;
+    for (const [name, here] of [["crimson", !cavern], ["crimsonDeep", cavern]] as const) {
+      this.beds.get(name)?.gain.setTargetAtTime(on && here ? VOLUME[name] : 0, this.ctx.currentTime, 1.5);
+    }
   }
 
   setHeartbeat(on: boolean) {
@@ -167,11 +179,11 @@ export class AudioManager {
     gain.gain.setTargetAtTime(on ? VOLUME.heartbeat : 0, this.ctx.currentTime, on ? 0.1 : 0.3);
   }
 
-  /** Fades the ship's engine loop with its speed, 0 (still) to 1 (full speed). */
-  setSailing(speed: number) {
+  /** Fades the ship's engine loop up quickly while it is being driven and down slowly once it stops. */
+  setSailing(on: boolean) {
     const gain = this.beds.get("sailing");
     if (!this.ctx || !gain) return;
-    gain.gain.setTargetAtTime(VOLUME.sailing * speed, this.ctx.currentTime, 0.3);
+    gain.gain.setTargetAtTime(on ? VOLUME.sailing : 0, this.ctx.currentTime, on ? 0.5 : 1.8);
   }
 
   /** Repeats the single-blast horn while a warning is active. */
@@ -240,7 +252,11 @@ export class AudioManager {
       this.whaleNearTimer = near.duration + 12 + Math.random() * 18;
       this.whaleFarTimer = Math.max(this.whaleFarTimer, near.duration + 6);
     } else if (far && dist >= WHALE_FAR_FROM_PX && dist < WHALE_FAR_PX && this.whaleFarTimer <= 0) {
-      this.play("whaleFar", 0.45 + 0.55 * (1 - (dist - WHALE_FAR_FROM_PX) / (WHALE_FAR_PX - WHALE_FAR_FROM_PX)), pan);
+      this.play(
+        "whaleFar",
+        0.45 + 0.55 * (1 - (dist - WHALE_FAR_FROM_PX) / (WHALE_FAR_PX - WHALE_FAR_FROM_PX)),
+        pan,
+      );
       this.whaleFarTimer = far.duration + 15 + Math.random() * 25;
     }
   }
@@ -306,8 +322,11 @@ export class AudioManager {
   private applyMaster() {
     if (this.out) this.out.gain.value = this.muted ? 0 : 1;
     if (this.master) this.master.gain.value = this.volume;
-    if (this.musicBus) this.musicBus.gain.value = this.musicOff ? 0 : this.musicVolume * VOLUME.music;
+    if (this.musicBus)
+      this.musicBus.gain.value = this.musicOff ? 0 : this.musicVolume * VOLUME.music;
   }
+
+  private voices = new Map<Sound, Set<AudioBufferSourceNode>>();
 
   play(name: Sound, volume = 1, pan = 0, rate = 1) {
     const buf = this.buffers.get(name);
@@ -322,7 +341,15 @@ export class AudioManager {
       panner.pan.value = pan;
       src.connect(gain).connect(panner).connect(this.master);
     } else src.connect(gain).connect(this.master);
+    const voices = this.voices.get(name) ?? new Set<AudioBufferSourceNode>();
+    this.voices.set(name, voices);
+    voices.add(src);
+    src.onended = () => voices.delete(src);
     src.start();
+  }
+
+  stop(name: Sound) {
+    for (const src of this.voices.get(name) ?? []) src.stop();
   }
 
   private async unlock() {
@@ -369,23 +396,40 @@ export class AudioManager {
   }
 
   private startMusic() {
-    const buffer = this.buffers.get("music");
-    if (!this.ctx || !this.musicBus || !buffer) return;
-    const src = this.ctx.createBufferSource();
-    src.buffer = buffer;
-    src.loop = true;
+    if (!this.ctx || !this.musicBus || !this.buffers.get("music")) return;
     this.musicFilter = this.ctx.createBiquadFilter();
     this.musicFilter.type = "lowpass";
     this.musicFilter.frequency.value = OPEN_HZ;
     this.musicDepth = this.ctx.createGain();
-    src.connect(this.musicFilter).connect(this.musicDepth).connect(this.musicBus);
-    src.start();
+    this.musicFilter.connect(this.musicDepth).connect(this.musicBus);
+    this.musicTracks = [];
+    for (const name of ["music", "music2"] as const) {
+      const buffer = this.buffers.get(name);
+      if (!buffer) continue;
+      const src = this.ctx.createBufferSource();
+      const gain = this.ctx.createGain();
+      gain.gain.value = this.musicTracks.length === this.musicTrack ? 1 : 0;
+      src.buffer = buffer;
+      src.loop = true;
+      src.connect(gain).connect(this.musicFilter);
+      src.start();
+      this.musicTracks.push(gain);
+    }
+  }
+
+  /** Plays the first track by day and the second by night, crossfading when it changes; both keep playing in step so the swap is seamless. */
+  setNightMusic(night: boolean) {
+    const track = night && this.musicTracks.length > 1 ? 1 : 0;
+    if (track === this.musicTrack) return;
+    this.musicTrack = track;
+    if (!this.ctx) return;
+    this.musicTracks.forEach((gain, i) => gain.gain.setTargetAtTime(i === track ? 1 : 0, this.ctx!.currentTime, 1.2));
   }
 
   private applyBeds() {
     if (!this.ctx) return;
     for (const [name, gain] of this.beds) {
-      if (name === "sailing" || name === "heartbeat" || name === "crimson") continue;
+      if (name === "sailing" || name === "heartbeat" || name === "crimson" || name === "crimsonDeep") continue;
       const on = name === "propeller" ? this.propeller : BEDS[this.scene].includes(name);
       gain.gain.setTargetAtTime(
         on ? VOLUME[name] : 0,

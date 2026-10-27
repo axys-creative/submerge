@@ -57,9 +57,8 @@ export const CRUSH_DEPTH_SHOWN = 6000;
 /** How far outside the screen, in px, a dropped weight can still be heard hitting the bottom (100 m). */
 export const WEIGHT_HEARING_MARGIN = 1000;
 
-/** Deep in the Crimson Sea cavern: the depth in meters that wakes the monster, how long its face shows, the pause after it, and its chase speeds in px/s. */
-export const MONSTER_DEPTH = 4800;
-export const MONSTER_FACE_TIME = 7;
+/** In the Crimson Sea's deep cave: the depth in meters that wakes the monster, the pause before it rises, and its chase speeds in px/s. */
+export const MONSTER_DEPTH = 3900;
 export const MONSTER_WAIT = 2;
 export const MONSTER_SPEED = 230;
 export const MONSTER_SURGE = 310;
@@ -67,3 +66,23 @@ export const MONSTER_SURGE = 310;
 /** How much bigger the monster is drawn and collides than its base design, and how many head positions its body follows (16 px apart). */
 export const MONSTER_SCALE = 1.7;
 export const MONSTER_TRAIL = 150;
+
+/** Once the leviathan takes the sub: seconds it is pulled into the open mouth, then seconds the jaws take to shut. */
+export const SWALLOW_CLOSE = 1.4;
+export const SWALLOW_SHUT = 0.6;
+
+/** The Crimson Sea's instruments glitch for this many seconds, then again after a random wait between the two lengths. */
+export const GLITCH_TIME = 3;
+export const GLITCH_GAP: [number, number] = [20, 20];
+/** Seconds after the wreck message appears before the instruments glitch. */
+export const DEATH_GLITCH_DELAY = 1;
+
+/** The zoom while the test panel's fast mode is on, wider than any zone's own. */
+export const DEBUG_ZOOM = 0.3;
+
+/** Holding the boost key while sailing: how many times faster the ship goes, and how far the camera zooms out at full boost. */
+export const BOOST_SPEED = 3;
+export const BOOST_ZOOM = 0.62;
+
+/** Seconds the crane hook takes to reel all the way up or down. */
+export const HOOK_TIME = 1;
