@@ -1,5 +1,6 @@
 import { SAVE_KEY } from '../config';
 import { UPGRADES, UPGRADE_ORDER, type Loadout } from '../data/upgrades';
+import { SKINS, type SkinId } from '../data/skins';
 import { ITEM_KINDS, type ItemKind } from '../data/items';
 import { ZONES } from '../data/zones';
 import { START_DAY } from '../render/daylight';
@@ -10,6 +11,8 @@ export interface SaveData {
   v: 1;
   money: number;
   upgrades: Loadout;
+  /** The submarine's look. */
+  skin: SkinId;
   zone: number;
   shipX: number;
   day: number;
@@ -24,6 +27,10 @@ export interface SaveData {
   electrolysis: boolean;
   /** Explored map cells per zone index, as base64 bitsets. */
   explored: Record<number, string>;
+  /** Trash spots already collected per zone index. */
+  trash: Record<number, number[]>;
+  /** Earned achievement ids, such as 'trash-0'. */
+  achievements: string[];
   stats: { dives: number; earned: number; deepest: number };
 }
 
@@ -31,7 +38,8 @@ export function newSave(): SaveData {
   return {
     v: 1,
     money: 0,
-    upgrades: { plating: 0, oxygen: 0, battery: 0, hull: 0, light: 0, sonar: 0, propeller: 0 },
+    upgrades: { plating: 0, oxygen: 0, battery: 0, hull: 0, light: 0, sonar: 0, propeller: 0, cargo: 0 },
+    skin: 'standard',
     zone: 0,
     shipX: 900,
     day: START_DAY,
@@ -43,6 +51,8 @@ export function newSave(): SaveData {
     scrubbers: false,
     electrolysis: false,
     explored: {},
+    trash: {},
+    achievements: [],
     stats: { dives: 0, earned: 0, deepest: 0 },
   };
 }
@@ -58,6 +68,7 @@ export function sanitize(raw: any): SaveData | null {
   for (const id of UPGRADE_ORDER) {
     s.upgrades[id] = Math.floor(num(raw.upgrades?.[id], 0, UPGRADES[id].levels.length - 1, 0));
   }
+  if (typeof raw.skin === 'string' && raw.skin in SKINS) s.skin = raw.skin as SkinId;
   s.zone = Math.floor(num(raw.zone, 0, ZONES.length - 1, 0));
   s.shipX = num(raw.shipX, 0, ZONES[s.zone].width, s.shipX);
   s.day = num(raw.day, 0, 1, START_DAY) % 1;
@@ -74,6 +85,13 @@ export function sanitize(raw: any): SaveData | null {
   for (let z = 0; z < ZONES.length; z++) {
     const e = raw.explored?.[z];
     if (typeof e === 'string' && e.length < 40000 && /^[A-Za-z0-9+/=]*$/.test(e)) s.explored[z] = e;
+  }
+  for (let z = 0; z < ZONES.length; z++) {
+    const t = raw.trash?.[z];
+    if (Array.isArray(t)) s.trash[z] = [...new Set(t.map((n: unknown) => Math.floor(num(n, 0, 99, -1))).filter((n: number) => n >= 0))].slice(0, 100);
+  }
+  if (Array.isArray(raw.achievements)) {
+    s.achievements = raw.achievements.filter((a: unknown) => typeof a === 'string' && /^trash-\d+$/.test(a) && Number(a.slice(6)) < ZONES.length);
   }
   s.stats.dives = Math.floor(num(raw.stats?.dives, 0, 1e9, 0));
   s.stats.earned = Math.floor(num(raw.stats?.earned, 0, 1e12, 0));

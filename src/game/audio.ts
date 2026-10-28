@@ -7,7 +7,8 @@ const FILES = {
   depths: ["sound-ocean-depths-background.mp3"],
   propeller: ["sound-propeller.m4a"],
   sailing: ["sound-ship-sailing.m4a"],
-  tether: ["sound-ship-tether.m4a"],
+  tetherReel: ["sound-ship-tether-reel.m4a"],
+  tetherHydraulic: ["sound-ship-tether-hydraulic.m4a"],
   implosion: ["sound-implosion.m4a"],
   horn: ["sound-warning-horn.m4a"],
   clank1: ["sound-clank-1.m4a"],
@@ -16,6 +17,8 @@ const FILES = {
   depth2: ["sound-depth-2.m4a"],
   chime1: ["sound-chime-1.m4a"],
   chime2: ["sound-chime-2.m4a"],
+  chime3: ["sound-chime-3.m4a"],
+  chime4: ["sound-chime-4.m4a"],
   seagulls: ["sound-seagulls.m4a"],
   music: ["sound-music-1.m4a"],
   music2: ["sound-music-2.m4a"],
@@ -31,6 +34,10 @@ const FILES = {
   crimsonDeep: ["sound-crimson-sea-vibration-2.m4a"],
   monster: ["sound-crimson-sea-monster.m4a"],
   static: ["sound-static.m4a"],
+  candle1: ["sound-oxygen-candle-1.m4a"],
+  candle2: ["sound-oxygen-candle-2.m4a"],
+  invalid: ["sound-invalid-1.m4a"],
+  alertBeep: ["sound-alert-beeping.m4a"],
 } as const;
 
 type Sound = keyof typeof FILES;
@@ -39,13 +46,14 @@ type Scene = "surface" | "dive";
 const KEY = "submerge.audio.v2";
 
 const VOLUME: Record<Sound, number> = {
-  splash: 1,
+  splash: 0.5,
   sonar: 0.35,
   surface: 0.7,
   depths: 0.7,
   propeller: 0.6,
   sailing: 0.25,
-  tether: 0.5,
+  tetherReel: 0.15,
+  tetherHydraulic: 0.5,
   implosion: 1,
   horn: 0.8,
   clank1: 0.8,
@@ -54,6 +62,8 @@ const VOLUME: Record<Sound, number> = {
   depth2: 0.8,
   chime1: 0.7,
   chime2: 0.7,
+  chime3: 0.7,
+  chime4: 0.7,
   seagulls: 0.6,
   music: 0.5,
   music2: 0.5,
@@ -69,6 +79,16 @@ const VOLUME: Record<Sound, number> = {
   crimsonDeep: 0.6,
   monster: 0.9,
   static: 0.6,
+  candle1: 0.7,
+  candle2: 0.7,
+  invalid: 0.6,
+  alertBeep: 0.6,
+};
+
+/** Playback speed per sound, applied on top of any rate passed to `play`; above 1 is faster and higher pitched. */
+const RATE: Partial<Record<Sound, number>> = {
+  tetherHydraulic: 1.75,
+  candle2: 0.4,
 };
 
 /** Which looping beds play in each scene. */
@@ -81,6 +101,7 @@ const LOOPS: Sound[] = [
   "heartbeat",
   "crimson",
   "crimsonDeep",
+  "alertBeep",
 ];
 
 const HORN_GAP = 0.5;
@@ -194,6 +215,13 @@ export class AudioManager {
     const gain = this.beds.get("heartbeat");
     if (!this.ctx || !gain) return;
     gain.gain.setTargetAtTime(on ? VOLUME.heartbeat : 0, this.ctx.currentTime, on ? 0.1 : 0.3);
+  }
+
+  /** Loops the low-battery beeping while `on`. */
+  setBatteryBeep(on: boolean) {
+    const gain = this.beds.get("alertBeep");
+    if (!this.ctx || !gain) return;
+    gain.gain.setTargetAtTime(on ? VOLUME.alertBeep : 0, this.ctx.currentTime, 0.02);
   }
 
   /** Fades the ship's engine loop up quickly while it is being driven and down slowly once it stops. */
@@ -345,14 +373,14 @@ export class AudioManager {
 
   private voices = new Map<Sound, Set<AudioBufferSourceNode>>();
 
-  play(name: Sound, volume = 1, pan = 0, rate = 1) {
+  play(name: Sound, volume = 1, pan = 0, rate = 1, delay = 0) {
     const buf = this.buffers.get(name);
     if (!this.ctx || !this.master || !buf) return;
     const src = this.ctx.createBufferSource();
     const gain = this.ctx.createGain();
     gain.gain.value = VOLUME[name] * volume;
     src.buffer = buf;
-    src.playbackRate.value = rate;
+    src.playbackRate.value = rate * (RATE[name] ?? 1);
     if (pan) {
       const panner = this.ctx.createStereoPanner();
       panner.pan.value = pan;
@@ -362,7 +390,13 @@ export class AudioManager {
     this.voices.set(name, voices);
     voices.add(src);
     src.onended = () => voices.delete(src);
-    src.start();
+    src.start(this.ctx.currentTime + delay);
+  }
+
+  /** The oxygen candle's strike, then its burn. */
+  candle() {
+    this.play("candle1");
+    this.play("candle2", 1, 0, 1, this.buffers.get("candle1")?.duration ?? 0);
   }
 
   stop(name: Sound) {

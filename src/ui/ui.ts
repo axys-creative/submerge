@@ -23,7 +23,8 @@ import {
   type Loadout,
   type UpgradeId,
 } from "../data/upgrades";
-import { ZONES } from "../data/zones";
+import { ZONES, ZONE_ORDER, zoneNumber } from "../data/zones";
+import { SKINS, SKIN_ORDER } from "../data/skins";
 import { DEPTH_ZONES, METER_WINDOW, zoneIndexAt } from "../data/depthZones";
 import { ROUTES, routesFrom, type Endpoint } from "../data/routes";
 import { ITEMS, ITEM_KINDS, type ItemKind } from "../data/items";
@@ -41,7 +42,7 @@ const ICON = {
 const DIM_KEY = "submerge.ui.v1";
 const MAX_TEST_LEVEL = 3;
 
-type ModalKind = "title" | "shop" | "menu" | "message" | "map";
+type ModalKind = "title" | "shop" | "menu" | "message" | "map" | "inventory";
 
 const $ = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) =>
   root.querySelector(sel) as T;
@@ -82,7 +83,7 @@ export class UI {
             <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
           </div>
         </div>
-        <div class="panel purse"><div class="money" id="hud-money">$0</div><div class="cargo" id="hud-cargo">Hold empty</div></div>
+        <div class="panel purse" id="purse" role="button" tabindex="-1" aria-label="Open inventory"><div class="money" id="hud-money">$0</div><div class="cargo" id="hud-cargo">Hold empty</div><div class="trash" id="hud-trash" hidden></div></div>
         <button class="icon-btn" id="btn-menu" aria-label="Menu">${ICON.menu}</button>
       </div>
       <div class="prompt" id="prompt" hidden></div>
@@ -116,10 +117,15 @@ export class UI {
 
     $(this.root, "#debug-up").onclick = (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-        "[data-dbg], [data-zone], [data-all], [data-weights], [data-gear], [data-fast]",
+        "[data-dbg], [data-zone], [data-all], [data-weights], [data-gear], [data-fast], [data-skin]",
       );
       if (!btn) return;
       btn.blur();
+      if (btn.dataset.skin) {
+        const at = SKIN_ORDER.indexOf(this.game.save.skin) + Number(btn.dataset.skin);
+        this.game.setSkin(SKIN_ORDER[(at + SKIN_ORDER.length) % SKIN_ORDER.length]);
+        return;
+      }
       if (btn.dataset.fast) {
         this.game.debugFast = btn.dataset.fast === "1";
         return;
@@ -151,8 +157,8 @@ export class UI {
         return;
       }
       if (btn.dataset.zone) {
-        const zone = this.game.save.zone + Number(btn.dataset.zone);
-        if (zone >= 0 && zone < ZONES.length) this.game.sailTo({ zone, side: "west" });
+        const zone = ZONE_ORDER[ZONE_ORDER.indexOf(this.game.save.zone) + Number(btn.dataset.zone)];
+        if (zone !== undefined) this.game.sailTo({ zone, side: "west" });
         return;
       }
       const [id, step] = btn.dataset.dbg!.split(":") as [UpgradeId, string];
@@ -168,6 +174,7 @@ export class UI {
 
     $(this.root, "#btn-menu").addEventListener("click", () => this.openMenu());
     addEventListener("keydown", (e) => this.mapKeys(e), true);
+    $(this.root, "#purse").addEventListener("click", () => this.openInventory());
     $(this.root, "#dm-depth").addEventListener("click", () => this.game.input.tap("hold"));
     this.root
       .querySelectorAll<HTMLElement>(".seg")
@@ -182,7 +189,7 @@ export class UI {
     );
     this.root.addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest(
-        'button, [data-act], .upg, input[type="range"], label.sound-row',
+        'button, [data-act], #purse, .upg, input[type="range"], label.sound-row, summary',
       );
       if (el && !(el as HTMLButtonElement).disabled && !el.closest("#debug-up"))
         this.game.audio.play("menuTick");
@@ -342,15 +349,18 @@ export class UI {
     this.set(
       "dbg",
       UPGRADE_ORDER.map((id) => g.save.upgrades[id]).join() +
-        `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}|${g.debugFast}`,
+        `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}|${g.debugFast}|${g.save.skin}`,
       () => {
         const zone = g.save.zone;
+        const prevZone = ZONE_ORDER[ZONE_ORDER.indexOf(zone) - 1];
+        const nextZone = ZONE_ORDER[ZONE_ORDER.indexOf(zone) + 1];
         const master = this.masterLevel();
         const off = (ok: boolean) => (ok && g.mode === "docked" ? "" : " disabled");
         $(this.root, "#debug-up").innerHTML =
           "<h4>Zone (test)</h4>" +
-          `<div class="dbg-row"><button tabindex="-1" data-zone="-1"${off(zone > 0)}>◀</button><span><b>Zone ${zone + 1}/${ZONES.length}</b><small>${ZONES[zone].name}</small></span><button tabindex="-1" data-zone="1"${off(zone < ZONES.length - 1)}>▶</button></div>` +
-          `<div class="dbg-row"><button tabindex="-1" data-fast="0"${g.debugFast ? "" : " disabled"}>−</button><span><b>Debug mode</b><small>${g.debugFast ? "On: fast, lit, wide, map revealed" : "Off"}</small></span><button tabindex="-1" data-fast="1"${g.debugFast ? " disabled" : ""}>+</button></div>` +
+          `<div class="dbg-row"><button tabindex="-1" data-zone="-1" title="${esc(ZONES[prevZone]?.name ?? "")}"${off(prevZone !== undefined)}>◀</button><span><b>Zone ${zoneNumber(zone)}/${ZONES.length - 1}</b><small>${ZONES[zone].name}</small></span><button tabindex="-1" data-zone="1" title="${esc(ZONES[nextZone]?.name ?? "")}"${off(nextZone !== undefined)}>▶</button></div>` +
+          `<div class="dbg-row"><button tabindex="-1" data-fast="0"${g.debugFast ? "" : " disabled"}>−</button><span><b>Debug mode</b><small>${g.debugFast ? "On: fast, lit, wide, map revealed, no clipping, no damage" : "Off"}</small></span><button tabindex="-1" data-fast="1"${g.debugFast ? " disabled" : ""}>+</button></div>` +
+          `<div class="dbg-row"><button tabindex="-1" data-skin="-1">◀</button><span><b>Skin</b><small>${SKINS[g.save.skin].name}</small></span><button tabindex="-1" data-skin="1">▶</button></div>` +
           "<h4>Upgrades (test)</h4>" +
           `<div class="dbg-row all"><button tabindex="-1" data-all="-1"${master > 0 ? "" : " disabled"}>−</button><span><b>All upgrades</b><small>Level ${master + 1}/${MAX_TEST_LEVEL + 1}</small></span><button tabindex="-1" data-all="1"${master < MAX_TEST_LEVEL ? "" : " disabled"}>+</button></div>` +
           UPGRADE_ORDER.map((id) => {
@@ -373,7 +383,7 @@ export class UI {
     this.drawMap();
     this.set("zone", String(g.save.zone), () => {
       $(this.root, "#map-zone").textContent =
-        `Zone ${g.save.zone + 1} · ${ZONES[g.save.zone].name}`;
+        `Zone ${zoneNumber(g.save.zone)} · ${ZONES[g.save.zone].name}`;
     });
     this.set("theme", String(g.uiDark > 0.5), () =>
       this.root.classList.toggle("ui-dark", g.uiDark > 0.5),
@@ -400,9 +410,18 @@ export class UI {
     const n = g.cargoCount();
     this.set(
       "cargo",
-      n ? `Hold: ${n} · ${money(g.cargoValue())}` : "Hold empty",
+      n ? `Hold: ${n}/${g.cargoCap} · ${money(g.cargoValue())}` : "Hold empty",
       (v) => ($(this.root, "#hud-cargo").textContent = v),
     );
+
+    const trash = g.trashStatus;
+    this.set("trash", trash ? `${trash.got}|${trash.total}|${trash.earned}` : "", () => {
+      const el = $(this.root, "#hud-trash");
+      el.hidden = !trash;
+      if (!trash) return;
+      el.textContent = `Trash Gathered: ${trash.got}/${trash.total}${trash.earned && trash.got >= trash.total ? " ✓" : ""}`;
+      el.classList.toggle("done", trash.got >= trash.total);
+    });
 
     const spot = g.dockSpot();
     const prompt = this.promptText(spot);
@@ -599,7 +618,7 @@ export class UI {
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(this.mapBg.canvas, 0, this.mapScroll, W, H, 0, 0, W, H);
     const fog = this.fogLayer(W, fullH, sy);
-    if (fog && !g.debugFast) ctx.drawImage(fog, 0, this.mapScroll, W, H, 0, 0, W, H);
+    if (fog && !g.debugFast && !g.world.def.catalog) ctx.drawImage(fog, 0, this.mapScroll, W, H, 0, 0, W, H);
     ctx.save();
     ctx.translate(0, -this.mapScroll);
 
@@ -687,7 +706,7 @@ export class UI {
         if (save.candles)
           lines.push(
             row(
-              `<b>${g.candlesLeft} of ${save.candles}</b> oxygen ${save.candles === 1 ? "candle" : "candles"} left. One lights itself for ${GEAR.candles.seconds} s of air when the tank runs dry, and docking restocks them.`,
+              `<b>${g.candlesLeft} of ${save.candles}</b> oxygen ${save.candles === 1 ? "candle" : "candles"} left. One lights itself for ${GEAR.candles.seconds} s more air when the tank is nearly empty, and docking restocks them.`,
             ),
           );
         $(this.root, "#pop-air").innerHTML = lines.join("");
@@ -767,6 +786,8 @@ export class UI {
       const label = $(this.root, `#pct-${id}`);
       label.textContent = `${Math.ceil(pct * 100)}%`;
       label.classList.toggle("low", pct < 0.25);
+      el.classList.toggle("dead", pct <= 0);
+      label.classList.toggle("dead", pct <= 0);
     });
   }
 
@@ -1016,6 +1037,7 @@ export class UI {
       return `<path class="edge${active ? " active" : ""}" d="M${pa.x},${pa.y} C${mx},${pa.y} ${mx},${pb.y} ${pb.x},${pb.y}"/>`;
     }).join("");
     const nodes = ZONES.map((z, i) => {
+      if (z.catalog) return "";
       const here = i === from.zone;
       const dest = dests.some((d) => d.zone === i);
       const route = dests.find((d) => d.zone === i);
@@ -1073,6 +1095,42 @@ export class UI {
     };
   }
 
+  openInventory() {
+    if (this.modalKind) return;
+    const g = this.game;
+    const kinds = ITEM_KINDS.filter((k) => g.save.cargo[k]);
+    const n = g.cargoCount();
+    this.open(
+      "inventory",
+      `<div class="card menu inventory">
+        <header class="card-head"><div><span class="eyebrow">Inventory</span><h2>Your hold</h2></div><button class="btn small" data-act="close" data-autofocus>Close</button></header>
+        <p class="muted">${n} of ${g.cargoCap} items${n >= g.cargoCap ? " · full" : ""}. Sell your haul at an island shop. Trash is thrown out when you dock.</p>
+        <div class="cap-bar${n >= g.cargoCap ? " full" : ""}"><i style="width:${(n / g.cargoCap) * 100}%"></i></div>
+        ${g.trashStatus ? `<p class="muted">Trash cleared in this zone: <b>${g.trashStatus.got}/${g.trashStatus.total}</b></p>` : ""}
+        ${
+          kinds.length
+            ? `<ul class="chips">${kinds
+                .map((k) => {
+                  const c = g.save.cargo[k]!;
+                  return `<li><canvas data-item="${k}" width="64" height="64"></canvas><span>${esc(ITEMS[k].name)} <b>×${c}</b></span><em>${ITEMS[k].trash ? "trash" : money(c * ITEMS[k].value)}</em></li>`;
+                })
+                .join("")}</ul>
+              <p class="inv-total">Total value <b>${money(g.cargoValue())}</b></p>`
+            : `<p class="muted">Nothing yet. Dive and grab some treasure.</p>`
+        }
+      </div>`,
+    );
+    this.modal.querySelectorAll<HTMLCanvasElement>("canvas[data-item]").forEach((c) => {
+      const ctx = c.getContext("2d")!;
+      ctx.setTransform(1.5, 0, 0, 1.5, 32, 32);
+      drawItem(ctx, c.dataset.item as ItemKind, 0);
+    });
+    this.modal.onclick = (e) => {
+      const target = e.target as HTMLElement;
+      if (target === this.modal || target.closest("[data-act='close']")) this.close();
+    };
+  }
+
   openMenu() {
     if (this.modalKind === "title") return;
     const g = this.game;
@@ -1102,11 +1160,25 @@ export class UI {
             <li>${this.touch ? "Tap <b>Grab</b>" : "Press <kbd>Space</kbd>"} to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
             <li>Below about 40 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>.</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
             ${g.save.weights ? `<li>${this.touch ? "Tap <b>Drop</b>" : "Press <kbd>Q</kbd> or <kbd>/</kbd>"} to drop the dive weights for a quick ride up.</li>` : ""}
-            ${this.touch ? '' : '<li>Press <kbd>L</kbd> to cycle the spotlight, and <kbd>O</kbd> to cycle the sonar, between off, on and auto.</li>'}
+            ${this.touch ? "" : "<li>Press <kbd>L</kbd> to cycle the spotlight, and <kbd>O</kbd> to cycle the sonar, between off, on and auto.</li>"}
             <li>Surface anywhere to refill your air.</li>
             <li>When the battery runs out, ${this.touch ? "tap the <b>E</b> and <b>R</b> buttons" : "press <kbd>E</kbd> and <kbd>R</kbd>"} back and forth to hand-crank.</li>
             <li>${this.touch ? "Tap <b>Menu</b>" : "Press <kbd>Esc</kbd> or <kbd>P</kbd>"} to pause.</li>
           </ul>
+        </details>
+                <details class="acc">
+          <summary>Achievements</summary>
+          <ul class="ach">${ZONES.map((z, i) => ({ z, i }))
+            .filter(({ z }) => z.trash)
+            .map(({ z, i }) => {
+              const done = g.save.achievements.includes(`trash-${i}`);
+              const here =
+                i === g.save.zone && g.trashStatus
+                  ? ` · ${g.trashStatus.got}/${g.trashStatus.total} now`
+                  : "";
+              return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Squeaky Clean</b><span>${esc(z.name)}: clear every piece of trash${done ? "" : here}</span></li>`;
+            })
+            .join("")}</ul>
         </details>
         <details class="acc">
           <summary>Sound</summary>
@@ -1381,7 +1453,7 @@ export class UI {
       const scale = Math.min(w / 190, h / 130);
       ctx.translate(w / 2, h / 2 + 6 + Math.sin(t * 1.6) * 4);
       ctx.scale(scale, scale);
-      drawSub(ctx, up, t, t * 6, false, false, 0, this.game.save);
+      drawSub(ctx, up, t, t * 6, false, false, 0, this.game.save, 1, this.game.save.skin);
       this.shopRaf = requestAnimationFrame(frame);
     };
     this.shopRaf = requestAnimationFrame(frame);

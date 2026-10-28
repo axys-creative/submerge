@@ -3,7 +3,7 @@ import { ISLAND_WIDTH } from '../config';
 import { drawTankShape } from './sub';
 import { drawBones, type BoneKind } from './bones';
 
-export type DecoKind = 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'lungsub' | BoneKind;
+export type DecoKind = 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | BoneKind;
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a: number) {
   ctx.save();
@@ -628,18 +628,67 @@ export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleo
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.rotate(-0.12);
-  if (kind === 'galleon') ctx.scale(1.5, 1.5);
+  if (kind === 'galleon') ctx.scale(3, 3);
+  const hull = () => {
+    ctx.beginPath();
+    ctx.moveTo(-110, -16);
+    ctx.lineTo(100, -34);
+    ctx.quadraticCurveTo(96, 8, 60, 20);
+    ctx.lineTo(-90, 20);
+    ctx.quadraticCurveTo(-112, 8, -110, -16);
+  };
   ctx.fillStyle = '#6E4A35';
-  ctx.beginPath();
-  ctx.moveTo(-110, -16);
-  ctx.lineTo(100, -34);
-  ctx.quadraticCurveTo(96, 8, 60, 20);
-  ctx.lineTo(-90, 20);
-  ctx.quadraticCurveTo(-112, 8, -110, -16);
+  hull();
   ctx.fill();
   if (kind === 'galleon') {
-    rrect(ctx, -108, -54, 50, 40, 4);
+    rrect(ctx, -108, -46, 50, 32, 3);
     ctx.fill();
+    ctx.fillStyle = '#8A6446';
+    ctx.fillRect(-112, -50, 58, 5);
+    ctx.fillStyle = '#5A3B29';
+    for (const x of [-108, -88, -68, -57]) ctx.fillRect(x, -62, 4, 13);
+    ctx.fillStyle = '#8A6446';
+    ctx.fillRect(-112, -64, 58, 4);
+    ctx.fillStyle = '#8A6446';
+    ctx.beginPath();
+    ctx.moveTo(-28, -10);
+    ctx.lineTo(-28, -28);
+    ctx.lineTo(-35, -28);
+    ctx.lineTo(-35, -34);
+    ctx.lineTo(-42, -34);
+    ctx.lineTo(-42, -40);
+    ctx.lineTo(-49, -40);
+    ctx.lineTo(-49, -46);
+    ctx.lineTo(-58, -46);
+    ctx.lineTo(-58, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.save();
+    hull();
+    ctx.clip();
+    ctx.fillStyle = '#6E4A35';
+    ctx.fillRect(-60, -30, 34, 40);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (const [x, y] of [[-35, -28], [-42, -34], [-49, -40]]) {
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + 6);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#2E2230';
+    for (const x of [-94, -72]) {
+      ctx.strokeStyle = '#A87B52';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, -32, 5.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, -32, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#6E4A35';
   }
   ctx.strokeStyle = 'rgba(0,0,0,0.2)';
   ctx.lineWidth = 2;
@@ -651,6 +700,13 @@ export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleo
   }
   ctx.fillStyle = '#2E2230';
   for (const x of [-60, -30, 0, 30]) {
+    if (kind === 'galleon') {
+      ctx.strokeStyle = '#A87B52';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, -10 - x * 0.06, 5.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.beginPath();
     ctx.arc(x, -10 - x * 0.06, 5, 0, Math.PI * 2);
     ctx.fill();
@@ -674,6 +730,25 @@ export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleo
   ctx.lineTo(22, -90);
   ctx.stroke();
   if (kind === 'galleon') {
+    const bx = 88;
+    const by = -30;
+    const tx = 148;
+    const ty = -54;
+    const len = Math.hypot(tx - bx, ty - by);
+    const nx = -(ty - by) / len;
+    const ny = (tx - bx) / len;
+    ctx.fillStyle = '#6E4A35';
+    ctx.beginPath();
+    ctx.moveTo(bx + nx * 4.8, by + ny * 4.8);
+    ctx.lineTo(tx + nx * 2.4, ty + ny * 2.4);
+    ctx.lineTo(tx - nx * 2.4, ty - ny * 2.4);
+    ctx.lineTo(bx - nx * 4.8, by - ny * 4.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(tx, ty, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#5A3B29';
     ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.moveTo(56, -30);
@@ -1114,6 +1189,40 @@ const STAR_ARMS = [5, 5, 5, 5, 6, 7, 9, 12];
 const frac = (v: number) => v - Math.floor(v);
 
 /** A starfish lying on the floor; its color, number of arms, plumpness and angle all come from `tint`, so each one looks different. */
+/** A board broken off a wreck, resting on the floor; `lean` (the deco's push) tilts it about its lower end so a tilted one pokes up off the ground. */
+function drawPlank(ctx: CanvasRenderingContext2D, size: number, tint: number, lean: number) {
+  const L = (44 + tint * 40) * size;
+  const W = 12 * size;
+  const pivot = lean > 0 ? L / 2 : -L / 2;
+  ctx.save();
+  ctx.translate(pivot, 0);
+  ctx.rotate(lean);
+  ctx.translate(-pivot, 0);
+  ctx.fillStyle = tint > 0.5 ? '#7A5438' : '#6B4A33';
+  ctx.beginPath();
+  ctx.moveTo(-L / 2, 0);
+  ctx.lineTo(-L / 2, -W);
+  ctx.lineTo(L / 2 - 8 * size, -W);
+  ctx.lineTo(L / 2 - 3 * size, -W * 0.55);
+  ctx.lineTo(L / 2, -W * 0.8);
+  ctx.lineTo(L / 2 - 5 * size, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,225,180,0.16)';
+  ctx.fillRect(-L / 2, -W, L - 10 * size, W * 0.28);
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+  ctx.lineWidth = 1.2 * size;
+  ctx.beginPath();
+  ctx.moveTo(-L / 2 + 3 * size, -W * 0.5);
+  ctx.lineTo(L / 2 - 14 * size, -W * 0.5);
+  ctx.stroke();
+  ctx.fillStyle = '#2E2230';
+  ctx.beginPath();
+  ctx.arc(-L / 2 + 6 * size, -W * 0.5, 1.4 * size, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawStarfish(ctx: CanvasRenderingContext2D, size: number, tint: number) {
   const color = STARFISH[Math.floor(frac(tint * 8.7) * STARFISH.length)];
   const arms = STAR_ARMS[Math.floor(frac(tint * 31.3) * STAR_ARMS.length)];
@@ -1168,6 +1277,10 @@ export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: nu
   }
   if (kind === 'starfish') {
     drawStarfish(ctx, size, tint);
+    return;
+  }
+  if (kind === 'plank') {
+    drawPlank(ctx, size, tint, push);
     return;
   }
   if (kind === 'stone') kind = 'rock';

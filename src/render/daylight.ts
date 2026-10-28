@@ -2,6 +2,7 @@ import { clamp, mulberry32 } from '../util';
 
 export const DAY_SECONDS = 240;
 export const START_DAY = 0.35;
+export const NOON = 0.5;
 
 export interface Daylight {
   /** 0 in full daylight, 1 in full night. */

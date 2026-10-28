@@ -3,7 +3,7 @@ import { SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE,
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
 import { buoyLabel, routesFrom } from '../data/routes';
-import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, runningLights, LAMP, ANCHOR, COCKPIT, REAR_LAMP } from '../art/sub';
+import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, runningLights, sternStretch, anchorFor, LAMP, COCKPIT, REAR_LAMP } from '../art/sub';
 import { drawShip, drawIsland, DOCK_POLES, drawCloud, cloudShape, drawBuoy, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
 import { BACKGROUND_KINDS, CREATURE_EXTENT } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
@@ -50,6 +50,9 @@ function drawDimmed(ctx: CanvasRenderingContext2D, dim: boolean, draw: (c: Canva
   c.globalCompositeOperation = 'source-over';
   ctx.drawImage(dimCanvas, -DIM_OX, -DIM_OY, DIM_W, DIM_H);
 }
+
+/** Seconds for a treasure's sparkles to go left, right, then rest. */
+const SPARKLE_CYCLE = 2.9;
 
 const DEG = Math.PI / 180;
 /** Lowest-aimed beam angles at rest, below the sub's heading; each beam in turn sweeps down to straight below the sub. */
@@ -327,7 +330,7 @@ export function renderScene(g: Game) {
 
   // Background creatures drift behind the sea floor and scenery, a little faded into the water.
   ctx.globalAlpha = 0.8;
-  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && BACKGROUND_KINDS.includes(c.kind) && !c.front) drawCreature(ctx, c);
+  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && BACKGROUND_KINDS.includes(c.kind)) drawCreature(ctx, c);
   ctx.globalAlpha = 1;
 
   // Sea floor
@@ -340,13 +343,31 @@ export function renderScene(g: Game) {
       ctx.restore();
     });
 
-    for (const d of world.deco) {
-      if (d.kind !== 'rock' || d.phase >= 5 || !inView(d.x)) continue;
+    const inRock = (x: number, y: number) => y > world.floorAt(x) + 30;
+    const drawItemAt = (it: (typeof world.items)[number]) => {
       ctx.save();
-      ctx.translate(d.x, d.y + 2 + 10 * d.size);
-      drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, 0, space));
+      ctx.translate(it.x, it.y + (it.y < world.floorAt(it.x) - 60 ? Math.sin(t * 1.5 + it.phase) * 4 : 0));
+      drawDimmed(ctx, world.atMouth(it.x, it.y), (c) => {
+        drawItem(c, it.kind, t + it.phase);
+        if (ITEMS[it.kind].treasure) {
+          const u = (t + it.phase * 1.4) % SPARKLE_CYCLE;
+          if (u < 1) drawSparkle(c, -10, -6, 6 * Math.sin(Math.PI * u), Math.sin(Math.PI * u));
+          else if (u < 2) drawSparkle(c, 10, -12, 6 * Math.sin(Math.PI * (u - 1)), Math.sin(Math.PI * (u - 1)));
+        }
+      }, ITEMS[it.kind].size * 0.45);
+      ctx.restore();
+    };
+
+    // Everything resting on the sea floor is drawn first so the ground covers its base; starfish, wreck planks and things inside tunnels come after.
+    for (const d of world.deco) {
+      if (!inView(d.x) || inRock(d.x, d.y) || d.kind === 'starfish' || d.kind === 'plank' || (d.kind === 'stone' && d.phase < 5)) continue;
+      const buried = d.kind === 'rock' && d.phase < 5;
+      ctx.save();
+      ctx.translate(d.x, d.y + 2 + (buried ? 10 * d.size : 0));
+      drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, buried ? 0 : d.push, space));
       ctx.restore();
     }
+    for (const it of world.items) if (it.alive && inView(it.x) && !inRock(it.x, it.y)) drawItemAt(it);
 
     const ground = ctx.createLinearGradient(0, 0, 0, world.floorMax);
     ground.addColorStop(0, def.ground[0]);
@@ -405,29 +426,17 @@ export function renderScene(g: Game) {
     }
 
     for (const d of world.deco) {
-      if (!inView(d.x) || ((d.kind === 'rock' || d.kind === 'stone') && d.phase < 5)) continue;
+      if (!inView(d.x) || (!inRock(d.x, d.y) && d.kind !== 'starfish' && d.kind !== 'plank') || ((d.kind === 'rock' || d.kind === 'stone') && d.phase < 5)) continue;
       ctx.save();
       ctx.translate(d.x, d.y + 2);
       drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, d.push, space));
       ctx.restore();
     }
 
-    for (const it of world.items) {
-      if (!it.alive || !inView(it.x)) continue;
-      ctx.save();
-      ctx.translate(it.x, it.y + (it.y < world.floorAt(it.x) - 60 ? Math.sin(t * 1.5 + it.phase) * 4 : 0));
-      drawDimmed(ctx, world.atMouth(it.x, it.y), (c) => {
-        drawItem(c, it.kind, t + it.phase);
-        if (ITEMS[it.kind].treasure) {
-          const a = Math.max(0, Math.sin(t * 2.2 + it.phase * 3));
-          if (a > 0.6) drawSparkle(c, 10, -12, 6 * a, a);
-        }
-      }, ITEMS[it.kind].size * 0.45);
-      ctx.restore();
-    }
+    for (const it of world.items) if (it.alive && inView(it.x) && inRock(it.x, it.y)) drawItemAt(it);
   }
 
-  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && !BACKGROUND_KINDS.includes(c.kind) && !c.front) drawCreature(ctx, c, g.swallow && c.kind === 'leviathan' ? 'back' : 'all');
+  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && !BACKGROUND_KINDS.includes(c.kind)) drawCreature(ctx, c, g.swallow && c.kind === 'leviathan' ? 'back' : 'all');
 
   // Zone exits
   const z = g.save.zone;
@@ -456,10 +465,11 @@ export function renderScene(g: Game) {
     const cos = Math.cos(s.tilt);
     const sin = Math.sin(s.tilt);
     const dockX = g.ship.x + SUB_DOCK_OFFSET * g.ship.facing;
-    const subX = s.x + s.facing * (ANCHOR.x * cos - ANCHOR.y * sin);
-    const subHookY = s.y + ANCHOR.x * sin + ANCHOR.y * cos;
-    const spotX = dockX + g.ship.facing * ANCHOR.x;
-    const spotY = -2 + bob + ANCHOR.y;
+    const anchor = anchorFor(g.save.skin);
+    const subX = s.x + s.facing * (anchor.x * cos - anchor.y * sin);
+    const subHookY = s.y + anchor.x * sin + anchor.y * cos;
+    const spotX = dockX + g.ship.facing * anchor.x;
+    const spotY = -2 + bob + anchor.y;
     const grip = docked ? 1 : g.hookGrip;
     const lowX = lerp(spotX, subX, grip);
     const lowY = lerp(spotY, subHookY, grip);
@@ -521,11 +531,10 @@ export function renderScene(g: Game) {
     crumple(ctx);
     if (blink) ctx.globalAlpha = 0.4;
     if (g.swallow) ctx.globalAlpha *= 1 - clamp((g.swallow.t - SWALLOW_CLOSE + 0.6) / 0.5, 0, 1);
-    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, scrubbers: g.save.scrubbers, electrolysis: g.save.electrolysis }, s.facing);
+    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, scrubbers: g.save.scrubbers, electrolysis: g.save.electrolysis }, s.facing, g.save.skin);
     ctx.restore();
   }
   if (g.swallow) for (const c of world.creatures) if (c.kind === 'leviathan') drawCreature(ctx, c, 'front');
-  for (const c of world.creatures) if (c.front && inView(c.x, CREATURE_EXTENT[c.kind])) drawCreature(ctx, c);
   for (const d of g.debris) {
     ctx.save();
     ctx.translate(d.x, d.y + g.surfaceBob);
@@ -703,8 +712,8 @@ export function renderScene(g: Game) {
       lights.push({ x: lamp.x, y: lamp.y, r: spot.range * reach, angle: lamp.angle, spread: spot.spread, a: a * fade, sub: true });
       if (g.up.light === 3) {
         lights.push({
-          x: s.x + s.facing * (REAR_LAMP.x * cos - REAR_LAMP.y * sin) * pieceScale('rearLamp', crush),
-          y: subY + (REAR_LAMP.x * sin + REAR_LAMP.y * cos) * pieceScale('rearLamp', crush),
+          x: s.x + s.facing * ((REAR_LAMP.x - sternStretch(g.up.cargo)) * cos - REAR_LAMP.y * sin) * pieceScale('rearLamp', crush),
+          y: subY + ((REAR_LAMP.x - sternStretch(g.up.cargo)) * sin + REAR_LAMP.y * cos) * pieceScale('rearLamp', crush),
           r: 420 * reach,
           angle: s.facing > 0 ? Math.PI + s.tilt - rearDown : rearDown - s.tilt,
           spread: 0.5,
@@ -813,16 +822,19 @@ export function renderScene(g: Game) {
     crumple(ctx);
     ctx.save();
     crumplePiece(ctx, 'hull', crush);
-    runningLights(ctx, t, g.warning);
+    if (g.save.skin !== 'oceangate') runningLights(ctx, t, g.warning, sternStretch(g.up.cargo), g.save.skin === 'standard');
     ctx.restore();
-    ctx.save();
-    crumplePiece(ctx, 'battery', crush);
-    batteryLights(ctx, g.up.battery, t);
-    ctx.restore();
+    if (g.save.skin === 'standard') {
+      ctx.save();
+      crumplePiece(ctx, 'battery', crush);
+      ctx.translate(-sternStretch(g.up.cargo), 0);
+      batteryLights(ctx, g.up.battery, t);
+      ctx.restore();
+    }
     if (bottom > lerp(startPx, 0, night)) {
       const dark = Math.max(clamp((s.y - startPx) / (deepPx - startPx), 0, 1), night * 0.8);
       crumplePiece(ctx, 'glass', crush);
-      glassGlow(ctx, dark * 0.55 * cockpitPower);
+      glassGlow(ctx, dark * 0.55 * cockpitPower, g.save.skin);
     }
     ctx.restore();
   }
@@ -847,7 +859,7 @@ export function renderScene(g: Game) {
   }
   for (const b of g.blips) {
     const a = Math.min(1, b.life / 0.6);
-    const color = b.danger ? '255,90,95' : b.shape ? '150,245,170' : '255,211,77';
+    const color = b.danger ? '255,90,95' : b.shape ? '150,245,170' : b.trash ? '150,190,215' : '255,211,77';
     if (b.weight !== undefined) {
       const open = 1 - lightCover(lights, b.x, b.y);
       if (open <= 0.02) continue;

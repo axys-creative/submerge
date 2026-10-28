@@ -17,6 +17,12 @@ export const COCKPIT_MIN = 0.12;
 export const BREATH_TIME = 5;
 /** Fraction of the air tank at or below which surfacing gets a deep breath. */
 export const LOW_AIR = 0.2;
+/** Fraction of the oxygen tank left when an oxygen candle lights itself. */
+export const CANDLE_AIR = 0.05;
+/** Above this depth in meters a candle waits until the held breath is nearly out, so the player gets every chance to surface first. */
+export const CANDLE_MIN_DEPTH = 100;
+/** Seconds of held breath left when a candle lights near the surface. */
+export const CANDLE_BREATH_LEFT = 0.5;
 /** Rays a sonar ping casts to find terrain. */
 export const SONAR_RAYS = 180;
 /** Treasure worth at least this much sets off the ship's detector when the ship passes within the range (px) of it. */
@@ -112,3 +118,7 @@ export const SCENERY_DENSITY = 0.3;
 
 /** How close the ship may sail to either end of a zone; enough that the sub's mount, SUB_DOCK_OFFSET behind it, is still inside the sub's reach. */
 export const SHIP_MARGIN = 300;
+
+
+/** Chance that each piece of cleared trash is still gone when the zone is entered again; the rest washes back in. */
+export const TRASH_KEEP = 0.5;

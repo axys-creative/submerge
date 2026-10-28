@@ -2,6 +2,10 @@
 
 Canvas 2D submarine game (Vite + TypeScript). Zone data is in `src/data/zones.ts`, upgrades in `src/data/upgrades.ts`. Shop descriptions for upgrades are built from the numbers in `STATS` there, so change a number once and the shop updates.
 
+## Catalog zone
+
+The last zone, Catalog, is a test zone reached with the zone stepper in the test panel (hidden from the route map). It is always daytime with no creature movement. Next to the ship it lays out every plant, rock, bone, item and wreck on a shallow floor, then every animal in open water, each with a name tag. The layout is in `src/data/catalog.ts`; new creatures, items and scenery kinds should be added there so they show up.
+
 ## Design guidelines
 
 - Caves should feel open, big and majestic, never confined. Follow Echo Caverns in Sunny Shallows (`cave` in `src/data/zones.ts`): tunnels around 190 px in radius as listed (drawn at that size; `TUNNEL_WIDEN` in `src/game/world.ts` scales them, 1.5 before they were trimmed by a third), some side tunnels half that at 95 px, chambers 250 px or more, no tight squeezes.
@@ -13,6 +17,18 @@ Canvas 2D submarine game (Vite + TypeScript). Zone data is in `src/data/zones.ts
 ## Ideas / to-do
 
 Planned, not built yet. Details are open for discussion.
+
+### Submarine skins
+
+Built so far: `SkinId` in `src/data/skins.ts`, `save.skin`, a Skin row in the test panel, and three skins, all in `drawSub` (`src/art/sub.ts`). Skins are cosmetic only and never change what the upgrades do.
+
+- Standard: the original sub.
+- Expedition Capsule (`capsule`): a white tube with a metal dome nose, a top fairing and a side thruster. It drops the tower, antenna, tank and battery but still shows the other upgrades' looks.
+- OceanGate (`oceangate`): a plain white rectangle with a swept tail, a brass dome nose and black landing gear. It ignores the upgrades' looks entirely.
+
+Still open: how a skin is unlocked (a code found in a cave, or sold in a shop).
+
+Next skin, planned but not started: a deep-sea research sub in the style of the one used for the Mariana Trench dive (tall and vertical, a green hull, a side panel of lights, batteries, boom arms for a light and a camera, a stabilizer fin, weights). This one is different in kind: it gets its own fixed stats that the normal upgrades cannot change while it is equipped, and its spotlights sit in different places, so the lamp and light positions in `sub.ts` and `scene.ts` need to come from the skin instead of being fixed.
 
 ### Craftable mechanical arm
 

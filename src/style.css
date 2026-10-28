@@ -257,6 +257,17 @@ kbd {
   }
 }
 
+.dial.dead,
+.pct.dead {
+  animation: fade-slow 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes fade-slow {
+  to {
+    opacity: 0.2;
+  }
+}
+
 .purse {
   grid-area: purse;
   text-align: right;
@@ -994,7 +1005,9 @@ textarea:focus {
   .toast {
     transition: none;
   }
-  .dial.low .arc {
+  .dial.low .arc,
+  .dial.dead,
+  .pct.dead {
     animation: none;
   }
 }
@@ -1822,4 +1835,75 @@ body:not(.is-touch) .dial-col:hover .dial-pop {
 
 #ui.ui-dark .card.menu a {
   color: #7fd0ea;
+}
+
+#ui .hud .panel.purse {
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.06s;
+}
+
+#ui .hud .panel.purse:hover {
+  filter: brightness(0.97);
+}
+
+#ui .hud .panel.purse:active {
+  transform: translateY(2px);
+}
+
+.cap-bar {
+  height: 10px;
+  margin: 10px 0 14px;
+  border-radius: 5px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.cap-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--mint);
+}
+
+.cap-bar.full i {
+  background: var(--sun-dark);
+}
+
+.inv-total {
+  margin-top: 12px;
+  text-align: right;
+}
+
+.trash {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.trash.done {
+  color: var(--mint-dark);
+}
+
+.ach {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.ach li {
+  display: grid;
+  gap: 2px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.ach li.done b {
+  color: var(--mint-dark);
+}
+
+.ach span {
+  font-size: 13px;
 }

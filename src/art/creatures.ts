@@ -1,7 +1,8 @@
 import type { Creature } from '../game/world';
 import { MONSTER_SCALE as MS, MONSTER_TRAIL } from '../config';
 import { leviathanSpine } from '../data/leviathan';
-import { BLUE_WHALE_SCALE, COLOSSAL_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
+import { mulberry32 } from '../util';
+import { BLUE_WHALE_SCALE, COLOSSAL_SCALE, SHARK_LENGTH, SHARK_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
 
 const FISH = ['#FFB547', '#FF7A6B', '#7BDFF2', '#B9F18C'];
 
@@ -44,11 +45,12 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
     case 'hammerhead':
       ctx.scale(c.facing, 1);
       ctx.rotate(Math.max(-0.8, Math.min(0.8, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 40)))));
+      ctx.scale(SHARK_LENGTH * SHARK_SCALE, SHARK_SCALE);
       shark(ctx, c, c.kind === 'hammerhead');
       break;
     case 'squid':
       ctx.rotate(c.angle + Math.PI / 2);
-      squid(ctx, c);
+      squid(ctx, c, c.tint > SPOTTED_TINT ? SQUID_SPOTTED : SQUID_PALETTE);
       break;
     case 'angler':
       ctx.scale(c.facing, 1);
@@ -81,7 +83,7 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
     case 'colossal':
       ctx.rotate(c.angle + Math.PI / 2);
       ctx.scale(COLOSSAL_SCALE, COLOSSAL_SCALE);
-      squid(ctx, c, COLOSSAL_PALETTE);
+      squid(ctx, c, c.tint > SPOTTED_TINT ? COLOSSAL_SPOTTED : COLOSSAL_PALETTE);
       break;
     case 'whale':
       ctx.scale(c.facing * WHALE_SCALE, WHALE_SCALE);
@@ -216,46 +218,114 @@ function stingray(ctx: CanvasRenderingContext2D, c: Creature) {
   }
 }
 
-/** A manta ray seen from above, about 150 px long and 170 px across, with big flapping wings. */
+/** A cartoon manta ray seen from below, about 150 px long and 195 px across: a pale belly in a dark outline, rounded curled head fins, swept wing tips and a long thin tail with two small bumps at its root. */
 function manta(ctx: CanvasRenderingContext2D, c: Creature) {
   const flap = Math.sin(c.phase * 1.8 + c.tint * 6);
+  const dark = '#2F3E5C';
+  ctx.lineCap = 'round';
   ctx.strokeStyle = '#24304A';
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 3.5;
   ctx.beginPath();
-  ctx.moveTo(-50, 0);
-  ctx.quadraticCurveTo(-90, 12 * flap, -142, 8 * flap);
+  ctx.moveTo(-56, 0);
+  ctx.quadraticCurveTo(-96, 12 * flap, -150, 9 * flap);
   ctx.stroke();
-  const wing = (dir: 1 | -1) => {
+
+  ctx.fillStyle = dark;
+  for (const dir of [-1, 1]) {
+    ctx.save();
+    ctx.translate(-49, dir * 5.5);
+    ctx.rotate(-dir * (0.45 + flap * 0.08));
     ctx.beginPath();
-    ctx.moveTo(78, 0);
-    ctx.quadraticCurveTo(50, dir * 34, 6, dir * (48 + flap * 8));
-    ctx.quadraticCurveTo(-20, dir * (86 + flap * 14), -44, dir * (66 + flap * 10));
-    ctx.quadraticCurveTo(-34, dir * 28, -56, 0);
+    ctx.ellipse(-6, 0, 9, 3.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const half = (dir: 1 | -1) => {
+    ctx.moveTo(-58, 0);
+    const tipX = -34 - flap * 6;
+    const tipY = dir * (100 + flap * 10);
+    ctx.quadraticCurveTo(-18, dir * 34, tipX + 3, tipY - dir * 15);
+    ctx.quadraticCurveTo(tipX, tipY, tipX + 13, tipY - dir * 7);
+    ctx.quadraticCurveTo(26, dir * 66, 56, dir * 34);
+    ctx.quadraticCurveTo(61, dir * 28, 62, dir * 16);
+    ctx.quadraticCurveTo(58, dir * 8, 56, 0);
     ctx.closePath();
   };
-  ctx.fillStyle = '#2F3E5C';
-  wing(-1);
+  ctx.beginPath();
+  half(-1);
+  half(1);
   ctx.fill();
-  wing(1);
-  ctx.fill();
-  ctx.fillStyle = '#EAF2FA';
+
   for (const dir of [-1, 1]) {
+    const steps = 18;
+    const at = (t: number) => {
+      const u = 1 - t;
+      return [u * u * 58 + 2 * u * t * 82 + t * t * 98, dir * (u * u * 26 + 2 * u * t * 40 + t * t * 24)];
+    };
+    const width = (t: number) => 5 - 2 * t;
+    const left: number[][] = [];
+    const right: number[][] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const [x, y] = at(t);
+      const [nx, ny] = at(Math.min(1, t + 0.01));
+      const [px, py] = at(Math.max(0, t - 0.01));
+      const len = Math.hypot(nx - px, ny - py) || 1;
+      const ox = (-(ny - py) / len) * width(t);
+      const oy = ((nx - px) / len) * width(t);
+      left.push([x + ox, y + oy]);
+      right.push([x - ox, y - oy]);
+    }
+    const [tx, ty] = at(1);
     ctx.beginPath();
-    ctx.ellipse(36, dir * 18, 13, 7, dir * -0.5, 0, Math.PI * 2);
+    ctx.moveTo(left[0][0], left[0][1]);
+    for (const [x, y] of left) ctx.lineTo(x, y);
+    for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(tx, ty, width(1), 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.fillStyle = '#2F3E5C';
+
+  ctx.save();
+  ctx.beginPath();
+  half(-1);
+  half(1);
+  ctx.clip();
+  ctx.fillStyle = '#B7D1E8';
+  ctx.beginPath();
+  ctx.moveTo(58, -22);
+  ctx.quadraticCurveTo(53, 0, 58, 22);
+  ctx.quadraticCurveTo(34, 42, 6, 38);
+  ctx.quadraticCurveTo(-24, 22, -50, 0);
+  ctx.quadraticCurveTo(-24, -22, 6, -38);
+  ctx.quadraticCurveTo(34, -42, 58, -22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = 'rgba(225,238,248,0.7)';
   for (const dir of [-1, 1]) {
     ctx.beginPath();
-    ctx.moveTo(76, dir * 4);
-    ctx.quadraticCurveTo(94, dir * 12, 96, dir * 6);
-    ctx.quadraticCurveTo(86, dir * 2, 82, 0);
+    ctx.ellipse(18, dir * 11, 20, 3.2, dir * 0.15, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.strokeStyle = 'rgba(60,85,120,0.5)';
+  ctx.lineWidth = 1.3;
+  for (const dir of [-1, 1]) {
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(38 - i * 6, dir * (19 + i * 2));
+      ctx.lineTo(30 - i * 6, dir * (26 + i * 2));
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
   ctx.fillStyle = '#14192A';
   for (const dir of [-1, 1]) {
     ctx.beginPath();
-    ctx.arc(60, dir * 14, 3, 0, Math.PI * 2);
+    ctx.arc(60, dir * 27, 2.4, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -399,54 +469,45 @@ function bigfin(ctx: CanvasRenderingContext2D, c: Creature) {
 
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  /** Four arms bend out at an elbow, four hang straight down, and two much longer tentacles trail below them. */
+  /** Ten arms fan out from the neck over the width of the cap and then hang straight down; the two in the middle are much longer. */
   const ARMS = [
-    { x: -6, out: -1, len: 640 },
-    { x: -12, out: -1, len: 720 },
-    { x: 6, out: 1, len: 640 },
-    { x: 12, out: 1, len: 720 },
-    { x: -5, out: 0, len: 760 },
-    { x: -1.7, out: 0, len: 680 },
-    { x: 1.7, out: 0, len: 780 },
-    { x: 5, out: 0, len: 700 },
-    { x: -3, out: 0, len: 940 },
-    { x: 3, out: 0, len: 920 },
+    { xe: -34, len: 700 },
+    { xe: -26, len: 640 },
+    { xe: -18, len: 760 },
+    { xe: -10, len: 680 },
+    { xe: -3, len: 940 },
+    { xe: 3, len: 920 },
+    { xe: 10, len: 720 },
+    { xe: 18, len: 780 },
+    { xe: 26, len: 640 },
+    { xe: 34, len: 700 },
   ];
   ARMS.forEach((a, i) => {
-    const long = i >= 8;
-    const elbow = a.out ? 16 : 0;
-    const elbowX = a.x + a.out * elbow;
+    const long = a.len > 900;
     ctx.strokeStyle = arm;
     ctx.globalAlpha = 0.85;
     ctx.lineWidth = long ? 2.4 : 1.7;
     ctx.beginPath();
-    ctx.moveTo(a.x, 14);
-    ctx.lineTo(elbowX, a.out ? 22 : 18);
+    ctx.moveTo(a.xe * 0.3, 14);
+    ctx.lineTo(a.xe, 22);
     const steps = 40;
     for (let j = 1; j <= steps; j++) {
       const u = j / steps;
-      const drift = a.out * 10 * u;
       const wave = Math.sin(t * 0.7 - u * 7 + i * 1.3) * 14 * u * u;
-      ctx.lineTo(elbowX + drift + wave, 22 + a.len * u);
+      ctx.lineTo(a.xe + wave, 22 + a.len * u);
     }
     ctx.stroke();
+    ctx.fillStyle = '#F3E2E4';
+    ctx.globalAlpha = 0.4;
+    for (let j = 14; j <= steps; j += 2) {
+      const u = j / steps;
+      const wave = Math.sin(t * 0.7 - u * 7 + i * 1.3) * 14 * u * u;
+      ctx.beginPath();
+      ctx.arc(a.xe + wave, 22 + a.len * u, long ? 1.1 : 0.85, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
   ctx.globalAlpha = 1;
-
-  for (const side of [-1, 1]) {
-    ctx.fillStyle = fins;
-    ctx.beginPath();
-    ctx.moveTo(side * 8, -30);
-    ctx.bezierCurveTo(side * (46 + flap * 3), -44, side * (58 + flap * 4), -8 + flap * 3, side * 8, -6);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(70,35,45,0.35)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(side * 10, -22);
-    ctx.quadraticCurveTo(side * 34, -26, side * 46, -16);
-    ctx.stroke();
-  }
 
   ctx.fillStyle = skin;
   ctx.beginPath();
@@ -459,6 +520,33 @@ function bigfin(ctx: CanvasRenderingContext2D, c: Creature) {
   ctx.beginPath();
   ctx.ellipse(-3, -16, 3, 14, 0, 0, Math.PI * 2);
   ctx.fill();
+  const top = -46 - 40 * (1 - 0.1 * flap);
+  const mid = (top - 8) / 2;
+  const corners = [[0, top], [46 * (1 + 0.14 * flap), mid], [0, -8], [-46 * (1 + 0.14 * flap), mid]];
+  ctx.fillStyle = fins;
+  ctx.beginPath();
+  corners.forEach(([x, y], k) => {
+    const [px, py] = corners[(k + 3) % 4];
+    const [nx, ny] = corners[(k + 1) % 4];
+    const back = 18 / Math.hypot(px - x, py - y);
+    const fwd = 18 / Math.hypot(nx - x, ny - y);
+    const entry = [x + (px - x) * back, y + (py - y) * back];
+    const exit = [x + (nx - x) * fwd, y + (ny - y) * fwd];
+    if (k === 0) ctx.moveTo(entry[0], entry[1]);
+    else ctx.lineTo(entry[0], entry[1]);
+    ctx.quadraticCurveTo(x, y, exit[0], exit[1]);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(70,35,45,0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(70,35,45,0.16)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(0, top + 14);
+  ctx.lineTo(0, -22);
+  ctx.stroke();
   ctx.fillStyle = '#1B1420';
   for (const side of [-1, 1]) {
     ctx.beginPath();
@@ -545,6 +633,11 @@ function blueWhale(ctx: CanvasRenderingContext2D, c: Creature) {
   ctx.quadraticCurveTo(90, 86, 28, 96 + sway * 0.2);
   ctx.quadraticCurveTo(70, 66, 96, 52);
   ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#16233A';
+  ctx.beginPath();
+  ctx.ellipse(200, -49, 11, 3.6, 0.06, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.strokeStyle = 'rgba(30,50,80,0.5)';
@@ -693,12 +786,16 @@ function shark(ctx: CanvasRenderingContext2D, c: Creature, hammer = false) {
   ctx.quadraticCurveTo(-42, -12, -40, -10);
   ctx.closePath();
   ctx.fill();
+  ctx.save();
+  ctx.translate(14, 0);
+  ctx.scale(-1, 1);
   ctx.beginPath();
   ctx.moveTo(-8, -22);
   ctx.quadraticCurveTo(0, -42, 8, -56);
   ctx.quadraticCurveTo(10, -36, 22, -20);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
 
   const skin = hammer ? '#8E94A8' : '#5C7FAE';
   const body = () => {
@@ -732,11 +829,11 @@ function shark(ctx: CanvasRenderingContext2D, c: Creature, hammer = false) {
   if (hammer) {
     ctx.fillStyle = skin;
     ctx.beginPath();
-    ctx.roundRect(46, -27, 17, 38, 8);
+    ctx.roundRect(63 - 17 / SHARK_LENGTH, -27, 17 / SHARK_LENGTH, 38, 8);
     ctx.fill();
     ctx.fillStyle = '#EAF0F7';
     ctx.beginPath();
-    ctx.roundRect(46, 3, 17, 8, 4);
+    ctx.roundRect(63 - 17 / SHARK_LENGTH, 3, 17 / SHARK_LENGTH, 8, 4);
     ctx.fill();
   }
 
@@ -785,11 +882,12 @@ function shark(ctx: CanvasRenderingContext2D, c: Creature, hammer = false) {
   const eyeY = hammer ? -20 : -4;
   ctx.fillStyle = '#1B2238';
   ctx.beginPath();
-  ctx.arc(eyeX, eyeY, hammer ? (chasing ? 4.5 : 4) : chasing ? 3.4 : 3, 0, Math.PI * 2);
+  const eyeR = hammer ? (chasing ? 4.5 : 4) : chasing ? 3.4 : 3;
+  ctx.ellipse(eyeX, eyeY, eyeR / SHARK_LENGTH, eyeR, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#FFFFFF';
   ctx.beginPath();
-  ctx.arc(eyeX + 1.5, eyeY - 1.5, 1.4, 0, Math.PI * 2);
+  ctx.ellipse(eyeX + 1.5 / SHARK_LENGTH, eyeY - 1.5, 1.4 / SHARK_LENGTH, 1.4, 0, 0, Math.PI * 2);
   ctx.fill();
   if (chasing) {
     ctx.strokeStyle = '#1B2238';
@@ -801,66 +899,152 @@ function shark(ctx: CanvasRenderingContext2D, c: Creature, hammer = false) {
   }
 }
 
-const SQUID_PALETTE = { arm: '#C94660', body: '#E0607E', spot: '#F49AB0' };
-const COLOSSAL_PALETTE = { arm: '#7E2A45', body: '#9C3858', spot: '#C8708C' };
+interface SquidPalette {
+  arm: string;
+  body: string;
+  spot: string;
+  sucker: string;
+  /** The darker dots covering a spotted squid; plain squid have none. */
+  speckle?: string;
+}
+const SQUID_PALETTE: SquidPalette = { arm: '#C94660', body: '#E0607E', spot: '#CC5573', sucker: '#E58AA0' };
+const COLOSSAL_PALETTE: SquidPalette = { arm: '#7E2A45', body: '#9C3858', spot: '#873050', sucker: '#A8566F' };
+const SQUID_SPOTTED: SquidPalette = { arm: '#D96B69', body: '#EA7F78', spot: '#C4605F', sucker: '#E9A19B', speckle: '#8E3A47' };
+const COLOSSAL_SPOTTED: SquidPalette = { arm: '#8A3A44', body: '#A74C4C', spot: '#8A3C40', sucker: '#B76F70', speckle: '#4F1F2B' };
+/** How many segments each of a squid's ten limbs has: eight arms, and two long tentacles (3 and 6) that are set separately. */
+const SHORT_ARM_LEN = [6, 4, 7, 0, 5, 4, 0, 6, 5, 7];
+/** Squid with a tint above this are the spotted kind. */
+const SPOTTED_TINT = 0.7;
 
-function squid(ctx: CanvasRenderingContext2D, c: Creature, pal = SQUID_PALETTE) {
+/** Fixed speckle positions over the mantle, fins and head of a spotted squid. */
+const SQUID_SPECKLES = (() => {
+  const r = mulberry32(41);
+  const dots: [number, number, number][] = [];
+  const finHalf = (y: number) => (y < -48 ? (30 * (y + 84)) / 36 : 30 - (y + 48) * 1.3);
+  const mantleHalf = (y: number) => 12 + ((y + 44) / 40) * 6;
+  const add = (n: number, y0: number, y1: number, half: (y: number) => number) => {
+    for (let i = 0; i < n; i++) {
+      const y = y0 + r() * (y1 - y0);
+      dots.push([(r() * 2 - 1) * half(y) * 0.85, y, 0.7 + r() * 1.1]);
+    }
+  };
+  add(26, -80, -36, finHalf);
+  add(34, -44, -6, mantleHalf);
+  for (let i = 0; i < 8; i++) dots.push([(r() * 2 - 1) * 3.5, -2 + r() * 14, 0.7 + r() * 0.7]);
+  return dots;
+})();
+
+function squid(ctx: CanvasRenderingContext2D, c: Creature, pal: SquidPalette = SQUID_PALETTE) {
   const lunging = c.state === 'lunge';
   ctx.strokeStyle = pal.arm;
-  for (let i = 0; i < 8; i++) {
-    const x0 = -15 + i * (30 / 7);
-    const long = i === 2 || i === 5;
-    const len = long ? 11 : 7;
+  for (let i = 0; i < 10; i++) {
+    const x0 = -16 + i * (32 / 9);
+    const long = i === 3 || i === 6;
+    const len = long ? 11 : SHORT_ARM_LEN[i];
     ctx.lineWidth = long ? 4 : 6;
     ctx.beginPath();
     ctx.moveTo(x0, 14);
+    const pts: [number, number][] = [];
     for (let s = 1; s <= len; s++) {
       const spread = lunging ? 0.3 : 1;
       const x = x0 * (1 + s * 0.12 * spread) + Math.sin(c.phase * 4 + s * 0.8 + i) * s * 0.9;
       ctx.lineTo(x, 14 + s * 11);
+      pts.push([x, 14 + s * 11]);
     }
     ctx.stroke();
+    const tip = pts[pts.length - 1];
     if (long) {
       ctx.fillStyle = pal.arm;
       ctx.beginPath();
-      ctx.ellipse(x0 * (1 + len * 0.12) + Math.sin(c.phase * 4 + len * 0.8 + i) * len * 0.9, 14 + len * 11, 5, 9, 0, 0, Math.PI * 2);
+      ctx.ellipse(tip[0], tip[1], 5, 9, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    if (pal.speckle) {
+      ctx.fillStyle = pal.speckle;
+      pts.forEach(([px, py], k) => {
+        ctx.beginPath();
+        ctx.arc(px - 1, py - 4, 0.9, 0, Math.PI * 2);
+        ctx.fill();
+        if (k % 2) {
+          ctx.beginPath();
+          ctx.arc(px + 1.2, py + 2, 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+    ctx.fillStyle = pal.sucker;
+    const alpha = ctx.globalAlpha;
+    ctx.globalAlpha = alpha * 0.7;
+    pts.forEach(([px, py], k) => {
+      if (k < 2) return;
+      const side = (k % 2 ? 1 : -1) * (long ? 1.2 : 1.8);
+      ctx.beginPath();
+      ctx.arc(px + side, py + Math.sin(i * 5.1 + k * 2.3) * 3, long ? 1.1 : 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    if (long) {
+      for (const [dx, dy] of [[-1.8, -4], [1.6, -1], [-1.4, 2.5], [1.4, 5]]) {
+        ctx.beginPath();
+        ctx.arc(tip[0] + dx, tip[1] + dy, 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = alpha;
   }
   ctx.fillStyle = pal.body;
   ctx.beginPath();
-  ctx.moveTo(0, -72);
-  ctx.quadraticCurveTo(28, -40, 22, 12);
-  ctx.quadraticCurveTo(0, 26, -22, 12);
-  ctx.quadraticCurveTo(-28, -40, 0, -72);
+  ctx.moveTo(0, -84);
+  ctx.quadraticCurveTo(24, -70, 30, -48);
+  ctx.quadraticCurveTo(22, -40, 12, -34);
+  ctx.lineTo(-12, -34);
+  ctx.quadraticCurveTo(-22, -40, -30, -48);
+  ctx.quadraticCurveTo(-24, -70, 0, -84);
   ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(-6, -60);
-  ctx.lineTo(-24, -72);
-  ctx.lineTo(-12, -44);
-  ctx.moveTo(6, -60);
-  ctx.lineTo(24, -72);
-  ctx.lineTo(12, -44);
+  ctx.moveTo(-13, -44);
+  ctx.bezierCurveTo(-22, -30, -20, -14, -15, -4);
+  ctx.lineTo(15, -4);
+  ctx.bezierCurveTo(20, -14, 22, -30, 13, -44);
+  ctx.closePath();
   ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(0, 5, 17, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (pal.speckle) {
+    ctx.fillStyle = pal.speckle;
+    for (const [x, y, r] of SQUID_SPECKLES) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = pal.spot;
+  ctx.beginPath();
+  ctx.moveTo(0, -80);
+  ctx.lineTo(0, -34);
+  ctx.moveTo(-15, -4);
+  ctx.quadraticCurveTo(0, 2, 15, -4);
+  ctx.stroke();
   ctx.fillStyle = pal.spot;
   for (const [x, y, r] of [
-    [-8, -40, 4],
-    [7, -30, 3],
-    [-4, -18, 3.5],
-    [9, -50, 2.5],
+    [-7, -26, 3.2],
+    [6, -18, 2.4],
+    [-3, -12, 2],
+    [8, -30, 1.8],
   ]) {
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
-  for (const x of [-11, 11]) {
+  for (const x of [-10, 10]) {
     ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
-    ctx.arc(x, 4, 7.5, 0, Math.PI * 2);
+    ctx.arc(x, 5, 5.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#1B2238';
     ctx.beginPath();
-    ctx.arc(x, 6, 4, 0, Math.PI * 2);
+    ctx.arc(x, 5, 3.8, 0, Math.PI * 2);
     ctx.fill();
   }
 }

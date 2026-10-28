@@ -1,5 +1,6 @@
 import type { CreatureKind } from './creatures';
 import type { UpgradeId } from './upgrades';
+import { CATALOG } from './catalog';
 
 export interface CreatureSpawn {
   kind: CreatureKind;
@@ -37,6 +38,8 @@ export interface CaveDef {
 
 export interface ZoneDef {
   name: string;
+  /** A test zone that lays out every animal, plant, rock, item and wreck for inspection; always daytime, hidden from the route map. */
+  catalog?: boolean;
   /** How far the view zooms out while diving here: 1 is normal, smaller shows more of the ocean. */
   diveZoom: number;
   /** Where this zone sits on the route map, in a 360 x 200 box. */
@@ -53,6 +56,8 @@ export interface ZoneDef {
   /** Depths in meters where the water starts to darken and where it is fully dark. */
   darkness: [number, number];
   items: number;
+  /** Junk on the sea floor at fixed spots; clearing all of it earns the zone's clean-up achievement. */
+  trash?: number;
   creatures: CreatureSpawn[];
   /** `sells` limits the island shop to those upgrades; without it the shop sells everything this zone offers. */
   islands: { x: number; name: string; sells?: UpgradeId[] }[];
@@ -100,6 +105,7 @@ export const ZONES: ZoneDef[] = [
     ground: ['#F2D49B', '#6B6F9E'],
     darkness: [30, 280],
     items: 35,
+    trash: 8,
     creatures: [
       { kind: 'fish', count: 10, minDepth: 5, maxDepth: 70 },
       { kind: 'jelly', count: 5, minDepth: 25, maxDepth: 80 },
@@ -191,6 +197,7 @@ export const ZONES: ZoneDef[] = [
     ground: ['#F6C9A8', '#7A6FA0'],
     darkness: [30, 300],
     items: 38,
+    trash: 10,
     creatures: [
       { kind: 'fish', count: 14, minDepth: 5, maxDepth: 200 },
       { kind: 'jelly', count: 4, minDepth: 40, maxDepth: 220 },
@@ -208,17 +215,19 @@ export const ZONES: ZoneDef[] = [
         x1: 2800,
         hill: { x: 1450, half: 430, ramp: 260, height: 80 },
         passages: [
-          { pts: [[500, 46], [800, 52], [1150, 70], [1400, 84]], r: 190 },
-          { pts: [[1400, 84], [1500, 115], [1450, 150], [1550, 172]], r: 190 },
-          { pts: [[1550, 172], [1150, 178], [950, 198], [950, 232]], r: 190 },
-          { pts: [[1550, 172], [1900, 180], [2150, 180], [2200, 215]], r: 190 },
-          { pts: [[950, 232], [1500, 240], [1950, 232], [2200, 215]], r: 95 },
-          { pts: [[1500, 240], [1500, 288]], r: 95 },
-          { pts: [[1900, 180], [1900, 135]], r: 170, loot: 1 },
-          { pts: [[1150, 178], [780, 160]], r: 170, loot: 1 },
-          { pts: [[950, 240]], r: 270, loot: 1 },
-          { pts: [[2200, 222]], r: 300, loot: 2 },
-          { pts: [[1500, 295]], r: 330, loot: 3 },
+          { pts: [[500, 46], [800, 52], [1150, 70], [1400, 84]], r: 125 },
+          { pts: [[1400, 84], [1300, 125], [1500, 150], [1350, 190]], r: 120 },
+          { pts: [[1350, 190], [900, 200], [700, 235], [900, 265]], r: 120 },
+          { pts: [[900, 265], [1400, 275], [1800, 265], [2100, 300]], r: 105 },
+          { pts: [[1350, 190], [1800, 205], [2150, 195]], r: 105 },
+          { pts: [[1800, 265], [1800, 330]], r: 90 },
+          { pts: [[700, 240]], r: 200, loot: 1 },
+          { pts: [[2150, 195]], r: 190, loot: 1 },
+          { pts: [[2100, 305]], r: 230, loot: 2 },
+          { pts: [[1800, 335]], r: 270, loot: 3 },
+          { pts: [[1800, 330], [1500, 385], [1900, 435], [1500, 490], [1950, 545], [2300, 589], [2000, 633], [2500, 671], [3000, 700]], r: 115 },
+          { pts: [[1500, 490], [1200, 506]], r: 100 },
+          { pts: [[1200, 509]], r: 220, loot: 1 },
         ],
       },
       {
@@ -228,17 +237,41 @@ export const ZONES: ZoneDef[] = [
         x1: 9300,
         hill: { x: 8200, half: 330, ramp: 240, height: 75 },
         passages: [
-          { pts: [[7400, 100], [7850, 104], [8200, 118]], r: 190 },
-          { pts: [[8200, 118], [8150, 160], [8300, 200], [8250, 240]], r: 190 },
-          { pts: [[8250, 240], [7850, 248], [7650, 270], [7650, 305]], r: 95 },
-          { pts: [[8250, 240], [8550, 250], [8800, 250], [8850, 285]], r: 190 },
-          { pts: [[7650, 305], [8200, 312], [8650, 305], [8850, 285]], r: 190 },
-          { pts: [[8200, 312], [8200, 355]], r: 95 },
-          { pts: [[8550, 250], [8550, 205]], r: 170, loot: 1 },
-          { pts: [[7850, 248], [7500, 230]], r: 170, loot: 1 },
-          { pts: [[7650, 312]], r: 270, loot: 1 },
-          { pts: [[8850, 290]], r: 300, loot: 2 },
-          { pts: [[8200, 360]], r: 330, loot: 3 },
+          { pts: [[7400, 100], [7850, 104], [8200, 118]], r: 125 },
+          { pts: [[8200, 118], [8250, 170], [8150, 215], [8250, 260], [8200, 310]], r: 115 },
+          { pts: [[8150, 215], [7800, 225], [7550, 255]], r: 100 },
+          { pts: [[8250, 260], [8600, 270], [8900, 250]], r: 100 },
+          { pts: [[8200, 310], [7800, 330], [7650, 350]], r: 100 },
+          { pts: [[8200, 310], [8200, 365]], r: 90 },
+          { pts: [[7550, 258]], r: 200, loot: 1 },
+          { pts: [[8900, 250]], r: 220, loot: 2 },
+          { pts: [[7650, 352]], r: 230, loot: 1 },
+          { pts: [[8200, 370]], r: 290, loot: 3 },
+          { pts: [[8200, 370], [8250, 427], [7900, 479], [8100, 531], [7700, 573], [7900, 625], [7400, 667]], r: 115 },
+          { pts: [[7900, 479], [7600, 459]], r: 100 },
+          { pts: [[7550, 462]], r: 200, loot: 1 },
+        ],
+      },
+      {
+        name: 'Abyssal Run',
+        stones: 30,
+        x0: 2700,
+        x1: 7150,
+        hill: { x: 5000, half: 0, ramp: 1, height: 0 },
+        passages: [
+          { pts: [[5000, 700]], r: 300, loot: 1 },
+          { pts: [[3000, 700]], r: 280, loot: 1 },
+          { pts: [[3000, 700], [3500, 661], [4000, 645], [4600, 672], [5000, 700]], r: 105 },
+          { pts: [[3000, 700], [3500, 739], [4100, 755], [4700, 733], [5000, 700]], r: 105 },
+          { pts: [[4000, 645], [4050, 700], [4100, 755]], r: 90 },
+          { pts: [[4000, 648]], r: 220, loot: 1 },
+          { pts: [[4100, 755], [4100, 799]], r: 90 },
+          { pts: [[4100, 802]], r: 250, loot: 2 },
+          { pts: [[5000, 700], [5500, 678], [6000, 700], [6500, 728], [7000, 700], [7400, 667]], r: 115 },
+          { pts: [[5500, 678], [5500, 623]], r: 90 },
+          { pts: [[5500, 620]], r: 200, loot: 1 },
+          { pts: [[6000, 700], [6000, 766], [5700, 810]], r: 100 },
+          { pts: [[5700, 813]], r: 270, loot: 2 },
         ],
       },
     ],
@@ -259,6 +292,7 @@ export const ZONES: ZoneDef[] = [
     ground: ['#C9B98A', '#4D5578'],
     darkness: [25, 330],
     items: 40,
+    trash: 12,
     creatures: [
       { kind: 'fish', count: 10, minDepth: 5, maxDepth: 250 },
       { kind: 'jelly', count: 7, minDepth: 40, maxDepth: 350 },
@@ -293,6 +327,7 @@ export const ZONES: ZoneDef[] = [
     ground: ['#9F94B8', '#2A2D4D'],
     darkness: [20, 380],
     items: 45,
+    trash: 12,
     creatures: [
       { kind: 'fish', count: 8, minDepth: 5, maxDepth: 200 },
       { kind: 'jelly', count: 12, minDepth: 60, maxDepth: 700 },
@@ -403,4 +438,30 @@ export const ZONES: ZoneDef[] = [
     coral: 0,
     rocks: 70,
   },
+  {
+    name: 'Catalog',
+    catalog: true,
+    diveZoom: 0.75,
+    map: { x: 0, y: 0 },
+    width: CATALOG.width,
+    floor: CATALOG.floor,
+    calm: 0,
+    sky: ['#6CCBF2', '#D4F3FF'],
+    water: ['#3CC3DA', '#173A86'],
+    ground: ['#F2D49B', '#6B6F9E'],
+    darkness: [150, 400],
+    items: 0,
+    creatures: [],
+    islands: [],
+    wrecks: CATALOG.wrecks,
+    kelp: 0,
+    coral: 0,
+    rocks: 0,
+  },
 ];
+
+/** Zone indexes in the order the test panel steps through them: the catalog first, then the real zones. */
+export const ZONE_ORDER = ZONES.map((_, i) => i).sort((a, b) => Number(!!ZONES[b].catalog) - Number(!!ZONES[a].catalog));
+
+/** The number shown for a zone: the catalog is zone 0 and the rest count from 1. */
+export const zoneNumber = (i: number) => (ZONES[i].catalog ? 0 : i + 1);

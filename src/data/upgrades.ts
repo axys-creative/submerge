@@ -1,6 +1,6 @@
 import { PX_PER_M } from "../config";
 
-export type UpgradeId = "plating" | "oxygen" | "battery" | "hull" | "light" | "sonar" | "propeller";
+export type UpgradeId = "plating" | "oxygen" | "battery" | "hull" | "light" | "sonar" | "propeller" | "cargo";
 export type Loadout = Record<UpgradeId, number>;
 
 export interface UpgradeLevel {
@@ -29,6 +29,7 @@ export const UPGRADE_ORDER: UpgradeId[] = [
   "oxygen",
   "battery",
   "propeller",
+  "cargo",
   "hull",
   "light",
   "sonar",
@@ -48,6 +49,8 @@ export const STATS = {
   oxygen: [30, 60, 120, 480],
   battery: [9000, 16000, 26000, 200000],
   maxHull: [1, 2, 3],
+  /** How many items the hold carries, per cargo level. */
+  cargo: [10, 25],
   speed: [1, 1.3, 1.6],
   /** Battery spent per second while the spotlight is lit, per lamp level. */
   lampDrain: [0, 6, 10, 14],
@@ -114,6 +117,14 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
       { name: "Stock Prop", cost: 0, effect: "Standard speed" },
       { name: "Twin Blade", cost: 300, effect: `${times(STATS.speed[1])} speed`, soldAt: ["Pearl Atoll"] },
       { name: "Turbo Screw", cost: 1000, effect: `${times(STATS.speed[2])} speed`, soldAt: ["Last Light Atoll"] },
+    ],
+  },
+  cargo: {
+    title: "Cargo Hold",
+    blurb: "Carry more before you have to head back to sell.",
+    levels: [
+      { name: "Standard Hold", cost: 0, effect: `Carries ${STATS.cargo[0]} items` },
+      { name: "Wide Hold", cost: 500, effect: `Carries ${STATS.cargo[1]} items` },
     ],
   },
   hull: {
@@ -186,10 +197,10 @@ export const GEAR = {
     cost: 150,
     max: 3,
     firstZone: 1,
-    /** Seconds of air one candle gives. */
+    /** Seconds of air one candle adds. */
     seconds: 20,
     blurb:
-      "Chemical candles that burn out a fresh breath of air. One lights itself when your tank runs dry. Each upgrade carries one more, and docking restocks them all.",
+      "Chemical candles that burn out extra air. One lights itself when your air is nearly gone. Each upgrade carries one more, and docking restocks them all.",
   },
   scrubbers: {
     name: "CO₂ Scrubbers",

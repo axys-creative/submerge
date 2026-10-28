@@ -24,6 +24,10 @@ export interface CreatureDef {
   body?: [number, number][];
 }
 
+/** Sharks are drawn this many times longer than their base design, and then this much bigger overall. */
+export const SHARK_LENGTH = 1.5;
+export const SHARK_SCALE = 1.2;
+
 /** How much bigger the sperm whale is drawn and collides than its base 480 px design. */
 export const WHALE_SCALE = 1.5;
 
@@ -39,8 +43,8 @@ export const BACKGROUND_KINDS: CreatureKind[] = ["bluewhale"];
 export const CREATURES: Record<CreatureKind, CreatureDef> = {
   fish: { name: "Fish", radius: 10, harmful: false },
   jelly: { name: "Jellyfish", radius: 16, harmful: false },
-  shark: { name: "Great White Shark", radius: 30, harmful: true },
-  hammerhead: { name: "Hammerhead Shark", radius: 32, harmful: true },
+  shark: { name: "Great White Shark", radius: 30 * SHARK_SCALE, harmful: true },
+  hammerhead: { name: "Hammerhead Shark", radius: 32 * SHARK_SCALE, harmful: true },
   squid: { name: "Squid", radius: 32, harmful: true },
   angler: { name: "Anglerfish", radius: 21, harmful: true },
   stingray: { name: "Stingray", radius: 26, harmful: false },
@@ -69,8 +73,8 @@ export const CREATURES: Record<CreatureKind, CreatureDef> = {
 export const CREATURE_EXTENT: Record<CreatureKind, number> = {
   fish: 36,
   jelly: 70,
-  shark: 110,
-  hammerhead: 110,
+  shark: 110 * SHARK_LENGTH * SHARK_SCALE,
+  hammerhead: 110 * SHARK_LENGTH * SHARK_SCALE,
   squid: 140,
   angler: 80,
   whale: 270 * WHALE_SCALE,

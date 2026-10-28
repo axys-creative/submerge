@@ -85,6 +85,52 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       ctx.stroke();
       ctx.restore();
       break;
+    case 'can':
+      ctx.save();
+      ctx.rotate(0.55);
+      ctx.fillStyle = '#B7BEC9';
+      rrect(ctx, -9, -11, 18, 24, 3);
+      ctx.fill();
+      ctx.fillStyle = '#D9503F';
+      ctx.fillRect(-9, -3, 18, 8);
+      ctx.fillStyle = '#8D95A3';
+      ctx.beginPath();
+      ctx.ellipse(0, -11, 9, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(40,45,60,0.55)';
+      ctx.beginPath();
+      ctx.moveTo(-9, 4);
+      ctx.lineTo(-3, 7);
+      ctx.lineTo(-9, 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(5, -8);
+      ctx.lineTo(5, -4);
+      ctx.stroke();
+      ctx.restore();
+      break;
+    case 'tire':
+      ctx.fillStyle = '#2B2B33';
+      ctx.beginPath();
+      ctx.arc(0, 0, 16, 0, Math.PI * 2);
+      ctx.arc(0, 0, 7, 0, Math.PI * 2, true);
+      ctx.fill('evenodd');
+      ctx.strokeStyle = '#4A4A56';
+      ctx.lineWidth = 2;
+      for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * 12, Math.sin(a) * 12);
+        ctx.lineTo(Math.cos(a) * 16, Math.sin(a) * 16);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.beginPath();
+      ctx.arc(0, 0, 13, Math.PI * 1.1, Math.PI * 1.45);
+      ctx.stroke();
+      break;
     case 'coin':
       for (let i = 0; i < 3; i++) {
         ctx.fillStyle = GOLD_DARK;
