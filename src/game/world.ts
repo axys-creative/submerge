@@ -5,6 +5,10 @@ import { MONSTER_TRAIL, PX_PER_M, SCENERY_DENSITY } from '../config';
 import { BONE_KINDS, BONE_WEIGHTS, type BoneKind } from '../art/bones';
 import { clamp, mulberry32, rand, type Rng } from '../util';
 import { CATALOG } from '../data/catalog';
+import { createWreckFx } from './wreckfx';
+import type { WreckFx } from '../art/scenery';
+import type { Loadout } from '../data/upgrades';
+import type { SkinId } from '../data/skins';
 
 /** The sea floor never rises above this depth in px, so kelp, creatures and the ship stay clear of the surface. */
 const MIN_FLOOR = 15 * PX_PER_M;
@@ -16,9 +20,34 @@ const ITEM_SPACING = 160;
 /** Closest two coral pieces may sit, and closest an item may rest to coral, so loot never hides in a crowd of lookalikes. */
 const CORAL_SPACING = 150;
 const TRASH_SPACING = 140;
+const WRECK_TRASH_SPACING = 70;
+const FREIGHTER_TRASH = 9;
 const ITEM_CORAL_GAP = 120;
 const NAV_CELL = 120;
 const NAV_CLEAR = 130;
+
+/** A sub that was wrecked here, resting on the bottom. */
+export interface Hulk {
+  x: number;
+  y: number;
+  facing: number;
+  tilt: number;
+  up: Loadout;
+  skin: SkinId;
+}
+
+/** A piece of a sub that imploded, resting on the bottom. */
+export interface Scrap {
+  x: number;
+  y: number;
+  rot: number;
+  w: number;
+  h: number;
+  color: string;
+}
+
+const MAX_HULKS = 6;
+const MAX_SCRAPS = 60;
 
 /** Steepest ground (rise over run) that can be climbed by sliding along it. */
 export const MAX_SLOPE = 1;
@@ -64,6 +93,10 @@ const CAVE_SHIFT_X = 90;
 /** Narrowest a tunnel's wavering wall may get in px, so the sub always fits through. */
 const MIN_TUNNEL_R = 100;
 const CAVE_SHIFT_M = 7;
+/** How far into a hidden cave its mouth shows from outside, and how far around the sub it shows from inside, in px. */
+const CAVE_MOUTH_REACH = 300;
+const CAVE_REVEAL = 1100;
+const CAVE_REVEAL_SPEED = 1400;
 
 /**
  * Replaces each bend with either a diagonal cut or a curve, keeping the ends fixed.
@@ -136,7 +169,7 @@ export interface Creature {
 }
 
 export interface Deco {
-  kind: 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | BoneKind;
+  kind: 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
   x: number;
   y: number;
   size: number;
@@ -157,15 +190,43 @@ export class World {
   /** Deepest point of the sea floor alone. */
   readonly floorMax: number;
   readonly items: ItemInst[] = [];
+  /** Loose glass and swinging cables per wreck, or null for wrecks with none. */
+  readonly wreckFx: (WreckFx | null)[] = [];
   readonly creatures: Creature[] = [];
   readonly deco: Deco[] = [];
   /** Name tags drawn in the world, used by the catalog zone. */
   readonly labels: { x: number; y: number; text: string }[] = [];
+  /** Catalog column headings, drawn larger than the name tags. */
+  readonly headers: { x: number; y: number; text: string; sub: string }[] = [];
   private readonly shape: number[];
   readonly caveBlobs: CaveBlob[] = [];
   private readonly rng: Rng;
   /** The zone's passages with this visit's random shifts applied. */
   private passages: CavePassage[] = [];
+
+  /** The portal stone on the sea floor, if the zone has one. */
+  stone: { x: number; y: number } | null = null;
+
+  /** Wrecked subs and implosion bits left behind by earlier dives, until the zone is rebuilt. */
+  readonly hulks: Hulk[] = [];
+  readonly scraps: Scrap[] = [];
+
+  addHulk(h: Hulk) {
+    this.hulks.push(h);
+    if (this.hulks.length > MAX_HULKS) this.hulks.shift();
+  }
+
+  /** Drops bits of an imploded sub from around (x, y) onto the ground below. */
+  scatterScraps(x: number, y: number, colors: string[]) {
+    for (let i = 0; i < 9; i++) {
+      let px = x + (Math.random() - 0.5) * 320;
+      let py = y;
+      if (this.caveSolid(px, py)) px = x;
+      while (py < this.maxFloor + 200 && !this.caveSolid(px, py + 2)) py += 2;
+      this.scraps.push({ x: px, y: py, rot: Math.random() * 6, w: 10 + Math.random() * 14, h: 7 + Math.random() * 10, color: colors[i % colors.length] });
+    }
+    this.scraps.splice(0, Math.max(0, this.scraps.length - MAX_SCRAPS));
+  }
 
   /** How many fixed trash spots this zone ended up with. */
   trashTotal = 0;
@@ -192,6 +253,7 @@ export class World {
     this.maxFloor = max;
 
     this.buildDeco(layout);
+    if (this.def.portalStone) this.stone = { x: this.def.portalStone.x, y: this.floorAt(this.def.portalStone.x) - 15 };
     this.placeTrash(cleared);
     for (let i = 0; i < this.def.items; i++) {
       const it = this.blankItem();
@@ -200,6 +262,7 @@ export class World {
     }
     this.placeCaveLoot();
     this.def.wrecks.forEach((w, i) => {
+      this.wreckFx.push(createWreckFx(w.kind));
       const it = this.blankItem();
       it.kind = w.kind === 'sloop' ? 'coin' : 'chest';
       it.wreck = i;
@@ -389,6 +452,26 @@ export class World {
     return hit;
   }
 
+  /** How far around the sub a hidden cave currently shows; grows when the sub is in the cave and shrinks when it leaves. */
+  private reveal = 0;
+  private revealAt = { x: 0, y: 0 };
+
+  trackReveal(subX: number, subY: number, dt: number) {
+    const inside = !!this.def.caves?.some((c) => c.hidden && subX >= c.x0 && subX <= c.x1) && this.caveBlobs.some((b) => Math.hypot(subX - b.x, subY - b.y) < b.r);
+    const step = CAVE_REVEAL_SPEED * dt;
+    this.reveal = clamp(this.reveal + (inside ? step : -step), 0, CAVE_REVEAL);
+    if (this.reveal > 0) this.revealAt = { x: subX, y: subY };
+  }
+
+  /** False for rock cut by a hidden cave that the sub is not in, except right at the mouth. */
+  caveShown(x: number, y: number): boolean {
+    const cave = this.def.caves?.find((c) => c.hidden && x >= c.x0 && x <= c.x1);
+    if (!cave || y <= this.floorAt(x) + 30) return true;
+    const [mx, mm] = cave.passages[0].pts[0];
+    if (Math.hypot(x - mx, y - mm * PX_PER_M) < CAVE_MOUTH_REACH) return true;
+    return Math.hypot(x - this.revealAt.x, y - this.revealAt.y) < this.reveal;
+  }
+
   /** True when x is inside the headland where collision follows the tunnels. */
   inCave(x: number): boolean {
     return !!this.def.caves?.some((c) => x >= c.x0 && x <= c.x1);
@@ -408,9 +491,9 @@ export class World {
   }
 
   /** True when a body centered at (x, y), halfWidth wide, overlaps rock. */
-  caveHit(x: number, y: number, halfWidth: number): boolean {
+  caveHit(x: number, y: number, halfWidth: number, above = 24, below = 24): boolean {
     for (const dx of [-0.85, -0.45, 0, 0.45, 0.85]) {
-      for (const dy of [-24, 0, 24]) {
+      for (const dy of [-above, 0, below]) {
         if (Math.abs(dx) > 0.7 && dy !== 0) continue;
         if (this.caveSolid(x + dx * halfWidth, y + dy)) return true;
       }
@@ -480,7 +563,7 @@ export class World {
       const low = p.pts.reduce((a, b) => (b[1] > a[1] ? b : a));
       for (let i = 0; i < p.loot; i++) {
         const it = this.blankItem();
-        const kind = this.pickKind(Math.min(low[1], 890), true, true);
+        const kind = p.kinds?.[i] ?? this.pickKind(Math.min(low[1], 890), true, true);
         if (!kind) continue;
         const width = p.pts.length === 1 ? p.r : p.r * TUNNEL_WIDEN;
         const reach = width * (p.pts.length === 1 ? 0.6 : 0.3);
@@ -571,6 +654,14 @@ export class World {
     add('rock', this.def.rocks, Infinity);
     add('kelp', this.def.kelp, 260);
     add('coral', this.def.coral, 170);
+    this.def.meadows?.forEach((m, i) => {
+      const g = mulberry32(this.index * 4001 + i * 131 + 77);
+      const step = (m.x1 - m.x0) / m.kelp;
+      for (let j = 0; j < m.kelp; j++) {
+        const x = m.x0 + (j + 0.5) * step + rand(g, -step * 0.35, step * 0.35);
+        this.deco.push({ kind: 'kelp', x, y: this.floorAt(x), size: rand(g, 0.7, 1.4), phase: g() * 10, tint: g(), push: 0, pushV: 0 });
+      }
+    });
     for (let i = 0; i < scaled(this.def.reefs ?? 0); i++) {
       const cx = rand(r, 400, this.width - 400);
       const n = 5 + Math.floor(r() * 5);
@@ -659,6 +750,7 @@ export class World {
     const r = mulberry32(this.index * 6007 + 31);
     const kinds = ITEM_KINDS.filter((k) => ITEMS[k].trash);
     const xs: number[] = [];
+    let meadowTires = 0;
     for (let i = 0; i < (this.def.trash ?? 0); i++) {
       for (let tries = 0; tries < 60; tries++) {
         const x = rand(r, 250, this.width - 250);
@@ -666,7 +758,11 @@ export class World {
         if (Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 20) continue;
         if (this.atMouth(x, floor) || this.coralNear(x, ITEM_CORAL_GAP)) continue;
         if (xs.some((o) => Math.abs(o - x) < TRASH_SPACING)) continue;
-        const kind = kinds[Math.floor(r() * kinds.length)];
+        let kind = kinds[Math.floor(r() * kinds.length)];
+        if (kind === 'tire' && this.def.meadows?.some((m) => x >= m.x0 && x <= m.x1) && meadowTires++) {
+          const others = kinds.filter((k) => k !== 'tire' && k !== 'bottle');
+          kind = others[this.trashTotal % others.length];
+        }
         const it = this.blankItem();
         it.kind = kind;
         it.x = x;
@@ -677,6 +773,25 @@ export class World {
         this.items.push(it);
         xs.push(x);
         break;
+      }
+    }
+    for (const w of this.def.wrecks) {
+      if (w.kind !== 'freighter') continue;
+      for (let i = 0, placed = 0; placed < FREIGHTER_TRASH && i < FREIGHTER_TRASH * 40; i++) {
+        const x = w.x + rand(r, -250, 3050);
+        const floor = this.floorAt(x);
+        if (x < 150 || x > this.width - 150 || this.atMouth(x, floor) || xs.some((o) => Math.abs(o - x) < WRECK_TRASH_SPACING)) continue;
+        const kind = kinds[placed % kinds.length];
+        const it = this.blankItem();
+        it.kind = kind;
+        it.x = x;
+        it.y = kind === 'bottle' && r() < 0.25 ? rand(r, 120, floor - 80) : floor - ITEMS[kind].size * 0.45;
+        it.trash = this.trashTotal++;
+        it.alive = !cleared.includes(it.trash);
+        it.respawnAt = Infinity;
+        this.items.push(it);
+        xs.push(x);
+        placed++;
       }
     }
   }
@@ -755,6 +870,7 @@ export class World {
       }
       this.labels.push({ x: e.x, y: y + 34, text: e.label });
     }
+    for (const col of CATALOG.columns) this.headers.push({ x: col.x, y: CATALOG.headerY, text: col.label, sub: col.zones });
     for (const e of CATALOG.creatures) {
       const y = e.y;
       for (let i = 0; i < (e.kind === 'fish' ? 5 : 1); i++) {

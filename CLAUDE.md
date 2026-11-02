@@ -2,6 +2,18 @@
 
 Canvas 2D submarine game (Vite + TypeScript). Zone data is in `src/data/zones.ts`, upgrades in `src/data/upgrades.ts`. Shop descriptions for upgrades are built from the numbers in `STATS` there, so change a number once and the shop updates.
 
+## Shop stock
+
+Each upgrade has `stock` slots in `src/data/upgrades.ts`, one per purchasable level. A slot names the zones (and sometimes the shop) that hold it; buying any level uses up the first unused slot that matches the shop, so the player can take the first level from a late shop and the last from an early one, but never two from one slot. Shops hide upgrades they have no slot for, and gray out ones that are sold out or maxed. Kelp Canyons and Midnight Trench are alternate routes, so mid-game slots list both (`[2, 3]`); the best slots are in Moana Deep, split over Palm Atoll and Trench Pier.
+
+| Slot | Plating | Tank | Battery | Propeller | Hold | Bumpers | Light | Sonar |
+|---|---|---|---|---|---|---|---|---|
+| Sunny Shallows | | Coral Cove | Gull Rock | | | Gull Rock | | |
+| Coral Gardens | yes | | yes | | yes | | yes | |
+| Kelp Canyons or Midnight Trench | yes | yes | | yes | | yes | | yes |
+| Midnight Trench or Moana Deep | | | | | | | yes | yes |
+| Moana Deep | Palm Atoll | Palm Atoll | Trench Pier | Palm Atoll | | Palm Atoll | Trench Pier | Trench Pier |
+
 ## Catalog zone
 
 The last zone, Catalog, is a test zone reached with the zone stepper in the test panel (hidden from the route map). It is always daytime with no creature movement. Next to the ship it lays out every plant, rock, bone, item and wreck on a shallow floor, then every animal in open water, each with a name tag. The layout is in `src/data/catalog.ts`; new creatures, items and scenery kinds should be added there so they show up.
@@ -20,15 +32,15 @@ Planned, not built yet. Details are open for discussion.
 
 ### Submarine skins
 
-Built so far: `SkinId` in `src/data/skins.ts`, `save.skin`, a Skin row in the test panel, and three skins, all in `drawSub` (`src/art/sub.ts`). Skins are cosmetic only and never change what the upgrades do.
+Built so far: `SkinId` in `src/data/skins.ts`, `save.skin`, a Skin row in the test panel, and five skins, all in `drawSub` (`src/art/sub.ts`). Skins are cosmetic only and never change what the upgrades do.
 
 - Standard: the original sub.
 - Expedition Capsule (`capsule`): a white tube with a metal dome nose, a top fairing and a side thruster. It drops the tower, antenna, tank and battery but still shows the other upgrades' looks.
 - OceanGate (`oceangate`): a plain white rectangle with a swept tail, a brass dome nose and black landing gear. It ignores the upgrades' looks entirely.
+- Deepsea Challenger (`challenger`): the tall green research sub from the Mariana Trench dive, drawn from a reference image in `src/art/challenger.ts` (a window onto its batteries, flood lights and a sampling arm on the front side, two stabilizing fins on the back, a camera dome with antenna rods). Cosmetic except for depth: while worn its safe depth is `CHALLENGER_DEPTH_RATING` (11,050 m, from its 16,500 psi hull: the 11,000 m Challenger Deep plus 50 m) instead of the plating's. It lies on its side while hooked to the ship and rights itself slowly once the tether has gone back up after launch (`subPose` in `src/game/game.ts`, 0 lying to 1 upright), then lies down again as soon as the tether drops near the surface on the way back. The sprite is mirrored for the water (utility arm leads) but not on the ship (fins down), so it launches facing opposite the ship, which keeps what's on screen the same, and turns when the player steers. The spotlight sits on its flood lights (`lampFor`) and the crane hooks onto its upward side (`anchorFor`). Its collision is the same as the other skins' and ignores its height. How to unlock it is not decided yet; the Skin row in the test panel is the only way to wear it.
+- SM-13 (`sm13`): the lost submarine from the Crimson Sea abyss, upright and without its bite marks, shrunk to the sub's size (`src/art/lostSub.ts`). It ignores the upgrades' looks. Unlocks the first time the sub arrives in the Crimson Sea through the portal (`updateTravel` in `src/game/game.ts`); the "unlocked" toast waits until 5 seconds into the next dive.
 
-Still open: how a skin is unlocked (a code found in a cave, or sold in a shop).
-
-Next skin, planned but not started: a deep-sea research sub in the style of the one used for the Mariana Trench dive (tall and vertical, a green hull, a side panel of lights, batteries, boom arms for a light and a camera, a stabilizer fin, weights). This one is different in kind: it gets its own fixed stats that the normal upgrades cannot change while it is equipped, and its spotlights sit in different places, so the lamp and light positions in `sub.ts` and `scene.ts` need to come from the skin instead of being fixed.
+Unlocking: the first time the sub implodes from pressure (`wreck('pressure')` in `src/game/game.ts`), OceanGate is added to `save.skins` and the death screen shows an "unlocked" note. Skins are picked in the Skins section of the pause menu (settings), where locked ones show as "Locked". The Skin row in the test panel bypasses all of this. Once the dev testing tools are removed for the real game, that is the only way to get and change skins. The Expedition Capsule unlocks after the sub is wrecked 3 times in one game (`save.stats.deaths`, `CAPSULE_DEATHS` in `src/data/skins.ts`), for any cause; the count resets on a new game.
 
 ### Craftable mechanical arm
 

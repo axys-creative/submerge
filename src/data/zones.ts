@@ -1,5 +1,6 @@
 import type { CreatureKind } from './creatures';
 import type { UpgradeId } from './upgrades';
+import type { ItemKind } from './items';
 import { CATALOG } from './catalog';
 
 export interface CreatureSpawn {
@@ -17,6 +18,8 @@ export interface CavePassage {
   r: number;
   /** Treasure items resting in this passage. */
   loot?: number;
+  /** Fixed kinds for the loot, in order, instead of random picks. */
+  kinds?: ItemKind[];
 }
 
 /** A rocky headland with tunnels carved through it; collision inside x0..x1 uses the tunnels, not just the sea floor. */
@@ -27,6 +30,8 @@ export interface CaveDef {
   /** Raises the sea floor into a headland with steep sides, so the first tunnel can enter its side horizontally. */
   hill: { x: number; half: number; ramp: number; height: number };
   passages: CavePassage[];
+  /** From outside only the mouth of the first passage shows; the rest is drawn once the sub is inside. */
+  hidden?: boolean;
   /** Skeleton pieces scattered on the floors of the tunnels above the cavern. */
   bones?: number;
   /** Rocks and starfish lying on the floors of the tunnels. */
@@ -38,6 +43,8 @@ export interface CaveDef {
 
 export interface ZoneDef {
   name: string;
+  /** Shown as question marks on maps and portals until the player has been there. */
+  secret?: boolean;
   /** A test zone that lays out every animal, plant, rock, item and wreck for inspection; always daytime, hidden from the route map. */
   catalog?: boolean;
   /** How far the view zooms out while diving here: 1 is normal, smaller shows more of the ocean. */
@@ -65,6 +72,8 @@ export interface ZoneDef {
   /** Vertical cave shafts cut into the sea floor; width in px, depth in meters. */
   shafts?: { name: string; x: number; width: number; depth: number }[];
   caves?: CaveDef[];
+  /** A glowing stone resting on the sea floor at x; taking it opens the portals. */
+  portalStone?: { x: number };
   /** An airless moon: black sky with a few stars, no sun, moon, clouds or day and night. */
   space?: boolean;
   /** The island shop here also sells the dive weights. */
@@ -76,6 +85,8 @@ export interface ZoneDef {
   rocks: number;
   /** Skeleton pieces (skulls, rib cages, bones, whole skeletons) scattered on the sea floor. */
   bones?: number;
+  /** Seagrass patches laid out the same every time over stretches of flat sea floor; each keeps at most one tire. */
+  meadows?: { x0: number; x1: number; kelp: number }[];
 }
 
 const smooth = (x: number, from: number, to: number) => {
@@ -88,8 +99,8 @@ const MOANA_FLOOR = Array.from({ length: 36 }, (_, i) => {
   const x = i * 300;
   const hills = 1500 + 12 * Math.sin(i * 1.7) + 8 * Math.sin(i * 0.63 + 1);
   const left = 1 - smooth(x, 1500, 2400);
-  const right = smooth(x, 8400, 9300);
-  return Math.round(hills + left * (3300 + 90 * Math.sin(i * 2.3) - 1500) + right * (4700 + 140 * Math.sin(i * 1.9 + 2) - 1500));
+  const right = smooth(x, 7800, 8700);
+  return Math.round(hills + left * (3300 + 90 * Math.sin(i * 2.3) - 1500) + right * (4700 + 25 * Math.sin(i * 1.9 + 2) - 1500));
 });
 
 // How the zones connect is in routes.ts.
@@ -115,7 +126,7 @@ export const ZONES: ZoneDef[] = [
     ],
     islands: [
       { x: 650, name: 'Coral Cove', sells: ['plating', 'oxygen'] },
-      { x: 6100, name: 'Gull Rock', sells: ['battery'] },
+      { x: 6100, name: 'Gull Rock', sells: ['battery', 'hull'] },
     ],
     wrecks: [{ x: 4400, kind: 'sloop' }],
     caves: [{
@@ -185,6 +196,7 @@ export const ZONES: ZoneDef[] = [
     coral: 40,
     reefs: 5,
     rocks: 50,
+    meadows: [{ x0: 6700, x1: 8000, kelp: 20 }],
   },
   {
     name: 'Coral Gardens',
@@ -284,8 +296,8 @@ export const ZONES: ZoneDef[] = [
     name: 'Kelp Canyons',
     diveZoom: 0.7,
     map: { x: 175, y: 55 },
-    width: 10000,
-    floor: [50, 90, 160, 230, 190, 340, 340, 230, 520, 900, 900, 900, 900, 900, 520, 120],
+    width: 11340,
+    floor: [50, 90, 160, 230, 190, 340, 340, 230, 520, 900, 900, 900, 900, 900, 900, 900, 520, 120],
     calm: 0.35,
     sky: ['#79C6E6', '#E2F7EF'],
     water: ['#2FB3A0', '#0F2F5E'],
@@ -304,11 +316,35 @@ export const ZONES: ZoneDef[] = [
     ],
     islands: [
       { x: 600, name: 'Driftwood Dock' },
-      { x: 7300, name: 'Lantern Isle' },
+      { x: 7900, name: 'Lantern Isle' },
     ],
+    caves: [{
+      name: 'Cargo Hollow',
+      hidden: true,
+      stones: 30,
+      x0: 800,
+      x1: 4100,
+      hill: { x: 3000, half: 0, ramp: 1, height: 0 },
+      passages: [
+        { pts: [[3290, 322], [3100, 340], [2800, 372], [2500, 400]], r: 190 },
+        { pts: [[2500, 400], [2300, 372], [2050, 340], [1800, 322]], r: 180 },
+        { pts: [[2050, 292]], r: 200, loot: 1 },
+        { pts: [[1950, 385]], r: 170 },
+        { pts: [[1700, 322]], r: 260, loot: 1 },
+        { pts: [[2500, 400], [2450, 470], [2650, 540], [2900, 600]], r: 190 },
+        { pts: [[2900, 600], [3200, 640], [3450, 680], [3650, 690]], r: 190 },
+        { pts: [[3650, 692]], r: 300, loot: 1 },
+        { pts: [[2900, 600], [2500, 640], [2200, 690], [1900, 740]], r: 190 },
+        { pts: [[1850, 745]], r: 300, loot: 1 },
+        { pts: [[2900, 600], [2950, 700], [2800, 790], [2850, 880]], r: 190 },
+        { pts: [[2850, 890]], r: 350, loot: 2 },
+        { pts: [[1900, 740], [1500, 760], [1200, 790]], r: 105 },
+        { pts: [[1150, 795]], r: 240, loot: 1 },
+      ],
+    }],
     wrecks: [
       { x: 3600, kind: 'containers' },
-      { x: 7300, kind: 'freighter' },
+      { x: 7900, kind: 'freighter' },
       { x: 2200, kind: 'sloop' },
     ],
     kelp: 140,
@@ -364,19 +400,42 @@ export const ZONES: ZoneDef[] = [
       { kind: 'squid', count: 3, minDepth: 500, maxDepth: 1300 },
       { kind: 'angler', count: 8, minDepth: 1000, maxDepth: 2500 },
       { kind: 'whale', count: 2, minDepth: 400, maxDepth: 1100 },
+      { kind: 'mobydick', count: 1, minDepth: 400, maxDepth: 1100 },
       { kind: 'manta', count: 2, minDepth: 100, maxDepth: 800 },
       { kind: 'bluewhale', count: 2, minDepth: 25, maxDepth: 160 },
       { kind: 'colossal', count: 2, minDepth: 1000, maxDepth: 1450 },
       { kind: 'bigfin', count: 3, minDepth: 1050, maxDepth: 1300 },
     ],
-    islands: [{ x: 700, name: 'Palm Atoll' }],
+    islands: [
+      { x: 700, name: 'Palm Atoll' },
+      { x: 6200, name: 'Trench Pier', sells: ['battery', 'light', 'sonar'] },
+    ],
     wrecks: [],
+    portalStone: { x: 9600 },
+    caves: [{
+      name: 'Trench Pocket',
+      stones: 6,
+      x0: 5000,
+      x1: 8400,
+      hill: { x: 8250, half: 0, ramp: 1, height: 0 },
+      passages: [
+        { pts: [[8250, 3100], [7800, 3095], [7300, 3105], [6800, 3095], [6300, 3105], [5800, 3100]], r: 190 },
+        { pts: [[5800, 3102]], r: 330, loot: 1, kinds: ['pearl'] },
+        { pts: [[6800, 3095], [6800, 3150], [6600, 3190], [6600, 3240]], r: 190 },
+        { pts: [[6600, 3245]], r: 270 },
+        { pts: [[5800, 3100], [5700, 3150], [5500, 3180]], r: 190 },
+        { pts: [[5500, 3185]], r: 260, loot: 1, kinds: ['gem'] },
+        { pts: [[7300, 3105], [7300, 3060], [7150, 3020], [7150, 2990]], r: 190 },
+        { pts: [[7150, 2985]], r: 250 },
+      ],
+    }],
     kelp: 0,
     coral: 0,
     rocks: 60,
   },
   {
     name: 'Crimson Sea',
+    secret: true,
     space: true,
     diveZoom: 0.75,
     map: { x: 330, y: 110 },
@@ -454,6 +513,7 @@ export const ZONES: ZoneDef[] = [
     creatures: [],
     islands: [],
     wrecks: CATALOG.wrecks,
+    shafts: CATALOG.shafts,
     kelp: 0,
     coral: 0,
     rocks: 0,

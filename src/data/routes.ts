@@ -18,8 +18,27 @@ export const ROUTES: [Endpoint, Endpoint][] = [
   [{ zone: 1, side: 'east' }, { zone: 3, side: 'west' }],
   [{ zone: 2, side: 'east' }, { zone: 4, side: 'west' }],
   [{ zone: 3, side: 'east' }, { zone: 4, side: 'west' }],
-  [{ zone: 4, side: 'east' }, { zone: 5, side: 'west' }],
 ];
+
+/** A portal standing on the surface at x; sailing to it and entering takes the ship to `toX` in zone `to`. */
+export interface Portal {
+  zone: number;
+  x: number;
+  to: number;
+  toX: number;
+  /** Stays closed until the portal stone has been taken. */
+  sealed: boolean;
+  /** Stays hidden until the monster has started its chase. */
+  chase?: boolean;
+}
+
+export const PORTALS: Portal[] = [
+  { zone: 4, x: 3450, to: 5, toX: 1200, sealed: true },
+  { zone: 5, x: 1200, to: 4, toX: 3450, sealed: false, chase: true },
+];
+
+/** Moana Deep and Crimson Sea, joined by the portals; drawn on the route map once open. */
+export const PORTAL_LINK: [Endpoint, Endpoint] = [{ zone: 4, side: 'east' }, { zone: 5, side: 'west' }];
 
 const same = (a: Endpoint, b: Endpoint) => a.zone === b.zone && a.side === b.side;
 

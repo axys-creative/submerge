@@ -1,9 +1,13 @@
 import { mixColor, mulberry32, rrect } from '../util';
 import { ISLAND_WIDTH } from '../config';
-import { drawTankShape } from './sub';
+import { drawTankShape, drawShipPropeller, logo } from './sub';
+import type { SkinId } from '../data/skins';
 import { drawBones, type BoneKind } from './bones';
+import { drawLostSub, LOST_WRECK_SCALE } from './lostSub';
+import { CRANE_TIP, SHIP_LAMPS } from './shipMounts';
+import { drawIronShip } from './ironShip';
 
-export type DecoKind = 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | BoneKind;
+export type DecoKind = 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a: number) {
   ctx.save();
@@ -18,14 +22,7 @@ function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a:
   ctx.restore();
 }
 
-/** Crane arm tip relative to the ship center, where the sub's cable hangs from. */
-export const CRANE_TIP = { x: -215, y: -112 };
-
-/** Deck spotlights relative to the ship center, aimed down and outward (a is the beam angle from straight down, toward the end of the ship). */
-export const SHIP_LAMPS = [
-  { x: 132, y: -42, dir: 1, a: 0.55 },
-  { x: -130, y: -30, dir: -1, a: 0.55 },
-];
+export { CRANE_TIP, SHIP_LAMPS };
 
 /** Ship paint by tier, which follows the sub's lowest of plating and oxygen tank level. */
 const SHIP_TIERS = [
@@ -60,8 +57,11 @@ function windowShine(ctx: CanvasRenderingContext2D, x: number, y: number, h: num
   ctx.stroke();
 }
 
-export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -1 = 1, night = 0, tier = 0, oxygen = 0, alert = 0) {
+export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -1 = 1, night = 0, tier = 0, oxygen = 0, alert = 0, prop = 0, propLevel = 0, skin: SkinId = 'standard') {
+  if (skin === 'sm13') return drawIronShip(ctx, t, facing, night, oxygen, alert, prop, propLevel);
   const c = SHIP_TIERS[tier];
+  const gate = skin === 'oceangate';
+  const cabin = gate ? { hull: '#E9EDF2', deck: '#D3DAE3' } : { hull: c.hull, deck: c.deck };
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
@@ -112,7 +112,7 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.lineTo(34, -98);
   ctx.lineTo(50, -80);
   ctx.closePath();
-  fillRounded(ctx, c.hull);
+  fillRounded(ctx, cabin.hull);
   ctx.fillStyle = '#EEF2F6';
   ctx.beginPath();
   ctx.arc(24, -98, 7, Math.PI, 0);
@@ -130,7 +130,7 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.lineTo(92, -50);
   ctx.lineTo(98, -30);
   ctx.closePath();
-  fillRounded(ctx, c.deck);
+  fillRounded(ctx, cabin.deck);
   ctx.fillStyle = 'rgba(255,255,255,0.12)';
   ctx.beginPath();
   ctx.moveTo(-28, -80);
@@ -143,7 +143,7 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   const glass = lit ? '#FFD66B' : GLASS;
   const shine = lit ? 0.55 : 0.9;
   for (const x of [-18, 8, 34]) {
-    ctx.fillStyle = c.hull;
+    ctx.fillStyle = cabin.hull;
     rrect(ctx, x - 1.5, -69.5, 25, 15, 6);
     ctx.fill();
     ctx.fillStyle = glass;
@@ -238,7 +238,7 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
 
   // Bow rail
   const hullTop = (x: number) => -38 + ((x - 120) * 4) / 52;
-  ctx.strokeStyle = '#EEF2F6';
+  ctx.strokeStyle = gate ? '#B9C2CD' : c.deck;
   ctx.lineWidth = 2;
   for (const x of [128, 140, 152, 164]) {
     ctx.beginPath();
@@ -262,14 +262,14 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.lineTo(-122, 26);
   ctx.lineTo(-140, 6);
   ctx.closePath();
-  fillRounded(ctx, c.hull, 7);
+  fillRounded(ctx, skin === 'oceangate' ? '#F1F4F8' : c.hull, 7);
   ctx.beginPath();
   ctx.moveTo(-135, 12);
   ctx.lineTo(125, 12);
   ctx.lineTo(110, 26);
   ctx.lineTo(-122, 26);
   ctx.closePath();
-  fillRounded(ctx, c.shade, 7);
+  fillRounded(ctx, skin === 'oceangate' ? '#F1F4F8' : c.shade, 7);
 
   for (const x of [-104, -80, -56]) {
     ctx.fillStyle = c.accent;
@@ -300,8 +300,20 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.lineTo(172, -34);
   ctx.stroke();
 
-  drawSternBumper(ctx);
+  drawShipPropeller(ctx, prop, propLevel, c.dark, c.accent);
 
+  if (skin === 'oceangate' && logo.complete && logo.naturalWidth) {
+    ctx.save();
+    ctx.translate(56, 0);
+    ctx.rotate(-0.06);
+    ctx.scale(facing, 1);
+    ctx.fillStyle = '#F1F4F8';
+    rrect(ctx, -40.5, -15, 81, 30, 6);
+    ctx.fill();
+    ctx.drawImage(logo, -36, -12, 72, 24);
+    ctx.restore();
+    return;
+  }
   ctx.fillStyle = c.text;
   ctx.font = '600 13px Fredoka, Nunito, sans-serif';
   const label = 'SUBMERGE';
@@ -311,22 +323,6 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   ctx.textAlign = 'center';
   ctx.fillText(label, 0, 0);
   ctx.restore();
-}
-
-function drawSternBumper(ctx: CanvasRenderingContext2D) {
-  ctx.strokeStyle = '#2D2F36';
-  ctx.lineWidth = 7;
-  ctx.beginPath();
-  ctx.moveTo(-139, -22);
-  ctx.lineTo(-139, 6);
-  ctx.lineTo(-121, 24);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(-142, -20);
-  ctx.lineTo(-142, 5);
-  ctx.stroke();
 }
 
 /** Where the dock's slanted poles meet the water, as offsets from the island center; they run on down into the underwater mountain. */
@@ -621,8 +617,154 @@ export function drawBuoy(ctx: CanvasRenderingContext2D, t: number, label: string
   ctx.textAlign = 'left';
 }
 
-export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleon' | 'freighter' | 'containers') {
-  if (kind === 'freighter') return drawFreighter(ctx);
+const RIFT = (() => {
+  const r = mulberry32(4242);
+  const N = 14;
+  const main: [number, number][] = Array.from({ length: N + 1 }, (_, i) => [Math.sin((i / N) * 5.1) * 14 + (r() - 0.5) * 16, -112 + (i / N) * 224]);
+  const branches: [number, number][][] = [];
+  for (let k = 0; k < 10; k++) {
+    let [x, y] = main[1 + Math.floor(r() * (N - 1))];
+    let ang = (r() < 0.5 ? 0 : Math.PI) + (r() - 0.5) * 1.6;
+    const len = k < 3 ? 120 + r() * 40 : 30 + r() * 60;
+    const pts: [number, number][] = [[x, y]];
+    for (let i = 0; i < 5; i++) {
+      ang += (r() - 0.5) * 0.7;
+      x += (Math.cos(ang) * len) / 5 + (r() - 0.5) * 6;
+      y += (Math.sin(ang) * len) / 5 + (r() - 0.5) * 6;
+      pts.push([x, y]);
+    }
+    branches.push(pts);
+  }
+  const wisps = Array.from({ length: 30 }, () => ({ at: r() * N, side: r() < 0.5 ? -1 : 1, phase: r(), speed: 0.15 + r() * 0.25, size: 3 + r() * 7, sway: r() * 6 }));
+  return { main, branches, wisps };
+})();
+
+/** A crack in reality standing over the water: long white-hot fissures in a red halo of pushed-out energy, with ghostly wisps drifting off them, and the destination's name above. */
+export function drawPortal(ctx: CanvasRenderingContext2D, t: number, label: string) {
+  const flicker = 0.88 + 0.12 * Math.sin(t * 7.3) * Math.sin(t * 2.9);
+  ctx.save();
+  ctx.translate(0, -78);
+  ctx.globalCompositeOperation = 'lighter';
+  const breathe = 0.85 + 0.15 * Math.sin(t * 1.6);
+  const halo = ctx.createRadialGradient(0, 0, 6, 0, 0, 170);
+  halo.addColorStop(0, `rgba(255,120,120,${0.5 * breathe})`);
+  halo.addColorStop(0.45, `rgba(220,40,70,${0.22 * breathe})`);
+  halo.addColorStop(1, 'rgba(120,0,30,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 130, 170, 0, 0, Math.PI * 2);
+  ctx.fill();
+  for (let i = 0; i < 3; i++) {
+    const u = (t * 0.35 + i / 3) % 1;
+    ctx.strokeStyle = `rgba(255,110,130,${0.28 * (1 - u)})`;
+    ctx.lineWidth = 2 + 6 * (1 - u);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 30 + 110 * u, 55 + 130 * u, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const trace = (pts: [number, number][], scale: number) => {
+    for (const [w, color] of [
+      [14, `rgba(255,60,90,${0.16 * flicker})`],
+      [7, `rgba(255,120,140,${0.4 * flicker})`],
+      [2.6, `rgba(255,235,235,${0.95 * flicker})`],
+    ] as const) {
+      ctx.lineWidth = w * scale;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.stroke();
+    }
+  };
+  trace(RIFT.main, 1);
+  for (const br of RIFT.branches) trace(br, 0.6);
+  for (const w of RIFT.wisps) {
+    const u = (t * w.speed + w.phase) % 1;
+    const i = Math.min(RIFT.main.length - 2, Math.floor(w.at));
+    const f = w.at - i;
+    const bx = RIFT.main[i][0] + (RIFT.main[i + 1][0] - RIFT.main[i][0]) * f;
+    const by = RIFT.main[i][1] + (RIFT.main[i + 1][1] - RIFT.main[i][1]) * f;
+    const x = bx + w.side * (6 + u * 44) + Math.sin(t * 1.3 + w.phase * 9) * w.sway;
+    const y = by - u * 34;
+    const a = Math.sin(u * Math.PI) * 0.5;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, w.size * (1 + u));
+    g.addColorStop(0, `rgba(255,225,225,${a})`);
+    g.addColorStop(1, 'rgba(255,90,110,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(x, y, w.size * (1 + u) * 0.7, w.size * (1 + u) * 1.5, w.side * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.font = '700 16px Fredoka, Nunito, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(20,36,90,0.85)';
+  ctx.strokeText(label, 0, -216);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText(label, 0, -216);
+  ctx.textAlign = 'left';
+}
+
+/** The ruby that opens the portals: a regular pentagon cut in facets, lit from the upper left, that bobs and pulses. */
+export function drawPortalStone(ctx: CanvasRenderingContext2D, t: number) {
+  const pulse = 0.75 + 0.25 * Math.sin(t * 2.2);
+  const R = 22;
+  const ring = (r: number) => Array.from({ length: 5 }, (_, k) => [Math.cos(-Math.PI / 2 + (k * 2 * Math.PI) / 5) * r, Math.sin(-Math.PI / 2 + (k * 2 * Math.PI) / 5) * r] as const);
+  const outer = ring(R);
+  const inner = ring(R * 0.48);
+  ctx.save();
+  ctx.translate(0, Math.sin(t * 1.4) * 2);
+  ctx.scale(0.5, 0.5);
+  ctx.globalCompositeOperation = 'lighter';
+  const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 100);
+  glow.addColorStop(0, `rgba(255,70,90,${0.6 * pulse})`);
+  glow.addColorStop(1, 'rgba(200,20,40,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, 100, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.lineJoin = 'round';
+  const FACETS = ['#FF8A8F', '#E8333F', '#A81428', '#7A0C1E', '#C41E34'];
+  for (let k = 0; k < 5; k++) {
+    const n = (k + 1) % 5;
+    ctx.fillStyle = FACETS[k];
+    ctx.beginPath();
+    ctx.moveTo(outer[k][0], outer[k][1]);
+    ctx.lineTo(outer[n][0], outer[n][1]);
+    ctx.lineTo(inner[n][0], inner[n][1]);
+    ctx.lineTo(inner[k][0], inner[k][1]);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = '#FF4F5E';
+  ctx.beginPath();
+  inner.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(70,0,12,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  outer.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.closePath();
+  ctx.stroke();
+  ctx.beginPath();
+  outer.forEach(([x, y], k) => {
+    ctx.moveTo(x, y);
+    ctx.lineTo(inner[k][0], inner[k][1]);
+  });
+  ctx.stroke();
+  ctx.fillStyle = `rgba(255,255,255,${0.55 + 0.3 * Math.sin(t * 3)})`;
+  ctx.beginPath();
+  ctx.arc(inner[0][0] - 4, inner[0][1] + 3, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleon' | 'freighter' | 'containers', fx?: WreckFx) {
+  if (kind === 'freighter') return drawFreighter(ctx, fx);
   if (kind === 'containers') return drawContainers(ctx);
   ctx.save();
   ctx.lineJoin = 'round';
@@ -807,8 +949,98 @@ function drawContainers(ctx: CanvasRenderingContext2D) {
   ctx.restore();
 }
 
+const GLASS_SALT = Math.floor(Math.random() * 2 ** 31);
+
+export const FREIGHTER_CRANES = [
+  { x: 110, y: -62, lean: 0.04, drop: 22 },
+  { x: 340, y: -66, lean: -0.03, drop: 28 },
+];
+export const CRANE_TIP_X = 84;
+export const CRANE_HOOK_DROP = 110;
+
+export interface GlassShard {
+  win: number;
+  /** Where the shard hangs, in the freighter's own space. */
+  x: number;
+  y: number;
+  /** Triangle corners relative to x, y. */
+  pts: [number, number][];
+}
+
+let glassPlanCache: { windows: [number, number, number, number][]; damage: number[]; shards: GlassShard[] } | null = null;
+
+/** The tower's windows, how broken each is (0 intact, 1 cracked, 2 shattered, 3 knocked out) and the glass still hanging in the knocked-out ones. */
+export function glassPlan() {
+  if (glassPlanCache) return glassPlanCache;
+  const windows: [number, number, number, number][] = [];
+  for (let row = 0; row < 3; row++) for (let i = 0; i < 7; i++) windows.push([-593 + i * 26, -190 + row * 34, 20, 18]);
+  for (let i = 0; i < 6; i++) windows.push([-578 + i * 24, -240, 19, 26]);
+  const pick = mulberry32(GLASS_SALT);
+  const order = windows.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(pick() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const damage = windows.map(() => 0);
+  order.forEach((w, k) => (damage[w] = k < 3 ? 3 : k < 7 ? 2 : k < 14 ? 1 : 0));
+  const shards: GlassShard[] = [];
+  windows.forEach(([x, y, w, h], i) => {
+    if (damage[i] !== 3) return;
+    const edges = [[x, y, 1, 0, w, 0, 1], [x, y + h, 1, 0, w, 0, -1], [x, y, 0, 1, h, 1, 0], [x + w, y, 0, 1, h, -1, 0]] as const;
+    edges.forEach(([sx, sy, ux, uy, len, nx, ny], e) => {
+      const g = mulberry32(GLASS_SALT + i * 977 + e * 131 + 7);
+      const between = (lo: number, hi: number) => lo + (hi - lo) * g();
+      if (g() < 0.35) return;
+      const base = between(3, 5.5);
+      const t = between(2, Math.max(2.5, len - base - 2));
+      const lean = between(0.15, 0.85);
+      const tall = between(2, 5);
+      const pts: [number, number][] = [
+        [sx + ux * t, sy + uy * t],
+        [sx + ux * (t + base), sy + uy * (t + base)],
+        [sx + ux * (t + base * lean) + nx * tall, sy + uy * (t + base * lean) + ny * tall],
+      ];
+      const cx = (pts[0][0] + pts[1][0] + pts[2][0]) / 3;
+      const cy = (pts[0][1] + pts[1][1] + pts[2][1]) / 3;
+      shards.push({ win: i, x: cx, y: cy, pts: pts.map(([px, py]) => [px - cx, py - cy] as [number, number]) });
+    });
+  });
+  return (glassPlanCache = { windows, damage, shards });
+}
+
+/** One shard of window glass, either still in its frame (`state` 0), drifting down (1), or lying on the sea floor (2). */
+export interface FallenGlass {
+  state: 0 | 1 | 2;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  rotV: number;
+  /** Seconds left before a shard the sub has brushed lets go, or -1 while it is untouched. */
+  wait: number;
+}
+
+/** Movable parts of a wreck, in the wreck's own space. */
+export interface WreckFx {
+  glass: FallenGlass[];
+  /** Sideways swing of each deck crane's hook cable. */
+  cranes: { push: number; pushV: number; drive: number; held: boolean }[];
+}
+
+function drawShard(ctx: CanvasRenderingContext2D, sh: GlassShard) {
+  ctx.beginPath();
+  sh.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.closePath();
+  ctx.fillStyle = '#2C4A6B';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(232,242,252,0.8)';
+  ctx.lineWidth = 0.7;
+  ctx.stroke();
+}
+
 /** A modern container ship broken on the sea floor, about 2,600 px long: stern bridge and funnel on the left, bow on the right. */
-function drawFreighter(ctx: CanvasRenderingContext2D) {
+function drawFreighter(ctx: CanvasRenderingContext2D, fx?: WreckFx) {
   const rnd = mulberry32(2718);
   ctx.save();
   ctx.lineJoin = 'round';
@@ -816,22 +1048,27 @@ function drawFreighter(ctx: CanvasRenderingContext2D) {
   ctx.scale(2, 2);
   ctx.rotate(-0.04);
 
-  const hull = (x0: number, x1: number, bowRake: number) => {
+  const TORN: [number, number][] = [[6, 12], [-6, 2], [-16, 22], [-30, 4], [-40, 9], [-48, 1], [-58, 16], [-68, 3]];
+  const hull = (x0: number, x1: number, bowRake: number, lean = 14, torn = false, squareTop = false) => {
+    const pts: [number, number, number][] = [[x0, -78, 4], [x1 + bowRake, -88, squareTop ? 0 : 4], [x1, 12, 4], [x0 + lean, 14, 4]];
+    if (torn) for (const [y, d] of TORN) pts.push([x0 + d, y, 0]);
+    const n = pts.length;
     ctx.beginPath();
-    ctx.moveTo(x0, -78);
-    ctx.lineTo(x1 + bowRake, -88);
-    ctx.lineTo(x1, 12);
-    ctx.lineTo(x0 + 14, 14);
+    ctx.moveTo((pts[n - 1][0] + pts[0][0]) / 2, (pts[n - 1][1] + pts[0][1]) / 2);
+    pts.forEach(([x, y, r], i) => {
+      const q = pts[(i + 1) % n];
+      ctx.arcTo(x, y, (x + q[0]) / 2, (y + q[1]) / 2, r);
+    });
     ctx.closePath();
   };
-  const section = (x0: number, x1: number, bowRake: number, drop: number) => {
+  const section = (x0: number, x1: number, bowRake: number, drop: number, lean = 14, torn = false, squareTop = false) => {
     ctx.save();
     ctx.translate(0, drop);
-    hull(x0, x1, bowRake);
+    hull(x0, x1, bowRake, lean, torn, squareTop);
     ctx.fillStyle = '#7C2F2B';
     ctx.fill();
     ctx.save();
-    hull(x0, x1, bowRake);
+    hull(x0, x1, bowRake, lean, torn, squareTop);
     ctx.clip();
     ctx.fillStyle = '#2B2326';
     ctx.fillRect(x0 - 20, -22, x1 - x0 + 120, 50);
@@ -854,54 +1091,128 @@ function drawFreighter(ctx: CanvasRenderingContext2D) {
     ctx.restore();
     ctx.restore();
   };
-  section(-650, -90, 0, 0);
-  section(-70, 640, 70, 16);
-
-  ctx.fillStyle = '#16181E';
-  ctx.beginPath();
-  ctx.moveTo(-96, -92);
-  ctx.lineTo(-64, -80);
-  ctx.lineTo(-84, -56);
-  ctx.lineTo(-58, -30);
-  ctx.lineTo(-80, -4);
-  ctx.lineTo(-62, 18);
-  ctx.lineTo(-100, 18);
-  ctx.closePath();
-  ctx.fill();
-
   const tones = ['#D9503F', '#E6A23C', '#3E7FC4', '#4FA67A', '#C9CED6', '#8A5FB5', '#D96B2B'];
-  const stacks = (x0: number, x1: number, drop: number, tilt: number) => {
-    ctx.save();
-    ctx.translate(0, drop);
-    ctx.rotate(tilt);
-    for (let x = x0; x < x1; x += 46) {
-      const rows = 1 + Math.floor(rnd() * 4);
+  const stacks = (x0: number, x1: number, hx0: number, hy0: number, hx1: number, hy1: number) => {
+    const slope = (hy1 - hy0) / (hx1 - hx0);
+    for (let x = x0; x < x1; x += 84) {
+      const bx = x + (rnd() - 0.5) * 8;
+      const by = hy0 + (bx - hx0) * slope + 12 + rnd() * 8;
+      const rows = 1 + Math.floor(rnd() * 3);
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate(Math.atan(slope) + (rnd() - 0.5) * 0.1);
       for (let r = 0; r < rows; r++) {
-        if (rnd() < 0.08) continue;
+        if (r && rnd() < 0.08) break;
+        const dx = r ? (rnd() - 0.5) * 8 : 0;
         ctx.fillStyle = tones[Math.floor(rnd() * tones.length)];
-        ctx.fillRect(x, -88 - (r + 1) * 28, 44, 27);
+        ctx.beginPath();
+        ctx.roundRect(dx, -(r + 1) * 52, 80, 51, 2);
+        ctx.fill();
         ctx.fillStyle = 'rgba(0,0,0,0.18)';
-        for (let k = 1; k < 5; k++) ctx.fillRect(x + k * 8.5, -88 - (r + 1) * 28, 1.5, 27);
+        for (let k = 1; k < 7; k++) ctx.fillRect(dx + k * 10, -(r + 1) * 52, 2, 51);
       }
+      ctx.restore();
     }
-    ctx.restore();
   };
-  stacks(-330, -100, 0, 0);
-  stacks(-60, 560, 16, 0.03);
+  stacks(-330, -120, -650, -78, -90, -88);
+  stacks(-60, 560, -70, -62, 710, -72);
 
   ctx.fillStyle = '#E9ECF1';
-  ctx.fillRect(-600, -200, 190, 122);
-  ctx.fillRect(-584, -246, 150, 46);
-  ctx.fillRect(-596, -226, 174, 12);
+  const panel = (x: number, y: number, w: number, h: number, r: number, flat = false) => {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, flat ? [r, r, 0, 0] : r);
+    ctx.fill();
+  };
+  panel(-600, -200, 190, 122, 2, true);
+  panel(-584, -246, 150, 46, 2, true);
+  panel(-596, -226, 174, 12, 2, true);
   ctx.fillStyle = '#2C4A6B';
-  for (let row = 0; row < 3; row++) {
-    for (let i = 0; i < 7; i++) ctx.fillRect(-590 + i * 26, -190 + row * 34, 16, 14);
-  }
-  for (let i = 0; i < 6; i++) ctx.fillRect(-576 + i * 24, -238, 15, 22);
+  ctx.strokeStyle = '#5B6472';
+  ctx.lineWidth = 1.5;
+  const plan = glassPlan();
+  const win = (x: number, y: number, w: number, h: number, damage: number, idx: number) => {
+    const crk = mulberry32(GLASS_SALT + idx * 7919 + 5);
+    const between = (lo: number, hi: number) => lo + (hi - lo) * crk();
+    panel(x, y, w, h, 2);
+    ctx.stroke();
+    if (!damage) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 2);
+    ctx.clip();
+    if (damage === 3) {
+      ctx.fillStyle = '#070D14';
+      ctx.fillRect(x, y, w, h);
+      plan.shards.forEach((sh, k) => {
+        if (sh.win !== idx || (fx && fx.glass[k].state)) return;
+        ctx.save();
+        ctx.translate(sh.x, sh.y);
+        drawShard(ctx, sh);
+        ctx.restore();
+      });
+      ctx.restore();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#5B6472';
+      return;
+    }
+    const cx = x + w * between(0.2, 0.8);
+    const cy = y + h * between(0.2, 0.8);
+    if (damage === 2) {
+      ctx.fillStyle = '#0B1520';
+      ctx.beginPath();
+      const n = 3 + Math.floor(crk() * 3);
+      const spin = crk() * Math.PI * 2;
+      for (let k = 0; k < n; k++) {
+        const a = spin + (k / n) * Math.PI * 2 + between(-0.3, 0.3);
+        const r = between(0.15, 0.45) * Math.max(w, h);
+        ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(232,242,252,0.9)';
+    ctx.lineWidth = between(0.7, 1.1);
+    ctx.beginPath();
+    const rays = damage === 2 ? 5 + Math.floor(crk() * 4) : 2 + Math.floor(crk() * 4);
+    const spin = crk() * Math.PI * 2;
+    for (let k = 0; k < rays; k++) {
+      const a = spin + (k / rays) * Math.PI * 2 + between(-0.35, 0.35);
+      const len = Math.max(w, h) * between(0.35, 1.1);
+      const bend = between(-0.35, 0.35);
+      const mid = len * between(0.3, 0.6);
+      const mx = cx + Math.cos(a) * mid;
+      const my = cy + Math.sin(a) * mid;
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(mx, my);
+      ctx.lineTo(cx + Math.cos(a + bend) * len, cy + Math.sin(a + bend) * len);
+      if (crk() < 0.4) {
+        const f = a + (crk() < 0.5 ? -1 : 1) * between(0.5, 1);
+        ctx.moveTo(mx, my);
+        ctx.lineTo(mx + Math.cos(f) * len * 0.35, my + Math.sin(f) * len * 0.35);
+      }
+    }
+    ctx.stroke();
+    if (crk() < 0.55) {
+      const n = 5 + Math.floor(crk() * 3);
+      const r0 = between(2.5, 5);
+      const spin2 = crk() * Math.PI * 2;
+      ctx.beginPath();
+      for (let k = 0; k <= n; k++) {
+        const a = spin2 + (k / n) * Math.PI * 2;
+        const r = r0 * between(0.7, 1.2);
+        k % n === 0 && k ? ctx.closePath() : ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#5B6472';
+  };
+  plan.windows.forEach(([x, y, w, h], i) => win(x, y, w, h, plan.damage[i], i));
   ctx.fillStyle = '#C9341F';
-  ctx.fillRect(-520, -300, 54, 56);
+  panel(-520, -300, 54, 56, 2, true);
   ctx.fillStyle = '#16181E';
-  ctx.fillRect(-520, -308, 54, 12);
+  panel(-520, -308, 54, 12, 2, true);
   ctx.strokeStyle = '#2B2326';
   ctx.lineWidth = 4;
   ctx.beginPath();
@@ -911,21 +1222,191 @@ function drawFreighter(ctx: CanvasRenderingContext2D) {
   ctx.lineTo(-486, -330);
   ctx.stroke();
 
-  ctx.lineWidth = 7;
-  ctx.strokeStyle = '#D9A23C';
-  for (const [x, lean] of [[110, 0.05], [340, -0.04]] as const) {
+  const line = (x0: number, y0: number, x1: number, y1: number) => {
     ctx.beginPath();
-    ctx.moveTo(x, -78);
-    ctx.lineTo(x + lean * 100, -190);
-    ctx.lineTo(x + 70, -162);
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
     ctx.stroke();
-  }
+  };
+  const bolt = (x: number, y: number, r: number) => {
+    ctx.fillStyle = '#1D1B20';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  };
+  const crane = (x: number, y: number, lean: number, boomDrop: number, sway: number) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(lean);
+    const steel = ctx.createLinearGradient(-9, 0, 9, 0);
+    steel.addColorStop(0, '#F0C25A');
+    steel.addColorStop(0.45, '#C98F2C');
+    steel.addColorStop(1, '#7A5415');
+    const H = 108;
+    const swing = sway / 98;
+    const guy = Math.max(-40, Math.min(40, sway));
+    const cableAt = (dist: number, frac: number, off: number): [number, number] => [tipX + off * Math.cos(swing) + dist * Math.sin(swing * frac), tipY + dist * Math.cos(swing * frac)];
+    const tipX = 84;
+    const tipY = -H + boomDrop;
+
+    ctx.fillStyle = '#4A4C55';
+    ctx.beginPath();
+    ctx.moveTo(-22, 4);
+    ctx.lineTo(-14, -14);
+    ctx.lineTo(14, -14);
+    ctx.lineTo(22, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#4A4C55';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    for (const bx of [-16, -6, 6, 16]) bolt(bx, -4, 2);
+
+    ctx.strokeStyle = steel;
+    ctx.lineWidth = 5;
+    line(-8, -12, -6, -H);
+    line(8, -12, 6, -H);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#8F6419';
+    for (let yy = -12, flip = 1; yy > -H + 12; yy -= 16, flip = -flip) {
+      line(-8 * flip, yy, 8 * flip, yy - 16);
+      line(-8, yy, 8, yy);
+    }
+    ctx.fillStyle = '#1D1B20';
+    for (let yy = -26; yy > -H + 14; yy -= 32) {
+      ctx.beginPath();
+      ctx.arc(0, yy, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = steel;
+    ctx.beginPath();
+    ctx.roundRect(-26, -H - 6, 40, 30, 4);
+    ctx.fill();
+    ctx.strokeStyle = '#5E4210';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = '#2C4A6B';
+    ctx.beginPath();
+    ctx.roundRect(-5, -H - 1, 14, 10, 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.roundRect(-5, -H - 1, 14, 3, 1.5);
+    ctx.fill();
+    for (const px of [-20, -14]) {
+      ctx.fillStyle = '#1D1B20';
+      ctx.beginPath();
+      ctx.arc(px, -H + 9, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#E8D9A8';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#5A5D68';
+    ctx.beginPath();
+    ctx.roundRect(-40, -H - 2, 16, 20, 3);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.roundRect(-40, -H - 2, 16, 4, 2);
+    ctx.fill();
+    bolt(-32, -H + 8, 2.5);
+
+    ctx.strokeStyle = steel;
+    ctx.lineWidth = 4;
+    line(8, -H, tipX, tipY - 6);
+    line(8, -H + 14, tipX, tipY + 6);
+    line(tipX, tipY - 6, tipX, tipY + 6);
+    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = '#8F6419';
+    for (let i = 0; i < 5; i++) {
+      const t0 = 0.08 + i * 0.18;
+      const t1 = t0 + 0.18;
+      const at = (t: number, off: number) => [8 + (tipX - 8) * t, -H + (tipY + H) * t + off] as const;
+      const [ax, ay] = at(t0, i % 2 ? 14 : -6);
+      const [bx, by] = at(t1, i % 2 ? -6 : 14);
+      line(ax, ay, bx, by);
+    }
+    ctx.fillStyle = '#4A4C55';
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1D1B20';
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 8, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = '#2B2326';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-36, -H - 2);
+    ctx.lineTo(tipX, tipY - 6);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#34363D';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY + 8);
+    ctx.bezierCurveTo(...cableAt(40, 0.3, 12), ...cableAt(70, 0.7, -14), ...cableAt(98, 1, 6));
+    ctx.stroke();
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.arc(...cableAt(108, 1, 12), 9, Math.PI * 1.1, Math.PI * 2.4);
+    ctx.stroke();
+
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#3A3C44';
+    ctx.beginPath();
+    ctx.moveTo(-6, -H + 4);
+    ctx.quadraticCurveTo(-60 + guy * 0.3, -40, -70, 6);
+    ctx.moveTo(tipX - 20, tipY + 2);
+    ctx.quadraticCurveTo(tipX + 20 + guy * 0.4, -30, tipX + 30, 8);
+    ctx.stroke();
+    ctx.lineCap = 'round';
+    ctx.restore();
+  };
+  FREIGHTER_CRANES.forEach((c, i) => crane(c.x, c.y, c.lean, c.drop, fx?.cranes[i].push ?? 0));
+
+  section(-650, -90, 0, 0, 14, false, true);
+
+  ctx.fillStyle = '#16181E';
+  ctx.fillRect(-90, -88, 20, 118);
+  ctx.fillRect(-70, -62, 24, 92);
+
+  section(-70, 640, 70, 16, 0, true);
+
+
 
   ctx.fillStyle = 'rgba(255,230,160,0.65)';
+  ctx.strokeStyle = '#6B5A3A';
+  ctx.lineWidth = 1.5;
   for (let x = -380; x < 600; x += 56) {
     ctx.beginPath();
-    ctx.arc(x, -50 + (x > -80 ? 16 : 0), 3, 0, Math.PI * 2);
+    ctx.arc(x, -50 + (x > -80 ? 16 : 0), 4.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
+  }
+  if (fx) {
+    const shards = glassPlan().shards;
+    fx.glass.forEach((g, k) => {
+      if (!g.state) return;
+      ctx.save();
+      ctx.translate(g.x, g.y);
+      ctx.rotate(g.rot);
+      drawShard(ctx, shards[k]);
+      ctx.restore();
+    });
   }
   ctx.restore();
 }
@@ -973,216 +1454,6 @@ function rockPath(ctx: CanvasRenderingContext2D, R: number, tint: number) {
 }
 
 const CORAL = ['#FF5C8A', '#FF8A3D', '#FFC83D', '#B36BFF', '#3DD6C6', '#FF6F91', '#5CC8FF', '#9BE564', '#FF4D6D', '#F7A8FF'];
-
-/** A rusted iron-lung submarine lying on twin ballast tanks, its flattened front caved in, with bite punctures, claw gashes and torn plating. */
-function lungSub(ctx: CanvasRenderingContext2D, size: number) {
-  ctx.save();
-  ctx.scale(size, size);
-  ctx.rotate(-0.06);
-  ctx.translate(0, -62);
-  ctx.rotate(Math.PI);
-  ctx.translate(0, 62);
-  const L = 150;
-  const H = 44;
-  const cy = -80;
-  const dark = '#160B0A';
-
-  const tank = (x0: number, x1: number, y: number, r: number, top: string, bottom: string) => {
-    const g = ctx.createLinearGradient(0, y - r, 0, y + r);
-    g.addColorStop(0, top);
-    g.addColorStop(1, bottom);
-    ctx.fillStyle = g;
-    ctx.fillRect(x0, y - r, x1 - x0, r * 2);
-    ctx.fillStyle = 'rgba(25,12,10,0.7)';
-    for (let x = x0 + 16; x < x1 - 10; x += 30) ctx.fillRect(x, y - r - 3, 7, r * 2 + 6);
-    ctx.fillStyle = bottom;
-    ctx.beginPath();
-    ctx.ellipse(x1, y, r * 0.35, r, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(15,8,7,0.6)';
-    ctx.beginPath();
-    ctx.ellipse(x0, y, r * 0.35, r, 0, 0, Math.PI * 2);
-    ctx.fill();
-  };
-  tank(-150, 95, -34, 14, '#5E382F', '#2B1714');
-  ctx.strokeStyle = '#2A1614';
-  ctx.lineWidth = 5;
-  for (const x of [-85, 70]) {
-    ctx.beginPath();
-    ctx.moveTo(x, cy + H - 2);
-    ctx.lineTo(x - 12, -24);
-    ctx.stroke();
-  }
-  tank(-120, 140, -14, 14, '#7A4A3E', '#3A201B');
-  ctx.fillStyle = '#2A1614';
-  ctx.fillRect(-135, -3, 22, 4);
-  ctx.fillRect(100, -3, 22, 4);
-
-  // Tail: rudder fin and a propeller hub.
-  ctx.fillStyle = '#4A2A25';
-  ctx.beginPath();
-  ctx.moveTo(-L + 10, cy - H);
-  ctx.lineTo(-L - 28, cy - H - 22);
-  ctx.lineTo(-L - 6, cy - H + 12);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#3A201C';
-  ctx.beginPath();
-  ctx.ellipse(-L - 12, cy, 12, 9, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#5E382F';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(-L - 14, cy - 24);
-  ctx.lineTo(-L - 10, cy + 24);
-  ctx.stroke();
-
-  // Hull.
-  const hull = ctx.createLinearGradient(0, cy - H, 0, cy + H);
-  hull.addColorStop(0, '#80503F');
-  hull.addColorStop(0.5, '#5B342C');
-  hull.addColorStop(1, '#2C1714');
-  ctx.fillStyle = hull;
-  ctx.beginPath();
-  ctx.ellipse(-L, cy, 20, H, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillRect(-L, cy - H, L * 2 - 6, H * 2);
-  ctx.fillStyle = 'rgba(160,92,52,0.22)';
-  for (const [x, y, rx, ry] of [[-100, cy - 20, 30, 12], [-30, cy + 24, 40, 10], [60, cy - 26, 26, 9], [95, cy + 12, 22, 14]] as const) {
-    ctx.beginPath();
-    ctx.ellipse(x, y, rx, ry, 0.2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  for (const x of [-105, -15, 85]) {
-    ctx.fillStyle = '#6E4638';
-    ctx.fillRect(x, cy - H, 9, H * 2);
-    ctx.fillStyle = 'rgba(25,12,10,0.65)';
-    for (let y = cy - H + 8; y < cy + H; y += 16) {
-      ctx.beginPath();
-      ctx.arc(x + 4.5, y, 1.6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  ctx.fillStyle = 'rgba(214,186,172,0.32)';
-  ctx.font = 'bold 13px sans-serif';
-  ctx.fillText('SM-13', -88, cy - 22);
-  ctx.fillStyle = '#4C2A24';
-  ctx.fillRect(-36, cy - H - 8, 24, 9);
-  ctx.strokeStyle = '#2A1614';
-  ctx.lineWidth = 2.5;
-  ctx.strokeRect(-30, cy - H - 13, 12, 6);
-
-  // Gill vent with its flared fins.
-  ctx.fillStyle = dark;
-  ctx.fillRect(14, cy - 18, 40, 34);
-  ctx.fillStyle = '#9A6656';
-  for (let i = 0; i < 5; i++) {
-    ctx.beginPath();
-    ctx.moveTo(19 + i * 7.5, cy + 12);
-    ctx.lineTo(23 + i * 7.5, cy - 13);
-    ctx.lineTo(27 + i * 7.5, cy + 12);
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  // Caved-in, flattened front: bent plate, exposed framework, a cracked porthole.
-  ctx.fillStyle = '#3E2420';
-  ctx.beginPath();
-  ctx.moveTo(L - 8, cy - H + 2);
-  ctx.lineTo(L + 10, cy - H + 14);
-  ctx.lineTo(L + 3, cy - 10);
-  ctx.lineTo(L + 13, cy + 10);
-  ctx.lineTo(L + 5, cy + H - 8);
-  ctx.lineTo(L - 8, cy + H);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = '#1E100E';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  for (const k of [0, 1, 2]) {
-    ctx.moveTo(L - 40 + k * 8, cy - H);
-    ctx.quadraticCurveTo(L + 6, cy - H + 4 + k * 4, L + 12 - k * 2, cy - H + 26 + k * 10);
-  }
-  ctx.stroke();
-  ctx.fillStyle = '#8B5C4E';
-  ctx.beginPath();
-  ctx.moveTo(L - 46, cy - H);
-  ctx.lineTo(L - 14, cy - H - 14);
-  ctx.lineTo(L - 22, cy - H + 4);
-  ctx.lineTo(L + 4, cy - H - 2);
-  ctx.lineTo(L - 12, cy - H + 14);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#20171A';
-  ctx.beginPath();
-  ctx.arc(L - 14, cy + 8, 14, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#7A4A3E';
-  ctx.lineWidth = 4;
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(210,225,235,0.55)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(L - 22, cy);
-  ctx.lineTo(L - 13, cy + 8);
-  ctx.lineTo(L - 16, cy + 18);
-  ctx.moveTo(L - 13, cy + 8);
-  ctx.lineTo(L - 4, cy + 4);
-  ctx.stroke();
-
-  // Bite marks: scalloped chunks torn from the hull edge, with rows of tooth punctures around them.
-  const bite = (bx: number, by: number, r: number, up: boolean) => {
-    const a0 = up ? Math.PI : 0;
-    ctx.fillStyle = dark;
-    ctx.beginPath();
-    ctx.arc(bx, by, r, a0, a0 + Math.PI);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#B27A66';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i <= 6; i++) {
-      const a = a0 + (i / 6) * Math.PI;
-      const rr = r + (i % 2 ? 4 : -1);
-      const x = bx + Math.cos(a) * rr;
-      const y = by + Math.sin(a) * rr;
-      if (i) ctx.lineTo(x, y);
-      else ctx.moveTo(x, y);
-    }
-    ctx.stroke();
-    ctx.fillStyle = dark;
-    ctx.strokeStyle = 'rgba(178,122,102,0.7)';
-    ctx.lineWidth = 1.5;
-    for (let i = 0; i < 5; i++) {
-      const a = a0 + Math.PI * (0.12 + i * 0.19);
-      const x = bx + Math.cos(a) * (r + 15);
-      const y = by + Math.sin(a) * (r + 15);
-      ctx.beginPath();
-      ctx.arc(x, y, 3.2 + (i % 2), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-  };
-  bite(-5, cy - H + 1, 22, false);
-  bite(112, cy + H - 1, 24, true);
-  bite(-120, cy + H - 1, 14, true);
-  ctx.lineCap = 'round';
-  for (const o of [0, 9, 18]) {
-    ctx.strokeStyle = dark;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(48 + o, cy - 30);
-    ctx.lineTo(78 + o, cy + 28);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(178,122,102,0.4)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(50 + o, cy - 30);
-    ctx.lineTo(80 + o, cy + 28);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
 
 const STARFISH = ['#F28C38', '#E5484D', '#F58FB0', '#8E6CCF', '#F7C948', '#D9A066', '#4F8FD8', '#FF6F61'];
 const STAR_ARMS = [5, 5, 5, 5, 6, 7, 9, 12];
@@ -1268,11 +1539,73 @@ function drawStarfish(ctx: CanvasRenderingContext2D, size: number, tint: number)
   ctx.restore();
 }
 
+function drawVent(ctx: CanvasRenderingContext2D, size: number, tint: number, t: number) {
+  const chimneys = tint > 0.5 ? [[0, 1], [26, 0.6]] : [[0, 1]];
+  const lit = 0.8 + 0.2 * Math.sin(t * 3 + tint * 9);
+  for (const [dx, k] of chimneys) {
+    const w = 26 * size * k;
+    const h = 46 * size * k;
+    ctx.save();
+    ctx.translate(dx * size, 4);
+    ctx.fillStyle = '#2B2F3F';
+    ctx.beginPath();
+    ctx.moveTo(-w * 1.5, 0);
+    ctx.quadraticCurveTo(-w * 0.9, -h * 0.3, -w * 0.45, -h);
+    ctx.lineTo(w * 0.45, -h);
+    ctx.quadraticCurveTo(w * 0.9, -h * 0.3, w * 1.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(190,120,60,0.28)';
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.45, -h);
+    ctx.quadraticCurveTo(-w * 0.9, -h * 0.3, -w * 1.1, -h * 0.12);
+    ctx.lineTo(-w * 0.5, -h * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#12141C';
+    ctx.beginPath();
+    ctx.ellipse(0, -h, w * 0.45, w * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    const glow = ctx.createRadialGradient(0, -h, 1, 0, -h, 46 * size * k);
+    glow.addColorStop(0, `rgba(255,150,60,${0.5 * lit})`);
+    glow.addColorStop(1, 'rgba(255,90,20,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, -h, 46 * size * k, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,170,80,${0.7 * lit})`;
+    ctx.beginPath();
+    ctx.ellipse(0, -h, w * 0.3, w * 0.09, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    const rise = 190 * size * k;
+    for (let i = 0; i < 12; i++) {
+      const u = frac(t * 0.45 + i / 12 + tint * 3 + dx * 0.01);
+      const wob = Math.sin(u * 9 + i * 2.1) * (3 + 10 * u) * size;
+      ctx.fillStyle = `rgba(215,235,255,${0.55 * (1 - u)})`;
+      ctx.beginPath();
+      ctx.arc(wob, -h - u * rise, (1.5 + 2.6 * frac(i * 0.37 + 0.2)) * size * (0.7 + 0.5 * u), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
 export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: number, tint: number, t: number, push = 0, pale = false) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   if (kind === 'lungsub') {
-    lungSub(ctx, size);
+    drawLostSub(ctx, size * LOST_WRECK_SCALE, false);
+    return;
+  }
+  if (kind === 'gem') {
+    ctx.translate(0, -15);
+    drawPortalStone(ctx, t);
+    return;
+  }
+  if (kind === 'vent') {
+    drawVent(ctx, size, tint, t);
     return;
   }
   if (kind === 'starfish') {

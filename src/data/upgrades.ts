@@ -7,14 +7,20 @@ export interface UpgradeLevel {
   name: string;
   cost: number;
   effect: string;
-  /** The island shops that sell this level, by name; omitted when every shop that stocks the upgrade sells it. */
-  soldAt?: string[];
+}
+
+/** One unit of stock: a shop (or the shops of a zone) can sell this upgrade once, whichever level the player is up to. Two zones mean a fork in the route. */
+export interface StockSlot {
+  zones: number[];
+  shop?: string;
 }
 
 export interface UpgradeDef {
   title: string;
   blurb: string;
   levels: UpgradeLevel[];
+  /** One slot per purchasable level; buying uses up the first unused slot that matches the shop. */
+  stock: StockSlot[];
 }
 
 export interface LightSpec {
@@ -22,6 +28,19 @@ export interface LightSpec {
   spread: number;
   glow: number;
   rgb: string;
+}
+
+const PALM = "Palm Atoll";
+const PIER = "Trench Pier";
+
+const slotHere = (slot: StockSlot, zone: number, island: string) =>
+  slot.zones.includes(zone) && (!slot.shop || slot.shop === island);
+
+/** Whether a shop stocks the upgrade at all, and which unused slot a purchase there would use (-1 when sold out). */
+export function stockAt(id: UpgradeId, used: number[], zone: number, island: string) {
+  const here = UPGRADES[id].stock.map((slot, i) => (slotHere(slot, zone, island) ? i : -1)).filter((i) => i >= 0);
+  const open = here.filter((i) => !used.includes(i));
+  return { stocked: here.length > 0, open: open[0] ?? -1, left: open.length };
 }
 
 export const UPGRADE_ORDER: UpgradeId[] = [
@@ -35,20 +54,13 @@ export const UPGRADE_ORDER: UpgradeId[] = [
   "sonar",
 ];
 
-/** First zone (0-based) whose shop sells each upgrade; unlisted upgrades are sold everywhere. */
-export const UPGRADE_FIRST_ZONE: Partial<Record<UpgradeId, number>> = {
-  hull: 1,
-  light: 1,
-  sonar: 2,
-};
-
 export const STATS = {
   depthRating: [250, 700, 1500, 5000],
   /** Meters before the depth rating where the first "too deep" warning appears, per plating level. */
   deepWarning: [20, 40, 60, 250],
   oxygen: [30, 60, 120, 480],
   battery: [9000, 16000, 26000, 200000],
-  maxHull: [1, 2, 3],
+  maxHull: [0, 1, 2, 3],
   /** How many items the hold carries, per cargo level. */
   cargo: [10, 25],
   speed: [1, 1.3, 1.6],
@@ -83,6 +95,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   plating: {
     title: "Plating",
     blurb: "Dive deeper before the hull starts to buckle.",
+    stock: [{ zones: [1] }, { zones: [2, 3] }, { zones: [4], shop: PALM }],
     levels: [
       { name: "Silver Shell", cost: 0, effect: `Safe to ${num(STATS.depthRating[0])} m` },
       { name: "Graphite Steel", cost: 300, effect: `Safe to ${num(STATS.depthRating[1])} m` },
@@ -93,6 +106,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   oxygen: {
     title: "Oxygen Tank",
     blurb: "Stay under longer. Surfacing refills it.",
+    stock: [{ zones: [0], shop: "Coral Cove" }, { zones: [2, 3] }, { zones: [4], shop: PALM }],
     levels: [
       { name: "Silver Tank", cost: 0, effect: `${STATS.oxygen[0]} seconds of air` },
       { name: "Graphite Tank", cost: 250, effect: `${STATS.oxygen[1]} seconds of air` },
@@ -103,6 +117,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   battery: {
     title: "Battery",
     blurb: "Drive farther before you have to hand-crank. Docking recharges it.",
+    stock: [{ zones: [0], shop: "Gull Rock" }, { zones: [1] }, { zones: [4], shop: PIER }],
     levels: [
       { name: "Starter Cell", cost: 0, effect: `${meters(STATS.battery[0])} m of driving` },
       { name: "Twin Cells", cost: 200, effect: `${times(STATS.battery[1] / STATS.battery[0])} range (${meters(STATS.battery[1])} m)` },
@@ -112,16 +127,18 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   propeller: {
     title: "Propeller",
-    blurb: "Sail faster and cover more ocean per charge of air.",
+    blurb: "Sail faster and cover more ocean per charge of air. Twin Blade and up unlock the boost: hold Shift to burn battery for speed.",
+    stock: [{ zones: [2, 3] }, { zones: [4], shop: PALM }],
     levels: [
       { name: "Stock Prop", cost: 0, effect: "Standard speed" },
-      { name: "Twin Blade", cost: 300, effect: `${times(STATS.speed[1])} speed`, soldAt: ["Pearl Atoll"] },
-      { name: "Turbo Screw", cost: 1000, effect: `${times(STATS.speed[2])} speed`, soldAt: ["Last Light Atoll"] },
+      { name: "Twin Blade", cost: 300, effect: `${times(STATS.speed[1])} speed` },
+      { name: "Turbo Screw", cost: 1000, effect: `${times(STATS.speed[2])} speed` },
     ],
   },
   cargo: {
     title: "Cargo Hold",
     blurb: "Carry more before you have to head back to sell.",
+    stock: [{ zones: [1] }],
     levels: [
       { name: "Standard Hold", cost: 0, effect: `Carries ${STATS.cargo[0]} items` },
       { name: "Wide Hold", cost: 500, effect: `Carries ${STATS.cargo[1]} items` },
@@ -129,16 +146,19 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   hull: {
     title: "Bumpers",
-    blurb: "Take more bumps from sharks and squid. Docking repairs them.",
+    blurb: "Each upgrade adds a shield that soaks up one bump from sharks and squid. Docking repairs them.",
+    stock: [{ zones: [0], shop: "Gull Rock" }, { zones: [2, 3] }, { zones: [4], shop: PALM }],
     levels: [
-      { name: "Bare Hull", cost: 0, effect: `Survives ${STATS.maxHull[0]} hit` },
-      { name: "Bow Bumper", cost: 400, effect: `Survives ${STATS.maxHull[1]} hits` },
-      { name: "Full Fenders", cost: 1400, effect: `Survives ${STATS.maxHull[2]} hits` },
+      { name: "Bare Hull", cost: 0, effect: "No shields, the first hit sinks you" },
+      { name: "Bow Bumper", cost: 400, effect: `${STATS.maxHull[1]} shield` },
+      { name: "Full Fenders", cost: 1400, effect: `${STATS.maxHull[2]} shields` },
+      { name: "Armor Cage", cost: 3000, effect: `${STATS.maxHull[3]} shields` },
     ],
   },
   light: {
     title: "Spotlight",
     blurb: "See in the dark water of the deep.",
+    stock: [{ zones: [1] }, { zones: [3, 4] }, { zones: [4], shop: PIER }],
     levels: [
       { name: "Running Lights", cost: 0, effect: "Decorative only" },
       { name: "Amber Lamp", cost: 180, effect: `Short yellow beam, ${meters(STATS.light[1]!.range)} m` },
@@ -149,6 +169,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   sonar: {
     title: "Sonar",
     blurb: "Pings reveal what is hiding in the dark.",
+    stock: [{ zones: [2, 3] }, { zones: [3, 4] }, { zones: [4], shop: PIER }],
     levels: [
       { name: "No Sonar", cost: 0, effect: "Nothing detected" },
       { name: "Basic Sonar", cost: 350, effect: sonarEffect(1) },

@@ -38,6 +38,9 @@ const FILES = {
   candle2: ["sound-oxygen-candle-2.m4a"],
   invalid: ["sound-invalid-1.m4a"],
   alertBeep: ["sound-alert-beeping.m4a"],
+  portal1: ["sound-portal-1.m4a"],
+  portal2: ["sound-portal-2.m4a"],
+  portal3: ["sound-portal-3.m4a"],
 } as const;
 
 type Sound = keyof typeof FILES;
@@ -83,6 +86,9 @@ const VOLUME: Record<Sound, number> = {
   candle2: 0.7,
   invalid: 0.6,
   alertBeep: 0.6,
+  portal1: 0.8,
+  portal2: 1,
+  portal3: 0.75,
 };
 
 /** Playback speed per sound, applied on top of any rate passed to `play`; above 1 is faster and higher pitched. */
@@ -102,6 +108,7 @@ const LOOPS: Sound[] = [
   "crimson",
   "crimsonDeep",
   "alertBeep",
+  "portal2",
 ];
 
 const HORN_GAP = 0.5;
@@ -127,6 +134,7 @@ export class AudioManager {
   private ctx: AudioContext | null = null;
   private buffers = new Map<Sound, AudioBuffer>();
   private beds = new Map<Sound, GainNode>();
+  private portalPan: StereoPannerNode | null = null;
   private master: GainNode | null = null;
   private out: GainNode | null = null;
   private musicBus: GainNode | null = null;
@@ -152,7 +160,7 @@ export class AudioManager {
   private whaleFarTimer = 4;
   private whaleNearTimer = 0;
   volume = 0.5;
-  musicVolume = 0.5;
+  musicVolume = 0.33;
   muted = false;
 
   constructor() {
@@ -215,6 +223,14 @@ export class AudioManager {
     const gain = this.beds.get("heartbeat");
     if (!this.ctx || !gain) return;
     gain.gain.setTargetAtTime(on ? VOLUME.heartbeat : 0, this.ctx.currentTime, on ? 0.1 : 0.3);
+  }
+
+  /** The open portal's endless hum: `level` is 0 out of earshot up to 1 beside it, `pan` leans toward its side. */
+  setPortal(level: number, pan: number) {
+    const gain = this.beds.get("portal2");
+    if (!this.ctx || !gain) return;
+    gain.gain.setTargetAtTime(VOLUME.portal2 * level, this.ctx.currentTime, 0.3);
+    this.portalPan?.pan.setTargetAtTime(pan, this.ctx.currentTime, 0.3);
   }
 
   /** Loops the low-battery beeping while `on`. */
@@ -435,7 +451,10 @@ export class AudioManager {
         gain.gain.value = 0;
         src.buffer = buffer;
         src.loop = true;
-        src.connect(gain).connect(this.master);
+        if (name === "portal2") {
+          this.portalPan = this.ctx.createStereoPanner();
+          src.connect(gain).connect(this.portalPan).connect(this.master);
+        } else src.connect(gain).connect(this.master);
         src.start();
         this.beds.set(name, gain);
       }
@@ -486,7 +505,8 @@ export class AudioManager {
         name === "sailing" ||
         name === "heartbeat" ||
         name === "crimson" ||
-        name === "crimsonDeep"
+        name === "crimsonDeep" ||
+        name === "portal2"
       )
         continue;
       const on = name === "propeller" ? this.propeller : BEDS[this.scene].includes(name);

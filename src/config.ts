@@ -39,6 +39,9 @@ export const LAMP_ON_DEPTH_DAY = 50;
 export const LAMP_ON_DEPTH_NIGHT = 15;
 export const SONAR_ON_DEPTH_DAY = 75;
 export const SONAR_ON_DEPTH_NIGHT = 50;
+/** By day in open water, outside the caves, they switch on deeper. */
+export const LAMP_ON_DEPTH_OPEN = 100;
+export const SONAR_ON_DEPTH_OPEN = 150;
 export const SWITCH_SLACK = 7;
 
 /** How far around the sub (or ship) the minimap is revealed, in px. */
@@ -84,6 +87,8 @@ export const GLITCH_TIME = 3;
 export const GLITCH_GAP: [number, number] = [20, 20];
 /** Seconds after the wreck message appears before the instruments glitch. */
 export const DEATH_GLITCH_DELAY = 1;
+/** Seconds the front glass takes to crack after a fatal hit, before the wreck message. */
+export const CRACK_TIME = 0.9;
 
 /** The zoom while the test panel's fast mode is on, wider than any zone's own. */
 export const DEBUG_ZOOM = 0.3;
@@ -91,9 +96,24 @@ export const DEBUG_ZOOM = 0.3;
 /** Holding the boost key while sailing: how many times faster the ship goes, and how far the camera zooms out at full boost. */
 export const BOOST_SPEED = 3;
 export const BOOST_ZOOM = 0.62;
+/** The submarine's boost: how many times faster it goes while boosting. */
+export const SUB_BOOST_SPEED = 1.5;
 
 /** Seconds the crane hook takes to reel all the way up or down. */
 export const HOOK_TIME = 1;
+/** Depth in meters past which the crane hook reels up; above it the hook stays down for docking. */
+export const HOOK_RETRACT_DEPTH = 35;
+/** Once reeled up, the hook only drops again when the sub rises above this depth in meters. */
+export const HOOK_DROP_DEPTH = 30;
+/** How far below the mounting spot the idle hook hangs, in px. */
+export const HOOK_DROP = 30;
+/** How high the crane lifts the docked sub above the waterline, in px. */
+export const HOIST_HEIGHT = 36;
+/** Seconds the crane takes to lower the sub after dive is pressed, and to hoist it back up. */
+export const HOIST_LOWER_TIME = 1;
+export const HOIST_RAISE_TIME = 1.2;
+/** The sub is released into the water once it is this far down (0 is the waterline, 1 fully hoisted). */
+export const HOIST_RELEASE = 0.25;
 
 /** Spotlight aim: degrees below the heading after a tap of down, seconds of holding down before it points straight below, total sway in degrees when idle and when steering, and how quickly it tilts. */
 export const LAMP_PITCH_DOWN = 70;

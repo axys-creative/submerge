@@ -1,6 +1,8 @@
 import type { Loadout } from '../data/upgrades';
 import type { SkinId } from '../data/skins';
 import { rrect } from '../util';
+import { drawLostSubSkin, LOST_PORTHOLE } from './lostSub';
+import { drawChallenger, challengerPoint, challengerLamp, challengerViewport, challengerWeights, challengerBoomTips, CHALLENGER_GLASS, CHALLENGER_RIM, CHALLENGER_HOOK, CHALLENGER_BASE } from './challenger';
 import logoUrl from '../assets/svgs/logo-oceangate.svg';
 
 interface Plating {
@@ -20,7 +22,7 @@ const PLATING: Plating[] = [
 
 const GLASS = '#A8E1F2';
 
-const logo = new Image();
+export const logo = new Image();
 logo.src = logoUrl;
 
 /** How much wider the middle cabin is drawn, per cargo hold level. */
@@ -32,12 +34,25 @@ export const sternStretch = (cargo: number) => STERN_STRETCH[cargo];
 /** Lamp position in the sub's local space, used to aim the spotlight. */
 export const LAMP = { x: 30, y: 31 };
 export const REAR_LAMP = { x: -50, y: 26 };
+/** Where the front spotlight sits: the fixed spot, or on the Challenger skin the tip of its upper boom. */
+export const lampFor = (skin: SkinId, pose = 1) => (skin === 'challenger' ? challengerLamp(pose) : LAMP);
+export { challengerBoomTips, challengerViewport, challengerWeights };
+/** Where the Challenger skin's bubbles rise from: its base, in the sub's local space. */
+export const challengerBase = (pose: number) => challengerPoint(CHALLENGER_BASE.x, CHALLENGER_BASE.y, pose, false);
 /** Center of the nose glass, where the cockpit's own faint glow comes from. */
 export const COCKPIT = { x: 42, y: 0 };
+/** Where the OceanGate skin's top thruster blows its bubbles from, in the sub's local space. */
+export const GATE_THRUSTER_BUBBLES = { x: 4, y: -22 };
+/** The OceanGate nose's glass sphere: only the part past the flat face at x = 59 shows. */
+const GATE_ORB = { x: 55.4, y: 0, r: 7 };
 /** The capsule skin's small round viewport in its dome. */
 const CAPSULE_VIEWPORT = { x: 46, y: 0 };
+/** The capsule skin's round viewport in the side of its tube. */
+export const CAPSULE_SIDE_VIEWPORT = { x: -30, y: 0 };
 /** Where the sonar sits on the tower. */
 const SONAR_MOUNT = { x: 17, y: -29 };
+/** Where the OceanGate skin's sonar sits: on the hull's top edge, above the logo near the rear. */
+const GATE_SONAR_MOUNT = { x: -30, y: -22 };
 /** The antenna's light. */
 export const ANTENNA = { x: 3, y: -49 };
 /** Where the crane cable attaches: on the antenna's horizontal arm, just behind the light. */
@@ -45,7 +60,8 @@ export const ANCHOR = { x: -4, y: -51 };
 /** The capsule skins have no antenna, so the crane hooks onto the top of the fairing, or of the hull, instead. */
 const ANCHOR_CAPSULE = { x: -4, y: -38 };
 const ANCHOR_GATE = { x: -4, y: -26 };
-export const anchorFor = (skin: SkinId) => (skin === 'capsule' ? ANCHOR_CAPSULE : skin === 'oceangate' ? ANCHOR_GATE : ANCHOR);
+const ANCHOR_LOST = { x: -4, y: -27 };
+export const anchorFor = (skin: SkinId, pose = 0, lying = true) => (skin === 'challenger' ? challengerPoint(CHALLENGER_HOOK.x, CHALLENGER_HOOK.y, pose, lying) : skin === 'capsule' ? ANCHOR_CAPSULE : skin === 'oceangate' ? ANCHOR_GATE : skin === 'sm13' ? ANCHOR_LOST : ANCHOR);
 
 /** Draws the sub facing right, centered on the origin, about 140 px long. */
 /** Where the two dive weights hang, as x offsets in the sub's local space. */
@@ -185,7 +201,7 @@ function drawCandles(ctx: CanvasRenderingContext2D, count: number) {
   }
 }
 
-export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, prop: number, alarm = false, weights = false, crush = 0, gear?: AirGear, facing = 1, skin: SkinId = 'standard') {
+export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, prop: number, alarm = false, weights = false, crush = 0, gear?: AirGear, facing = 1, skin: SkinId = 'standard', pose = 1, lying = false, boom = 1) {
   const p = PLATING[up.plating];
   const capsule = skin === 'capsule';
   const gate = skin === 'oceangate';
@@ -206,6 +222,11 @@ export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, p
     ctx.restore();
   };
 
+  if (skin === 'challenger') {
+    part('hull', () => drawChallenger(ctx, pose, lying, boom, weights ? drawWeight : null));
+    ctx.restore();
+    return;
+  }
   if (weights) {
     weightMounts(up.cargo).forEach((x, i) =>
       part(i ? 'weightR' : 'weightL', () => {
@@ -214,9 +235,17 @@ export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, p
       }),
     );
   }
+  if (skin === 'sm13') {
+    part('hull', () => drawLostSubSkin(ctx, prop));
+    ctx.restore();
+    return;
+  }
   if (gate) {
     part('hull', () => drawGateBody(ctx, E, facing));
-    part('glass', () => drawCapsuleDome(ctx));
+    part('glass', () => drawGateDome(ctx));
+    part('prop', () => drawGateThrusters(ctx));
+    part('hull', () => drawGateCables(ctx));
+    part('sonar', () => rear(() => drawSonar(ctx, up.sonar, GATE_SONAR_MOUNT, () => GATE_SONAR_MOUNT.y, true)));
     ctx.restore();
     return;
   }
@@ -261,7 +290,7 @@ export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, p
 
   part('glass', () => {
     if (capsule) {
-      drawCapsuleDome(ctx);
+      drawCapsuleDome(ctx, p);
       return;
     }
     porthole(ctx, 0, 0, 12, p.band);
@@ -273,12 +302,8 @@ export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, p
       ctx.strokeStyle = 'rgba(255,255,255,0.6)';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(-46, -12);
-      ctx.quadraticCurveTo(-42, -18, -34, -18);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(-14, -20);
-      ctx.lineTo(-6, -20);
+      ctx.moveTo(-46 - E, -12);
+      ctx.quadraticCurveTo(-42 - E, -18, -34 - E, -18);
       ctx.stroke();
     }
     runningLights(ctx, t, alarm, E, !capsule);
@@ -350,6 +375,7 @@ function drawCapsuleFittings(ctx: CanvasRenderingContext2D, p: Plating) {
   ctx.arc(11, -27, 2.6, 0, Math.PI * 2);
   ctx.fill();
 
+  porthole(ctx, CAPSULE_SIDE_VIEWPORT.x, CAPSULE_SIDE_VIEWPORT.y, 8, '#DCE0E5');
   ctx.fillStyle = p.shade;
   rrect(ctx, -2, 8, 24, 11, 5);
   ctx.fill();
@@ -394,28 +420,182 @@ function drawGateBody(ctx: CanvasRenderingContext2D, stretch: number, facing: nu
   ctx.restore();
   if (logo.complete && logo.naturalWidth) {
     ctx.save();
-    ctx.translate(-14 - stretch / 2, -2);
+    ctx.translate(-32 - stretch / 2, -6);
     ctx.scale(facing, 1);
-    ctx.drawImage(logo, -29, -9.7, 58, 19.3);
+    ctx.drawImage(logo, -23, -7.7, 46, 15.4);
     ctx.restore();
   }
 }
 
-/** The capsule's nose: a metal dome with one small round viewport. */
-function drawCapsuleDome(ctx: CanvasRenderingContext2D) {
-  const shine = ctx.createRadialGradient(40, -8, 2, 34, 0, 26);
-  shine.addColorStop(0, '#D4D0BE');
-  shine.addColorStop(1, '#6F6D60');
+/** The OceanGate skin's thrusters: two black pinched squares, one on the hull's top and one at the front, each on a short stub. They look the same at every propeller level. */
+function drawGateThrusters(ctx: CanvasRenderingContext2D) {
+  const S = 10;
+  const pinch = 1.8;
+  const box = (x: number, y: number, vertical: boolean, ox: number, oy: number) => {
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.scale(0.75, 0.75);
+    ctx.translate(-ox, -oy);
+    ctx.fillStyle = '#4A505B';
+    if (vertical) rrect(ctx, x + S / 2 - 2.5, y - 5, 5, 5, 1);
+    else rrect(ctx, x + S, y + S / 2 - 2.5, 5, 5, 1);
+    ctx.fill();
+    ctx.fillStyle = '#15171C';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#15171C';
+    ctx.beginPath();
+    if (vertical) {
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + S, y);
+      ctx.lineTo(x + S - pinch, y + S / 2);
+      ctx.lineTo(x + S, y + S);
+      ctx.lineTo(x, y + S);
+      ctx.lineTo(x + pinch, y + S / 2);
+    } else {
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + S / 2, y + pinch);
+      ctx.lineTo(x + S, y);
+      ctx.lineTo(x + S, y + S);
+      ctx.lineTo(x + S / 2, y + S - pinch);
+      ctx.lineTo(x, y + S);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  };
+  box(ANCHOR_GATE.x + 3, -18, true, ANCHOR_GATE.x + 8, -15.5);
+  box(19, -5, false, 34, 0);
+}
+
+/** A tangle of cables looped over the top front of the hull, like the Titan's. */
+function drawGateCables(ctx: CanvasRenderingContext2D) {
+  const loops: [number, number, number, string][] = [
+    [-4, 26, 15, '#1E2026'],
+    [2, 18, 11, '#3A3F47'],
+    [8, 30, 19, '#1E2026'],
+    [14, 24, 8, '#5A606B'],
+    [-1, 12, 13, '#2B2E35'],
+    [12, 28, 12, '#1E2026'],
+  ];
+  ctx.save();
+  ctx.translate(34, -22);
+  ctx.scale(0.625, 0.625);
+  ctx.translate(-34, 22);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 1.8;
+  for (const [x0, x1, rise, color] of loops) {
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x0, -22);
+    ctx.bezierCurveTo(x0 - 4, -22 - rise, x1 + 4, -22 - rise * 0.4, x1, -22);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#1E2026';
+  ctx.lineWidth = 2.4;
   ctx.beginPath();
-  ctx.moveTo(34, -22);
-  ctx.arc(34, 0, 22, -Math.PI / 2, Math.PI / 2);
-  ctx.closePath();
-  ctx.fillStyle = shine;
+  ctx.moveTo(-6, -22);
+  ctx.quadraticCurveTo(10, -30, 30, -22);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** The capsule's nose: a dome in the hull's own metal, with one small round viewport. */
+function drawCapsuleDome(ctx: CanvasRenderingContext2D, p: Plating) {
+  const dome = () => {
+    ctx.beginPath();
+    ctx.moveTo(34, -22);
+    ctx.arc(34, 0, 22, -Math.PI / 2, Math.PI / 2);
+    ctx.closePath();
+  };
+  ctx.fillStyle = p.body;
+  dome();
   ctx.fill();
-  ctx.strokeStyle = '#4F4E45';
-  ctx.lineWidth = 2;
+  ctx.save();
+  dome();
+  ctx.clip();
+  ctx.fillStyle = p.shade;
+  ctx.fillRect(30, 10, 30, 16);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(40, -15, 14, 3, 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(0,0,0,0.16)';
+  ctx.lineWidth = 1.5;
+  dome();
   ctx.stroke();
   porthole(ctx, CAPSULE_VIEWPORT.x, CAPSULE_VIEWPORT.y, 8, '#DCE0E5');
+}
+
+/** Fixed speckles over the OceanGate dome as [x, y, size, light]. */
+const GATE_GRAIN = (() => {
+  let seed = 7;
+  const next = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const grain: [number, number, number, boolean][] = [];
+  for (let tries = 0; grain.length < 40 && tries < 2000; tries++) {
+    const x = 34 + next() * 22;
+    const y = (next() - 0.5) * 44;
+    if ((x - 34) ** 2 + y * y < 21 ** 2 && grain.every(([gx, gy]) => (gx - x) ** 2 + (gy - y) ** 2 > 36)) grain.push([x, y, 0.5 + next() * 0.7, next() > 0.55]);
+  }
+  return grain;
+})();
+
+/** The OceanGate skin's nose: a dull grainy grey-brown metal dome with the viewport as a small flat-faced bump on the nose's outline. */
+function drawGateDome(ctx: CanvasRenderingContext2D) {
+  const dome = () => {
+    ctx.beginPath();
+    const edge = Math.asin(8 / 22);
+    ctx.moveTo(34, -22);
+    ctx.arc(34, 0, 22, -Math.PI / 2, -edge);
+    const inner = 34 + 22 * Math.cos(edge);
+    ctx.arcTo(59, -8, 59, 8, 2);
+    ctx.arcTo(59, 8, inner, 8, 2);
+    ctx.lineTo(inner, 8);
+    ctx.arc(34, 0, 22, edge, Math.PI / 2);
+    ctx.closePath();
+  };
+  const tone = ctx.createRadialGradient(42, -6, 2, 34, 0, 26);
+  tone.addColorStop(0, '#77756E');
+  tone.addColorStop(1, '#5B5A55');
+  dome();
+  ctx.fillStyle = tone;
+  ctx.fill();
+  ctx.save();
+  dome();
+  ctx.clip();
+  for (const [x, y, r, light] of GATE_GRAIN) {
+    ctx.fillStyle = light ? 'rgba(200,196,184,0.2)' : 'rgba(20,20,18,0.25)';
+    ctx.fillRect(x, y, r, r);
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#46453F';
+  ctx.lineWidth = 2;
+  dome();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(34, -22);
+  ctx.lineTo(34, 22);
+  ctx.strokeStyle = 'rgba(30,30,28,0.35)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(59, -10, 10, 20);
+  ctx.clip();
+  const glass = ctx.createRadialGradient(GATE_ORB.x + 3, -2, 0.5, GATE_ORB.x + 2, 0, GATE_ORB.r + 1);
+  glass.addColorStop(0, '#E6F8FF');
+  glass.addColorStop(1, '#7FB8CC');
+  ctx.beginPath();
+  ctx.arc(GATE_ORB.x, GATE_ORB.y, GATE_ORB.r, 0, Math.PI * 2);
+  ctx.fillStyle = glass;
+  ctx.fill();
+  ctx.strokeStyle = '#46453F';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.restore();
 }
 
 function porthole(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rim: string) {
@@ -462,6 +642,29 @@ const PROP_SIZE = [
   { w: 20, h: 36, color: '#F28C28', line: 'rgba(90,40,0,0.35)' },
   { w: 24, h: 42, color: '#22252C', line: 'rgba(242,140,40,0.4)' },
 ];
+
+/** An outboard motor clamped to the ship's stern, with the sub's propeller at the foot of its leg. */
+export function drawShipPropeller(ctx: CanvasRenderingContext2D, prop: number, level: number, body: string, accent: string) {
+  ctx.save();
+  ctx.fillStyle = body;
+  rrect(ctx, -150, -22, 14, 14, 3);
+  ctx.fill();
+  rrect(ctx, -156, 0, 14, 36, 5);
+  ctx.fill();
+  ctx.translate(-92, 30);
+  drawPropeller(ctx, { band: body } as Plating, prop, level);
+  ctx.translate(92, -30);
+  ctx.fillStyle = body;
+  rrect(ctx, -163, -17, 26, 21, 8);
+  ctx.fill();
+  ctx.fillStyle = accent;
+  rrect(ctx, -163, -8, 26, 4, 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  rrect(ctx, -159, -14, 12, 3, 1.5);
+  ctx.fill();
+  ctx.restore();
+}
 
 function drawPropeller(ctx: CanvasRenderingContext2D, p: Plating, prop: number, level: number) {
   const { w, h, color, line } = PROP_SIZE[level];
@@ -631,18 +834,92 @@ function drawPlatingDetail(ctx: CanvasRenderingContext2D, level: number, p: Plat
   }
 }
 
+const CRACKS: [number, number][][] = [
+  [[0, 0], [-6, -5], [-9, -13], [-16, -17]],
+  [[0, 0], [7, -4], [11, -11], [10, -19]],
+  [[0, 0], [8, 3], [15, 5], [20, 12]],
+  [[0, 0], [-3, 7], [-8, 11], [-7, 19]],
+  [[0, 0], [-8, 1], [-15, 0], [-21, 5]],
+  [[-9, -13], [-15, -11], [-19, -14]],
+  [[11, -11], [17, -12], [21, -9]],
+  [[8, 3], [9, 10], [14, 15]],
+];
+
+/** Cracks spreading from a point on the front glass; `progress` runs 0 to 1. */
+export function drawGlassCracks(ctx: CanvasRenderingContext2D, progress: number, skin: SkinId = 'standard') {
+  const standard = skin === 'standard';
+  ctx.save();
+  if (standard) ctx.translate(40, -3);
+  else if (skin === 'oceangate') ctx.translate(GATE_ORB.x + 3, GATE_ORB.y);
+  else if (skin === 'sm13') ctx.translate(LOST_PORTHOLE.x, LOST_PORTHOLE.y);
+  else ctx.translate(CAPSULE_VIEWPORT.x, CAPSULE_VIEWPORT.y);
+  const k = standard ? 0.45 : 0.225;
+  ctx.scale(k, k);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  CRACKS.forEach((line, i) => {
+    const local = Math.min(1, Math.max(0, progress * 1.6 - (i < 5 ? 0 : 0.5)));
+    if (local <= 0) return;
+    const pts = line.length - 1;
+    const reach = local * pts;
+    ctx.beginPath();
+    ctx.moveTo(line[0][0], line[0][1]);
+    for (let j = 1; j <= pts; j++) {
+      const f = Math.min(1, reach - (j - 1));
+      if (f <= 0) break;
+      const [x0, y0] = line[j - 1];
+      const [x1, y1] = line[j];
+      ctx.lineTo(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f);
+    }
+    ctx.strokeStyle = 'rgba(30,50,70,0.55)';
+    ctx.lineWidth = 3.2;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
 /** Faint glow on the nose glass and side porthole, so an unlit sub still shows in dark water. */
-export function glassGlow(ctx: CanvasRenderingContext2D, amount: number, skin: SkinId = 'standard') {
+export function glassGlow(ctx: CanvasRenderingContext2D, amount: number, skin: SkinId = 'standard', pose = 1) {
   if (amount <= 0) return;
   ctx.save();
   ctx.globalAlpha = Math.min(1, amount);
   ctx.fillStyle = '#C6F4FF';
   ctx.shadowColor = '#8FE3FF';
   ctx.shadowBlur = 14;
-  if (skin !== 'standard') {
+  if (skin === 'challenger') {
+    const at = challengerViewport(pose);
     ctx.beginPath();
-    ctx.arc(CAPSULE_VIEWPORT.x, CAPSULE_VIEWPORT.y, 5, 0, Math.PI * 2);
+    ctx.arc(at.x, at.y, CHALLENGER_RIM, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, CHALLENGER_GLASS, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (skin === 'oceangate') {
+    ctx.beginPath();
+    ctx.rect(59, -10, 10, 20);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.arc(GATE_ORB.x, GATE_ORB.y, GATE_ORB.r - 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (skin !== 'standard') {
+    const at = skin === 'sm13' ? LOST_PORTHOLE : CAPSULE_VIEWPORT;
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    if (skin === 'capsule') {
+      ctx.beginPath();
+      ctx.arc(CAPSULE_SIDE_VIEWPORT.x, CAPSULE_SIDE_VIEWPORT.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
     return;
   }
@@ -693,6 +970,7 @@ function drawBumpers(ctx: CanvasRenderingContext2D, level: number, stretch: numb
   ctx.beginPath();
   ctx.arc(-34 - stretch, 0, 24, Math.PI - 0.7, Math.PI + 0.7);
   ctx.stroke();
+  if (level < 3) return;
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(-30 - stretch, 21);
@@ -741,18 +1019,18 @@ function towerTop(x: number) {
   return x <= 6 ? -37 : -37 + (x - 6) * (10 / 14);
 }
 
-function drawSonar(ctx: CanvasRenderingContext2D, level: number) {
-  const { x, y } = SONAR_MOUNT;
+function drawSonar(ctx: CanvasRenderingContext2D, level: number, mount = SONAR_MOUNT, topAt = towerTop, grey = false) {
+  const { x, y } = mount;
   if (level === 0) return;
   const tall = level >= 2 ? 13 : 9;
   const mast = (mx: number, my: number, h: number) => {
-    ctx.strokeStyle = level === 3 ? '#F28C28' : '#8A93A3';
+    ctx.strokeStyle = level === 3 && !grey ? '#F28C28' : '#8A93A3';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(mx, my);
     ctx.lineTo(mx, my - h);
     ctx.stroke();
-    if (level === 3) {
+    if (level === 3 && !grey) {
       ctx.strokeStyle = '#FFFFFF';
       ctx.lineWidth = 1.6;
       ctx.beginPath();
@@ -764,5 +1042,5 @@ function drawSonar(ctx: CanvasRenderingContext2D, level: number) {
   mast(x, y, tall);
   if (level < 2) return;
   const sx = x - 4;
-  mast(sx, towerTop(sx), 5);
+  mast(sx, topAt(sx), 5);
 }

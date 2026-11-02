@@ -1,8 +1,9 @@
 import { SAVE_KEY } from '../config';
-import { UPGRADES, UPGRADE_ORDER, type Loadout } from '../data/upgrades';
+import { UPGRADES, UPGRADE_ORDER, type Loadout, type UpgradeId } from '../data/upgrades';
 import { SKINS, type SkinId } from '../data/skins';
 import { ITEM_KINDS, type ItemKind } from '../data/items';
 import { ZONES } from '../data/zones';
+import { PORTALS } from '../data/routes';
 import { START_DAY } from '../render/daylight';
 
 export type SwitchMode = 'off' | 'on' | 'auto';
@@ -11,8 +12,12 @@ export interface SaveData {
   v: 1;
   money: number;
   upgrades: Loadout;
+  /** Which stock slots of each upgrade's shops have been used up. */
+  stock: Record<UpgradeId, number[]>;
   /** The submarine's look. */
   skin: SkinId;
+  /** Skins the player has earned and can pick in settings. */
+  skins: SkinId[];
   zone: number;
   shipX: number;
   day: number;
@@ -29,9 +34,15 @@ export interface SaveData {
   explored: Record<number, string>;
   /** Trash spots already collected per zone index. */
   trash: Record<number, number[]>;
+  /** Whether the portal stone has been taken, opening the portals between Moana Deep and Crimson Sea. */
+  portal: boolean;
+  /** Whether the Crimson Sea monster has started chasing, which brings back that zone's portal. */
+  monsterWoke: boolean;
+  /** Zones the player has sailed or portaled into. */
+  visited: number[];
   /** Earned achievement ids, such as 'trash-0'. */
   achievements: string[];
-  stats: { dives: number; earned: number; deepest: number };
+  stats: { dives: number; earned: number; deepest: number; deaths: number };
 }
 
 export function newSave(): SaveData {
@@ -39,7 +50,9 @@ export function newSave(): SaveData {
     v: 1,
     money: 0,
     upgrades: { plating: 0, oxygen: 0, battery: 0, hull: 0, light: 0, sonar: 0, propeller: 0, cargo: 0 },
+    stock: { plating: [], oxygen: [], battery: [], hull: [], light: [], sonar: [], propeller: [], cargo: [] },
     skin: 'standard',
+    skins: ['standard'],
     zone: 0,
     shipX: 900,
     day: START_DAY,
@@ -52,8 +65,11 @@ export function newSave(): SaveData {
     electrolysis: false,
     explored: {},
     trash: {},
+    portal: false,
+    visited: [0],
+    monsterWoke: false,
     achievements: [],
-    stats: { dives: 0, earned: 0, deepest: 0 },
+    stats: { dives: 0, earned: 0, deepest: 0, deaths: 0 },
   };
 }
 
@@ -68,7 +84,16 @@ export function sanitize(raw: any): SaveData | null {
   for (const id of UPGRADE_ORDER) {
     s.upgrades[id] = Math.floor(num(raw.upgrades?.[id], 0, UPGRADES[id].levels.length - 1, 0));
   }
+  for (const id of UPGRADE_ORDER) {
+    const slots = UPGRADES[id].stock.length;
+    const used = raw.stock?.[id];
+    s.stock[id] = Array.isArray(used)
+      ? [...new Set<number>(used.map((n: unknown) => Math.floor(num(n, -1, slots, -1))).filter((n: number) => n >= 0 && n < slots))]
+      : Array.from({ length: Math.min(s.upgrades[id], slots) }, (_, i) => i);
+  }
   if (typeof raw.skin === 'string' && raw.skin in SKINS) s.skin = raw.skin as SkinId;
+  if (Array.isArray(raw.skins)) s.skins = [...new Set<SkinId>(['standard', ...raw.skins.filter((k: unknown): k is SkinId => typeof k === 'string' && k in SKINS)])];
+  if (!s.skins.includes(s.skin)) s.skins.push(s.skin);
   s.zone = Math.floor(num(raw.zone, 0, ZONES.length - 1, 0));
   s.shipX = num(raw.shipX, 0, ZONES[s.zone].width, s.shipX);
   s.day = num(raw.day, 0, 1, START_DAY) % 1;
@@ -90,12 +115,17 @@ export function sanitize(raw: any): SaveData | null {
     const t = raw.trash?.[z];
     if (Array.isArray(t)) s.trash[z] = [...new Set(t.map((n: unknown) => Math.floor(num(n, 0, 99, -1))).filter((n: number) => n >= 0))].slice(0, 100);
   }
+  s.portal = raw.portal === true;
+  if (Array.isArray(raw.visited)) s.visited = [...new Set<number>([0, ...raw.visited.map((n: unknown) => Math.floor(num(n, 0, ZONES.length - 1, 0)))])];
+  if (!s.visited.includes(s.zone)) s.visited.push(s.zone);
+  s.monsterWoke = raw.monsterWoke === true || (!Array.isArray(raw.visited) && PORTALS.some((p) => p.chase && p.zone === s.zone));
   if (Array.isArray(raw.achievements)) {
     s.achievements = raw.achievements.filter((a: unknown) => typeof a === 'string' && /^trash-\d+$/.test(a) && Number(a.slice(6)) < ZONES.length);
   }
   s.stats.dives = Math.floor(num(raw.stats?.dives, 0, 1e9, 0));
   s.stats.earned = Math.floor(num(raw.stats?.earned, 0, 1e12, 0));
   s.stats.deepest = Math.floor(num(raw.stats?.deepest, 0, 1e5, 0));
+  s.stats.deaths = Math.floor(num(raw.stats?.deaths, 0, 1e6, 0));
   return s;
 }
 

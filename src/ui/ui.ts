@@ -1,4 +1,5 @@
 import lockIcon from "../assets/icons/icon-lock.svg?raw";
+import infoIcon from "../assets/icons/icon-info.svg?raw";
 import type { Game } from "../game/game";
 import type { Action } from "../game/input";
 import { exportCode, importCode, type SwitchMode } from "../game/save";
@@ -16,17 +17,17 @@ import {
   GEAR,
   STATS,
   UPGRADES,
-  UPGRADE_FIRST_ZONE,
   UPGRADE_ORDER,
   WEIGHTS,
+  stockAt,
   type GearId,
   type Loadout,
   type UpgradeId,
 } from "../data/upgrades";
 import { ZONES, ZONE_ORDER, zoneNumber } from "../data/zones";
-import { SKINS, SKIN_ORDER } from "../data/skins";
+import { SKINS, SKIN_ORDER, type SkinId } from "../data/skins";
 import { DEPTH_ZONES, METER_WINDOW, zoneIndexAt } from "../data/depthZones";
-import { ROUTES, routesFrom, type Endpoint } from "../data/routes";
+import { ROUTES, PORTAL_LINK, routesFrom, type Endpoint, type Portal } from "../data/routes";
 import { ITEMS, ITEM_KINDS, type ItemKind } from "../data/items";
 import { drawSub } from "../art/sub";
 import { drawItem } from "../art/items";
@@ -62,6 +63,7 @@ export class UI {
   private toastTimer = 0;
   private shopRaf = 0;
   private shopPreview: UpgradeId | null = null;
+  private prevHull = 0;
   private shopIsland = "";
 
   constructor(private game: Game) {
@@ -95,7 +97,7 @@ export class UI {
           <button class="round-btn crank" data-act="crankJ" hidden>E</button>
           <button class="round-btn crank" data-act="crankK" hidden>R</button>
           <button class="round-btn secondary" id="btn-drop" data-act="drop" hidden>Drop</button>
-<button class="round-btn secondary" id="btn-boost" data-act="drop" data-hold hidden>Boost</button>
+<button class="round-btn secondary" id="btn-boost" data-act="boost" data-hold hidden>Boost</button>
           <button class="round-btn secondary" id="btn-spot" data-act="action" hidden>Shop</button>
           <button class="round-btn primary" id="btn-dive" data-act="dive" hidden>Dive</button>
         </div>
@@ -295,7 +297,7 @@ export class UI {
         this.glitchAt = performance.now() + 60 + Math.random() * 90;
         this.glitchNoise = Math.random();
       }
-      const surge = Math.sin((Math.PI * (GLITCH_TIME - g.glitch)) / GLITCH_TIME);
+      const surge = g.glitchHeld ? 1 : Math.sin((Math.PI * (GLITCH_TIME - g.glitch)) / GLITCH_TIME);
       scaleAt = depth + surge * (1400 + this.glitchNoise * 600);
       shown = Math.max(0, depth - surge * (500 + this.glitchNoise * 900));
     }
@@ -342,9 +344,16 @@ export class UI {
     const diving = g.mode === "diving";
 
     this.set("hull", `${s.hull}/${g.maxHull}`, () => {
-      $(this.root, "#hud-hull").innerHTML = Array.from({ length: g.maxHull }, (_, i) =>
-        ICON.hull.replace("<svg", `<svg class="${i < s.hull ? "" : "empty"}"`),
-      ).join("");
+      const lostTo = this.prevHull > s.hull ? Math.min(this.prevHull, g.maxHull) : 0;
+      this.prevHull = s.hull;
+      $(this.root, "#hud-hull").innerHTML =
+        Array.from({ length: STATS.maxHull.length - 1 }, (_, i) => {
+          const outline = ICON.hull.replace("<svg", '<svg class="locked"');
+          const shield = (cls: string) => ICON.hull.replace("<svg", `<svg class="${cls}"`);
+          const filled = i < s.hull ? shield("") : i >= s.hull && i < lostTo ? shield("lost") : "";
+          return `<span class="shield">${outline}${filled}</span>`;
+        }).join("") +
+        `<div class="hull-tip" role="tooltip">${this.shieldTip(s.hull, g.maxHull)}</div>`;
     });
     this.set(
       "dbg",
@@ -359,7 +368,7 @@ export class UI {
         $(this.root, "#debug-up").innerHTML =
           "<h4>Zone (test)</h4>" +
           `<div class="dbg-row"><button tabindex="-1" data-zone="-1" title="${esc(ZONES[prevZone]?.name ?? "")}"${off(prevZone !== undefined)}>◀</button><span><b>Zone ${zoneNumber(zone)}/${ZONES.length - 1}</b><small>${ZONES[zone].name}</small></span><button tabindex="-1" data-zone="1" title="${esc(ZONES[nextZone]?.name ?? "")}"${off(nextZone !== undefined)}>▶</button></div>` +
-          `<div class="dbg-row"><button tabindex="-1" data-fast="0"${g.debugFast ? "" : " disabled"}>−</button><span><b>Debug mode</b><small>${g.debugFast ? "On: fast, lit, wide, map revealed, no clipping, no damage" : "Off"}</small></span><button tabindex="-1" data-fast="1"${g.debugFast ? " disabled" : ""}>+</button></div>` +
+          `<div class="dbg-row"><button tabindex="-1" data-fast="0"${g.debugFast ? "" : " disabled"}>−</button><span><b>Dev mode</b><small>${g.debugFast ? "On: fast, lit, wide, map revealed, no clipping, no damage" : "Off"}</small></span><button tabindex="-1" data-fast="1"${g.debugFast ? " disabled" : ""}>+</button></div>` +
           `<div class="dbg-row"><button tabindex="-1" data-skin="-1">◀</button><span><b>Skin</b><small>${SKINS[g.save.skin].name}</small></span><button tabindex="-1" data-skin="1">▶</button></div>` +
           "<h4>Upgrades (test)</h4>" +
           `<div class="dbg-row all"><button tabindex="-1" data-all="-1"${master > 0 ? "" : " disabled"}>−</button><span><b>All upgrades</b><small>Level ${master + 1}/${MAX_TEST_LEVEL + 1}</small></span><button tabindex="-1" data-all="1"${master < MAX_TEST_LEVEL ? "" : " disabled"}>+</button></div>` +
@@ -443,7 +452,9 @@ export class UI {
         docked && spot
           ? spot.kind === "shop"
             ? "Shop"
-            : spot.side === "east"
+            : spot.kind === "portal"
+              ? "Portal"
+              : spot.side === "east"
               ? "Map →"
               : "← Map"
           : "";
@@ -452,7 +463,8 @@ export class UI {
         b.textContent = label;
         b.hidden = !label;
       });
-      const boost = g.mode === "docked" && !this.modalKind && !g.travel;
+      const boost =
+        (g.mode === "docked" && !this.modalKind && !g.travel) || (diving && g.propellerLevel >= 1);
       this.set("t-boost", String(boost), () => ($(this.root, "#btn-boost").hidden = !boost));
       const drop = diving && g.weightsOn;
       this.set("t-drop", String(drop), () => ($(this.root, "#btn-drop").hidden = !drop));
@@ -469,10 +481,11 @@ export class UI {
     const key = (k: string) => (this.touch ? "" : `<kbd>${k}</kbd> `);
     if (g.mode === "docked") {
       if (spot?.kind === "shop") return `${key("E")}Visit the ${esc(spot.name)} shop`;
+      if (spot?.kind === "portal") return `${key("E")}Enter the portal`;
       if (spot?.kind === "sail") return `${key("E")}Open the route map`;
       return this.touch
-        ? "Drag to sail · Tap Dive to dive"
-        : "<kbd>←</kbd><kbd>→</kbd> Sail &nbsp;·&nbsp; <kbd>Q</kbd> Boost &nbsp;·&nbsp; <kbd>Space</kbd> Dive";
+        ? "Drag to sail · Tap Dive to launch"
+        : "<kbd>←</kbd><kbd>→</kbd> Sail &nbsp;·&nbsp; <kbd>Shift</kbd> Boost &nbsp;·&nbsp; <kbd>Space</kbd> Dive";
     }
     const s = g.sub;
     if (s.battery <= 0)
@@ -618,7 +631,8 @@ export class UI {
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(this.mapBg.canvas, 0, this.mapScroll, W, H, 0, 0, W, H);
     const fog = this.fogLayer(W, fullH, sy);
-    if (fog && !g.debugFast && !g.world.def.catalog) ctx.drawImage(fog, 0, this.mapScroll, W, H, 0, 0, W, H);
+    if (fog && !g.debugFast && !g.world.def.catalog)
+      ctx.drawImage(fog, 0, this.mapScroll, W, H, 0, 0, W, H);
     ctx.save();
     ctx.translate(0, -this.mapScroll);
 
@@ -918,6 +932,7 @@ export class UI {
 
   close() {
     cancelAnimationFrame(this.shopRaf);
+    this.game.skinPreview = false;
     clearTimeout(this.closeTimer);
     const menu =
       this.modalKind === "menu" && !matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -932,6 +947,7 @@ export class UI {
   }
 
   private hideModal() {
+    this.game.skinPreview = false;
     this.modal.hidden = true;
     this.modal.innerHTML = "";
   }
@@ -992,20 +1008,25 @@ export class UI {
     tip: string,
     onCheckpoint: () => void,
     onMenu: () => void,
+    unlock: { title: string; note: string } | null = null,
   ) {
     this.open(
       "message",
-      `<div class="card message">
+      `<div class="wreck-stack">
+      ${unlock ? `<div class="unlock-banner" role="status"><span class="unlock-star">✨</span>${esc(unlock.title)}<small><span class="info-icon">${infoIcon}</span>${esc(unlock.note)}</small></div>` : ""}
+      <div class="card message">
         <h2>${esc(title)}</h2>
         <p>${esc(body)}</p>
-        ${tip ? `<p class="tip">${esc(tip)}</p>` : ""}
+        ${tip ? `<p class="tip"><span class="info-icon">${infoIcon}</span>${esc(tip)}</p>` : ""}
         <div class="row">
-          <button class="btn big" data-act="checkpoint" data-autofocus disabled>Last checkpoint</button>
+          <button class="btn big" data-act="checkpoint" data-autofocus disabled>Send a new sub</button>
           <button class="btn big ghost" data-act="menu" disabled>Main menu</button>
         </div>
+      </div>
       </div>`,
       "wreck-overlay",
     );
+    if (unlock) setTimeout(() => this.modalKind === "message" && this.game.audio.play("chime2"), 1600);
     const buttons = this.modal.querySelectorAll<HTMLButtonElement>("button");
     setTimeout(() => {
       buttons.forEach((b) => (b.disabled = false));
@@ -1021,29 +1042,30 @@ export class UI {
   }
 
   /** The route map: every zone and how they connect, with the routes from this zone end to choose from. */
-  openRouteMap(from: Endpoint) {
-    const dests = routesFrom(from.zone, from.side);
+  openRouteMap(from: Endpoint, portal?: Portal) {
+    const dests = portal ? [{ zone: portal.to, side: "west" as const }] : routesFrom(from.zone, from.side);
     const half = 25;
     const same = (a: Endpoint, b: Endpoint) => a.zone === b.zone && a.side === b.side;
     const port = (e: Endpoint) => {
       const m = ZONES[e.zone].map;
       return { x: m.x + (e.side === "east" ? half : -half), y: m.y };
     };
-    const edges = ROUTES.map(([a, b]) => {
+    const links = this.game.save.portal ? [...ROUTES, PORTAL_LINK] : ROUTES;
+    const edges = links.filter(([a]) => !portal || a === PORTAL_LINK[0]).map(([a, b]) => {
       const pa = port(a);
       const pb = port(b);
       const mx = (pa.x + pb.x) / 2;
-      const active = same(a, from) || same(b, from);
-      return `<path class="edge${active ? " active" : ""}" d="M${pa.x},${pa.y} C${mx},${pa.y} ${mx},${pb.y} ${pb.x},${pb.y}"/>`;
+      const active = portal ? a === PORTAL_LINK[0] : same(a, from) || same(b, from);
+      return `<path class="edge${a === PORTAL_LINK[0] ? " portal" : ""}${active ? " active" : ""}" d="M${pa.x},${pa.y} C${mx},${pa.y} ${mx},${pb.y} ${pb.x},${pb.y}"/>`;
     }).join("");
     const nodes = ZONES.map((z, i) => {
-      if (z.catalog) return "";
+      if (z.catalog || (portal && i !== from.zone && i !== portal.to)) return "";
       const here = i === from.zone;
       const dest = dests.some((d) => d.zone === i);
       const route = dests.find((d) => d.zone === i);
       const attrs =
         dest && route
-          ? ` data-act="route" data-zone="${route.zone}" data-side="${route.side}"`
+          ? ` data-act="route" data-zone="${route.zone}" data-side="${route.side}"${portal ? ` data-x="${portal.toX}"` : ""}`
           : "";
       const ports = (["west", "east"] as const)
         .map((side) => {
@@ -1054,8 +1076,8 @@ export class UI {
         .join("");
       return `<g class="node${here ? " here" : ""}${dest ? " dest" : ""}"${attrs}>
         <rect x="${z.map.x - half}" y="${z.map.y - 12}" width="${half * 2}" height="24" rx="7"/>
-        <text class="num" x="${z.map.x}" y="${z.map.y + 4}">${i + 1}</text>
-        <text class="name" x="${z.map.x}" y="${z.map.y + 25}">${esc(z.name)}</text>${ports}
+        <text class="num" x="${z.map.x}" y="${z.map.y + 4}">${this.game.zoneName(i) === "???" ? "?" : i + 1}</text>
+        <text class="name" x="${z.map.x}" y="${z.map.y + 25}">${esc(this.game.zoneName(i))}</text>${ports}
       </g>`;
     }).join("");
     const here = ZONES[from.zone].map;
@@ -1065,7 +1087,7 @@ export class UI {
     const list = dests
       .map(
         (d, i) =>
-          `<button class="btn" data-act="route" data-zone="${d.zone}" data-side="${d.side}"${i === 0 ? " data-autofocus" : ""}>Sail to ${esc(ZONES[d.zone].name)}</button>`,
+          `<button class="btn" data-act="route" data-zone="${d.zone}" data-side="${d.side}"${portal ? ` data-x="${portal.toX}"` : ""}${i === 0 ? " data-autofocus" : ""}>${portal ? "Enter the portal to" : "Sail to"} ${esc(this.game.zoneName(d.zone))}</button>`,
       )
       .join("");
     this.open(
@@ -1087,10 +1109,10 @@ export class UI {
       if (el.dataset.act === "close") this.close();
       if (el.dataset.act === "route") {
         this.close();
-        this.game.sailTo({
-          zone: Number(el.dataset.zone),
-          side: el.dataset.side as Endpoint["side"],
-        });
+        this.game.sailTo(
+          { zone: Number(el.dataset.zone), side: el.dataset.side as Endpoint["side"] },
+          el.dataset.x ? Number(el.dataset.x) : undefined,
+        );
       }
     };
   }
@@ -1131,6 +1153,15 @@ export class UI {
     };
   }
 
+  private skinList() {
+    const g = this.game;
+    return SKIN_ORDER.map((id) => {
+      const have = g.save.skins.includes(id);
+      const on = g.save.skin === id;
+      return `<button class="skin-row${on ? " on" : ""}" data-pick-skin="${id}"${have ? "" : " disabled"}><b>${have ? SKINS[id].name : "Locked"}</b><span>${have ? SKINS[id].blurb : SKINS[id].hint}</span>${have ? `<span><i>${SKINS[id].unlock}</i></span>` : ""}</button>`;
+    }).join("");
+  }
+
   openMenu() {
     if (this.modalKind === "title") return;
     const g = this.game;
@@ -1144,12 +1175,12 @@ export class UI {
           <div><b>${st.deepest} m</b><span>Deepest</span></div>
           <div><b>${money(st.earned)}</b><span>Earned</span></div>
         </div>
-        <details class="acc" open>
+        <details class="acc">
           <summary>How to play</summary>
           <h4 class="howto-title">Ship</h4>
           <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>"} to sail the ship.</li>
-            <li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Q</kbd> or <kbd>/</kbd>"} while sailing to boost.</li>
+            <li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while sailing to boost.</li>
             <li>${this.touch ? "Tap <b>Dive</b>" : "Press <kbd>Space</kbd>"} to drop the sub. Drive back up to the ship to dock, recharge and repair.</li>
             <li>Sail next to an island and ${this.touch ? "tap <b>Shop</b>" : "press <kbd>E</kbd>"} to sell your haul and buy upgrades.</li>
             <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>E</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
@@ -1159,6 +1190,7 @@ export class UI {
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>"} to steer. The spotlight follows where you head.</li>
             <li>${this.touch ? "Tap <b>Grab</b>" : "Press <kbd>Space</kbd>"} to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
             <li>Below about 40 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>.</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
+            ${g.propellerLevel >= 1 ? `<li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while steering to boost. It drains the battery fast.</li>` : ""}
             ${g.save.weights ? `<li>${this.touch ? "Tap <b>Drop</b>" : "Press <kbd>Q</kbd> or <kbd>/</kbd>"} to drop the dive weights for a quick ride up.</li>` : ""}
             ${this.touch ? "" : "<li>Press <kbd>L</kbd> to cycle the spotlight, and <kbd>O</kbd> to cycle the sonar, between off, on and auto.</li>"}
             <li>Surface anywhere to refill your air.</li>
@@ -1183,8 +1215,12 @@ export class UI {
         <details class="acc">
           <summary>Sound</summary>
           <label class="sound-row"><input type="checkbox" id="sound-on" ${g.audio.muted ? "" : "checked"}> Sound on</label>
-          <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}"></label>
-          <label class="sound-row">Music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}"></label>
+          <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}" style="--p:${Math.round(g.audio.volume * 100)}%"></label>
+          <label class="sound-row">Music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}" style="--p:${Math.round(g.audio.musicVolume * 100)}%"></label>
+        </details>
+        <details class="acc" id="skins-acc">
+          <summary>Skins</summary>
+          <div class="skin-list" id="skin-list">${this.skinList()}</div>
         </details>
         <details class="acc">
           <summary>Save code</summary>
@@ -1212,8 +1248,19 @@ export class UI {
         </details>
       </div>`,
     );
+    const skinsAcc = $<HTMLDetailsElement>(this.modal, "#skins-acc");
+    skinsAcc.addEventListener("toggle", () => {
+      this.modal.classList.toggle("skins-open", skinsAcc.open);
+      this.game.skinPreview = skinsAcc.open;
+    });
+    this.modal.querySelectorAll<HTMLDetailsElement>("details.acc:not(#skins-acc)").forEach((d) =>
+      d.addEventListener("toggle", () => {
+        if (d.open) skinsAcc.open = false;
+      }),
+    );
     this.modal.oninput = (e) => {
       const el = e.target as HTMLInputElement;
+      if (el.type === "range") el.style.setProperty("--p", `${el.value}%`);
       if (el.id === "volume") g.audio.setVolume(Number(el.value) / 100);
       if (el.id === "music-volume") g.audio.setMusicVolume(Number(el.value) / 100);
       if (el.id === "sound-on") g.audio.setMuted(!el.checked);
@@ -1223,6 +1270,11 @@ export class UI {
       if (target === this.modal) return this.close();
       const act = target.closest<HTMLElement>("[data-act]")?.dataset.act;
       if (act === "resume") this.close();
+      const pick = target.closest<HTMLElement>("[data-pick-skin]")?.dataset.pickSkin as SkinId | undefined;
+      if (pick && g.save.skins.includes(pick)) {
+        g.setSkin(pick);
+        $(this.modal, "#skin-list").innerHTML = this.skinList();
+      }
       if (act === "copy") {
         const ta = $<HTMLTextAreaElement>(this.modal, "#save-out");
         const msg = $(this.modal, "#copy-msg");
@@ -1348,7 +1400,9 @@ export class UI {
 
     $(this.modal, "#shop-upgrades").innerHTML =
       UPGRADE_ORDER.filter(
-        (id) => (!sells || sells.includes(id)) && g.save.zone >= (UPGRADE_FIRST_ZONE[id] ?? 0),
+        (id) =>
+          (!sells || sells.includes(id)) &&
+          stockAt(id, g.save.stock[id], g.save.zone, this.shopIsland).stocked,
       )
         .map((id) => {
           const def = UPGRADES[id];
@@ -1356,14 +1410,14 @@ export class UI {
           const now = def.levels[lvl];
           const next = def.levels[lvl + 1];
           const pips = def.levels.map((_, i) => `<i class="${i <= lvl ? "on" : ""}"></i>`).join("");
-          const elsewhere =
-            next?.soldAt && !next.soldAt.includes(this.shopIsland) ? next.soldAt : null;
-          const action = elsewhere
-            ? `<span class="maxed-tag">Sold at ${esc(elsewhere.join(" or "))}</span>`
+          const stock = stockAt(id, g.save.stock[id], g.save.zone, this.shopIsland);
+          const soldOut = !!next && stock.open < 0;
+          const action = soldOut
+            ? `<span class="maxed-tag">Sold out here</span>`
             : next
-              ? `<button class="btn small" data-act="buy" data-id="${id}" ${g.save.money < next.cost ? "disabled" : ""}>Buy ${money(next.cost)}</button>`
+              ? `<button class="btn small" data-act="buy" data-id="${id}" ${g.save.money < next.cost ? "disabled" : ""}>Buy ${money(next.cost)}</button> <span class="muted">${stock.left} in stock here</span>`
               : `<span class="maxed-tag">Maxed out</span>`;
-          return `<div class="upg ${next ? "" : "maxed"}" data-id="${id}" tabindex="-1">
+          return `<div class="upg ${next ? "" : "maxed"}${!next || soldOut ? " gray" : ""}" data-id="${id}" tabindex="-1">
         <div class="upg-head"><h3>${def.title}</h3><div class="pips">${pips}</div></div>
         <p class="upg-now">${esc(now.name)} · ${esc(now.effect)}</p>
         ${next ? `<p class="upg-next">Next: <b>${esc(next.name)}</b> · ${esc(next.effect)}</p>` : `<p class="upg-next">${esc(def.blurb)}</p>`}
@@ -1372,7 +1426,19 @@ export class UI {
         })
         .join("") +
       (sells ? "" : this.gearCards()) +
-      (g.world.def.sellsWeights ? this.weightsCard() : "");
+      (!sells && g.world.def.sellsWeights ? this.weightsCard() : "");
+  }
+
+  private shieldTip(hull: number, max: number) {
+    if (max === 0)
+      return "<b>No shields.</b> We can't take any hits, and the next one sinks the sub. Visit an island shop to buy bumpers.";
+    if (hull === 0) return "<b>Out of shields!</b> We can't take another hit. Dock to repair them.";
+    const more = max < STATS.maxHull.length - 1 ? " Visit a shop for more bumper upgrades." : "";
+    const left =
+      hull < max
+        ? `<b>${hull} of ${max} shields left.</b> Docking repairs them.`
+        : `<b>${max} ${max === 1 ? "shield" : "shields"}.</b> Each one absorbs a hit.`;
+    return left + more;
   }
 
   private gearCards() {
@@ -1450,10 +1516,10 @@ export class UI {
         ctx.arc(w * (0.15 + ((i * 0.37) % 0.7)), y, 3 + (i % 3), 0, Math.PI * 2);
         ctx.fill();
       }
-      const scale = Math.min(w / 190, h / 130);
+      const scale = Math.min(w / 190, h / (this.game.save.skin === "challenger" ? 210 : 130));
       ctx.translate(w / 2, h / 2 + 6 + Math.sin(t * 1.6) * 4);
       ctx.scale(scale, scale);
-      drawSub(ctx, up, t, t * 6, false, false, 0, this.game.save, 1, this.game.save.skin);
+      drawSub(ctx, up, t, t * 6, false, false, 0, this.game.save, 1, this.game.save.skin, 1);
       this.shopRaf = requestAnimationFrame(frame);
     };
     this.shopRaf = requestAnimationFrame(frame);

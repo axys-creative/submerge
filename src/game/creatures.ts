@@ -1,5 +1,5 @@
 import type { Creature, World } from './world';
-import { CREATURES } from '../data/creatures';
+import { CREATURES, FISH_FULL_SPEED } from '../data/creatures';
 import { MONSTER_SPEED, MONSTER_SURGE, MONSTER_TRAIL } from '../config';
 import { clamp, damp } from '../util';
 
@@ -15,7 +15,7 @@ function steer(c: Creature, tvx: number, tvy: number, k: number, dt: number) {
 }
 
 export function updateCreature(c: Creature, dt: number, world: World, target: Target | null) {
-  c.phase += dt;
+  c.phase += c.kind === 'fish' ? dt * (0.75 + 0.75 * Math.min(1, Math.hypot(c.vx, c.vy) / FISH_FULL_SPEED)) : dt;
   c.timer -= dt;
   const dx = target ? target.x - c.x : 0;
   const dy = target ? target.y - c.y : 0;
@@ -99,6 +99,7 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
       }
       break;
     case 'whale':
+    case 'mobydick':
       if (!c.plan) {
         cruise(42, 900, 30, 40, 0.1, 6, 0.12, 0.35);
         c.nextDive -= dt;
@@ -173,6 +174,7 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
       break;
     }
     case 'colossal':
+    case 'giant':
       if (c.state === 'lunge') {
         const f = Math.exp(-1.4 * dt);
         c.vx *= f;

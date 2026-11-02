@@ -1,10 +1,11 @@
 import type { Game } from '../game/game';
-import { SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE } from '../config';
+import { SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE, CRACK_TIME, HOOK_DROP } from '../config';
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
-import { buoyLabel, routesFrom } from '../data/routes';
-import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, runningLights, sternStretch, anchorFor, LAMP, COCKPIT, REAR_LAMP } from '../art/sub';
-import { drawShip, drawIsland, DOCK_POLES, drawCloud, cloudShape, drawBuoy, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
+import { CATALOG } from '../data/catalog';
+import { buoyLabel, routesFrom, PORTALS } from '../data/routes';
+import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, drawGlassCracks, runningLights, sternStretch, anchorFor, lampFor, challengerBoomTips, challengerViewport, CAPSULE_SIDE_VIEWPORT, COCKPIT, REAR_LAMP } from '../art/sub';
+import { drawShip, drawIsland, DOCK_POLES, drawCloud, cloudShape, drawBuoy, drawPortal, drawPortalStone, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
 import { BACKGROUND_KINDS, CREATURE_EXTENT } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
@@ -174,24 +175,42 @@ export function renderScene(g: Game) {
     const body = (angle: number) => ({ x: skyW * (0.5 - 0.42 * Math.cos(angle)), y: 10 - 0.75 * skyH * Math.sin(angle) });
     if (!space && Math.sin(sunAngle) > -0.25) {
       const p = body(sunAngle);
-      ctx.fillStyle = 'rgba(255,240,170,0.35)';
+      const tint = mixColor('#FFF6D0', '#FFD9A0', warm * 0.5);
+      const fade = (a: number) => tint.replace('rgb(', 'rgba(').replace(')', `,${a})`);
+      const corona = ctx.createRadialGradient(p.x, p.y, 10, p.x, p.y, 110);
+      corona.addColorStop(0, 'rgba(255,252,235,0.55)');
+      corona.addColorStop(0.25, fade(0.22));
+      corona.addColorStop(1, fade(0));
+      ctx.fillStyle = corona;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 70, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 110, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = mixColor('#FFE58A', '#FF9F6B', warm * 0.8);
+      const disc = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 22);
+      disc.addColorStop(0, '#FFFFFF');
+      disc.addColorStop(0.7, '#FFFFFF');
+      disc.addColorStop(1, mixColor('#FFFBE6', '#FFE9C0', warm * 0.6));
+      ctx.fillStyle = disc;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 44, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
       ctx.fill();
     }
     if (!space && night > 0 && Math.sin(sunAngle + Math.PI) > -0.25) {
       const p = body(sunAngle + Math.PI);
       ctx.globalAlpha = night;
+      const glow = ctx.createRadialGradient(p.x, p.y, 12, p.x, p.y, 70);
+      glow.addColorStop(0, 'rgba(220,230,255,0.45)');
+      glow.addColorStop(0.4, 'rgba(190,205,245,0.16)');
+      glow.addColorStop(1, 'rgba(170,190,240,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 70, 0, Math.PI * 2);
+      ctx.fill();
       ctx.fillStyle = '#F4F1DC';
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 34, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 17, 0, Math.PI * 2);
       ctx.fill();
       MOON_CRATERS.forEach((c, i) => {
-        crater(ctx, p.x + c.dx, p.y + c.dy, c.r, i);
+        crater(ctx, p.x + c.dx / 2, p.y + c.dy / 2, c.r / 2, i);
       });
       ctx.globalAlpha = 1;
     }
@@ -232,25 +251,32 @@ export function renderScene(g: Game) {
   ctx.fill();
 
   if (top < 500 && !space) {
-    const shaft = 0.05 * (1 - night);
-    const rays = ctx.createLinearGradient(0, 0, 0, 520);
-    rays.addColorStop(0, `rgba(255,255,255,${shaft})`);
-    rays.addColorStop(0.5, `rgba(255,255,255,${shaft * 0.6})`);
-    rays.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = rays;
     const step = 260;
-    /** How far the rays lean over their length: toward the right when the sun is in the left of the sky, straight down at noon, toward the left when it is in the right. */
-    const lean = Math.cos(sunAngle) * 300;
-    const margin = step + Math.abs(lean);
-    for (let x0 = Math.floor((left - margin) / step) * step; x0 < right + margin; x0 += step) {
-      const sway = Math.sin(t * 0.4 + x0) * 30;
-      ctx.beginPath();
-      ctx.moveTo(x0 + sway, 0);
-      ctx.lineTo(x0 + 60 + sway, 0);
-      ctx.lineTo(x0 + 120 + lean + sway * 0.4, 520);
-      ctx.lineTo(x0 + lean + sway * 0.4, 520);
-      ctx.closePath();
-      ctx.fill();
+    const moonUp = Math.max(0, Math.min(1, (-Math.sin(sunAngle) + 0.25) / 0.5));
+    const sources = [
+      { shaft: 0.05 * (1 - night), tint: '255,255,255', angle: sunAngle, phase: 0 },
+      { shaft: 0.035 * night * moonUp, tint: '200,215,255', angle: sunAngle + Math.PI, phase: 2 },
+    ];
+    for (const src of sources) {
+      if (src.shaft <= 0.001) continue;
+      const rays = ctx.createLinearGradient(0, 0, 0, 520);
+      rays.addColorStop(0, `rgba(${src.tint},${src.shaft})`);
+      rays.addColorStop(0.5, `rgba(${src.tint},${src.shaft * 0.6})`);
+      rays.addColorStop(1, `rgba(${src.tint},0)`);
+      ctx.fillStyle = rays;
+      /** How far the rays lean over their length: toward the right when the light is in the left of the sky, straight down overhead, toward the left when it is in the right. */
+      const lean = Math.cos(src.angle) * 300;
+      const margin = step + Math.abs(lean);
+      for (let x0 = Math.floor((left - margin) / step) * step; x0 < right + margin; x0 += step) {
+        const sway = Math.sin(t * 0.4 + x0 + src.phase) * 30;
+        ctx.beginPath();
+        ctx.moveTo(x0 + sway, 0);
+        ctx.lineTo(x0 + 60 + sway, 0);
+        ctx.lineTo(x0 + 120 + lean + sway * 0.4, 520);
+        ctx.lineTo(x0 + lean + sway * 0.4, 520);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
   }
 
@@ -328,18 +354,16 @@ export function renderScene(g: Game) {
     ctx.restore();
   }
 
-  // Background creatures drift behind the sea floor and scenery, a little faded into the water.
-  ctx.globalAlpha = 0.8;
+  // Background creatures drift behind the sea floor and scenery.
   for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && BACKGROUND_KINDS.includes(c.kind)) drawCreature(ctx, c);
-  ctx.globalAlpha = 1;
 
   // Sea floor
   if (bottom > 200) {
-    def.wrecks.forEach((w) => {
+    def.wrecks.forEach((w, wi) => {
       if (!inView(w.x, 1700)) return;
       ctx.save();
       ctx.translate(w.x, world.floorAt(w.x) + 16);
-      drawWreck(ctx, w.kind);
+      drawWreck(ctx, w.kind, world.wreckFx[wi] ?? undefined);
       ctx.restore();
     });
 
@@ -349,7 +373,7 @@ export function renderScene(g: Game) {
       ctx.translate(it.x, it.y + (it.y < world.floorAt(it.x) - 60 ? Math.sin(t * 1.5 + it.phase) * 4 : 0));
       drawDimmed(ctx, world.atMouth(it.x, it.y), (c) => {
         drawItem(c, it.kind, t + it.phase);
-        if (ITEMS[it.kind].treasure) {
+        if (ITEMS[it.kind].treasure || it.kind === 'shell') {
           const u = (t + it.phase * 1.4) % SPARKLE_CYCLE;
           if (u < 1) drawSparkle(c, -10, -6, 6 * Math.sin(Math.PI * u), Math.sin(Math.PI * u));
           else if (u < 2) drawSparkle(c, 10, -12, 6 * Math.sin(Math.PI * (u - 1)), Math.sin(Math.PI * (u - 1)));
@@ -393,7 +417,7 @@ export function renderScene(g: Game) {
       ctx.lineTo(right + 30, bottom + 30);
       ctx.closePath();
       ctx.clip();
-      const blobs = world.caveBlobs.filter((b) => b.x + b.r > left && b.x - b.r < right);
+      const blobs = world.caveBlobs.filter((b) => b.x + b.r > left && b.x - b.r < right && world.caveShown(b.x, b.y));
       for (const [color, extra] of [[mixColor(def.ground[1], '#FFFFFF', 0.14), 8], [mixColor(def.ground[1], '#050A1E', 0.7), 0]] as const) {
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -426,19 +450,75 @@ export function renderScene(g: Game) {
     }
 
     for (const d of world.deco) {
-      if (!inView(d.x) || (!inRock(d.x, d.y) && d.kind !== 'starfish' && d.kind !== 'plank') || ((d.kind === 'rock' || d.kind === 'stone') && d.phase < 5)) continue;
+      if (!inView(d.x) || !world.caveShown(d.x, d.y) || (!inRock(d.x, d.y) && d.kind !== 'starfish' && d.kind !== 'plank') || ((d.kind === 'rock' || d.kind === 'stone') && d.phase < 5)) continue;
       ctx.save();
       ctx.translate(d.x, d.y + 2);
       drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, d.push, space));
       ctx.restore();
     }
 
-    for (const it of world.items) if (it.alive && inView(it.x) && inRock(it.x, it.y)) drawItemAt(it);
+    for (const it of world.items) if (it.alive && inView(it.x) && inRock(it.x, it.y) && world.caveShown(it.x, it.y)) drawItemAt(it);
   }
 
-  for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && !BACKGROUND_KINDS.includes(c.kind)) drawCreature(ctx, c, g.swallow && c.kind === 'leviathan' ? 'back' : 'all');
+  for (const h of world.hulks) {
+    if (!inView(h.x, 250)) continue;
+    ctx.save();
+    ctx.translate(h.x, h.y);
+    ctx.scale(h.facing, 1);
+    ctx.rotate(h.tilt);
+    drawSub(ctx, h.up, t, 0, false, false, 0, { candles: 0, scrubbers: false, electrolysis: false }, h.facing, h.skin);
+    drawGlassCracks(ctx, 1, h.skin);
+    ctx.restore();
+  }
+  for (const d of world.scraps) {
+    if (!inView(d.x, 40)) continue;
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.rotate(d.rot);
+    ctx.fillStyle = d.color;
+    ctx.beginPath();
+    ctx.moveTo(-d.w / 2, -d.h / 2);
+    ctx.lineTo(d.w / 2, -d.h / 3);
+    ctx.lineTo(d.w / 3, d.h / 2);
+    ctx.lineTo(-d.w / 2, d.h / 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  for (const c of world.creatures) {
+    if (!inView(c.x, CREATURE_EXTENT[c.kind]) || BACKGROUND_KINDS.includes(c.kind)) continue;
+    drawCreature(ctx, c, g.swallow && c.kind === 'leviathan' ? 'back' : 'all');
+    if (c.kind === 'angler') {
+      const l = anglerLure(c);
+      drawLureBulb(ctx, l.x, l.y, lureGlow(c));
+    }
+  }
+
+  if (world.stone && !g.save.portal && inView(world.stone.x, 160)) {
+    ctx.save();
+    ctx.translate(world.stone.x, world.stone.y);
+    drawPortalStone(ctx, t);
+    ctx.restore();
+  }
+
+  if (def.catalog) {
+    for (const e of CATALOG.terrain) {
+      if (!e.portal || !inView(e.x, 120)) continue;
+      ctx.save();
+      ctx.translate(e.x, waveY(e.x, t));
+      drawPortal(ctx, t, 'Portal');
+      ctx.restore();
+    }
+  }
 
   // Zone exits
+  const portal = g.openPortal();
+  if (portal && inView(portal.x, 120)) {
+    ctx.save();
+    ctx.translate(portal.x, waveY(portal.x, t));
+    drawPortal(ctx, t, g.zoneName(portal.to));
+    ctx.restore();
+  }
   const z = g.save.zone;
   if (routesFrom(z, 'east').length && inView(world.width - SHIP_MARGIN - 40)) {
     ctx.save();
@@ -465,14 +545,14 @@ export function renderScene(g: Game) {
     const cos = Math.cos(s.tilt);
     const sin = Math.sin(s.tilt);
     const dockX = g.ship.x + SUB_DOCK_OFFSET * g.ship.facing;
-    const anchor = anchorFor(g.save.skin);
+    const anchor = anchorFor(g.save.skin, g.subPose, docked);
     const subX = s.x + s.facing * (anchor.x * cos - anchor.y * sin);
     const subHookY = s.y + anchor.x * sin + anchor.y * cos;
     const spotX = dockX + g.ship.facing * anchor.x;
     const spotY = -2 + bob + anchor.y;
     const grip = docked ? 1 : g.hookGrip;
     const lowX = lerp(spotX, subX, grip);
-    const lowY = lerp(spotY, subHookY, grip);
+    const lowY = lerp(spotY + HOOK_DROP, subHookY, grip);
     const up = g.reel * g.reel * (3 - 2 * g.reel);
     const hx = lerp(lowX, tipX + Math.sin(t * 2.1) * 3, up);
     const hy = lerp(lowY, tipY + 18, up);
@@ -494,7 +574,7 @@ export function renderScene(g: Game) {
   ctx.translate(g.ship.x, bob);
   ctx.scale(g.ship.facing, 1);
   ctx.rotate(Math.sin(t * 0.9) * 0.02 + g.shipPitch);
-  drawShip(ctx, t, g.ship.facing, lampNight, Math.min(g.up.plating, g.up.oxygen), g.up.oxygen, g.treasureAlert);
+  drawShip(ctx, t, g.ship.facing, lampNight, Math.min(g.up.plating, g.up.oxygen), g.up.oxygen, g.treasureAlert, g.shipProp, g.up.propeller, g.save.skin);
   ctx.restore();
 
   if (g.foam.length) {
@@ -531,7 +611,8 @@ export function renderScene(g: Game) {
     crumple(ctx);
     if (blink) ctx.globalAlpha = 0.4;
     if (g.swallow) ctx.globalAlpha *= 1 - clamp((g.swallow.t - SWALLOW_CLOSE + 0.6) / 0.5, 0, 1);
-    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, scrubbers: g.save.scrubbers, electrolysis: g.save.electrolysis }, s.facing, g.save.skin);
+    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, scrubbers: g.save.scrubbers, electrolysis: g.save.electrolysis }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut);
+    if (g.crack !== null) drawGlassCracks(ctx, Math.min(1, g.crack / CRACK_TIME), g.save.skin);
     ctx.restore();
   }
   if (g.swallow) for (const c of world.creatures) if (c.kind === 'leviathan') drawCreature(ctx, c, 'front');
@@ -682,6 +763,7 @@ export function renderScene(g: Game) {
   const diving = g.mode === 'diving';
   const spot = STATS.light[g.up.light];
   let lamp: { x: number; y: number; angle: number } | null = null;
+  const boomLamps: { x: number; y: number; angle: number; power?: number }[] = [];
   const elapsed = FLICKER_TIME - g.flicker;
   const dip = g.flicker > 0 && ((elapsed > 0.05 && elapsed < 0.15) || (elapsed > 0.27 && elapsed < 0.37));
   const glitchDip = g.glitch > 0 && Math.sin(t * 47) + Math.sin(t * 29.3) > 0.4;
@@ -699,18 +781,33 @@ export function renderScene(g: Game) {
     Math.min(1, (s.battery / g.maxBattery / 0.5) * 2.5),
     s.crankLight / 0.8,
   );
+  const lampPt = lampFor(g.save.skin, g.subPose);
   if (diving) {
     if (spot && lit) {
       lights.push({ x: s.x, y: subY, r: spot.glow * reach, a: glitchDip ? fade * 0.4 : fade, sub: true });
       const cos = Math.cos(s.tilt);
       const sin = Math.sin(s.tilt);
+      const aim = s.facing > 0 ? s.tilt + frontDown : Math.PI - (s.tilt + frontDown);
+      const challenger = g.save.skin === 'challenger';
       lamp = {
-        x: s.x + s.facing * (LAMP.x * cos - LAMP.y * sin) * pieceScale('lamp', crush),
-        y: subY + (LAMP.x * sin + LAMP.y * cos) * pieceScale('lamp', crush),
-        angle: s.facing > 0 ? s.tilt + frontDown : Math.PI - (s.tilt + frontDown),
+        x: s.x + s.facing * (lampPt.x * cos - lampPt.y * sin) * pieceScale('lamp', crush),
+        y: subY + (lampPt.x * sin + lampPt.y * cos) * pieceScale('lamp', crush),
+        angle: challenger ? (s.facing > 0 ? s.tilt : Math.PI - s.tilt) : aim,
       };
       lights.push({ x: lamp.x, y: lamp.y, r: spot.range * reach, angle: lamp.angle, spread: spot.spread, a: a * fade, sub: true });
-      if (g.up.light === 3) {
+      if (g.save.skin === 'challenger') {
+        for (const tip of challengerBoomTips(g.subPose, g.boomOut)) {
+          const boom = {
+            x: s.x + s.facing * (tip.x * cos - tip.y * sin) * pieceScale('lamp', crush),
+            y: subY + (tip.x * sin + tip.y * cos) * pieceScale('lamp', crush),
+            angle: aim - s.facing * g.boomLift * (Math.PI / 2),
+            power: g.boomOut,
+          };
+          boomLamps.push(boom);
+          lights.push({ x: boom.x, y: boom.y, r: spot.range * reach * 0.85, angle: boom.angle, spread: spot.spread, a: a * fade * 0.9 * g.boomOut, sub: true });
+        }
+      }
+      if (g.up.light === 3 && g.save.skin !== 'challenger') {
         lights.push({
           x: s.x + s.facing * ((REAR_LAMP.x - sternStretch(g.up.cargo)) * cos - REAR_LAMP.y * sin) * pieceScale('rearLamp', crush),
           y: subY + ((REAR_LAMP.x - sternStretch(g.up.cargo)) * sin + REAR_LAMP.y * cos) * pieceScale('rearLamp', crush),
@@ -721,7 +818,18 @@ export function renderScene(g: Game) {
           sub: true,
         });
       }
-    } else {
+    } else if (g.save.skin === 'challenger') {
+      const cos = Math.cos(s.tilt);
+      const sin = Math.sin(s.tilt);
+      const v = challengerViewport(g.subPose);
+      lights.push({
+        x: s.x + s.facing * (v.x * cos - v.y * sin) * pieceScale('glass', crush),
+        y: subY + (v.x * sin + v.y * cos) * pieceScale('glass', crush),
+        r: 48,
+        a: 0.6 * cockpitPower * alive,
+        sub: true,
+      });
+    } else if (g.save.skin !== 'oceangate') {
       const cos = Math.cos(s.tilt);
       const sin = Math.sin(s.tilt);
       lights.push({
@@ -731,6 +839,15 @@ export function renderScene(g: Game) {
         a: 0.6 * cockpitPower * alive,
         sub: true,
       });
+      if (g.save.skin === 'capsule') {
+        lights.push({
+          x: s.x + s.facing * (CAPSULE_SIDE_VIEWPORT.x * cos - CAPSULE_SIDE_VIEWPORT.y * sin) * pieceScale('cabin', crush),
+          y: subY + (CAPSULE_SIDE_VIEWPORT.x * sin + CAPSULE_SIDE_VIEWPORT.y * cos) * pieceScale('cabin', crush),
+          r: 48,
+          a: 0.6 * cockpitPower * alive,
+          sub: true,
+        });
+      }
     }
   }
   const shipLean = Math.sin(t * 0.9) * 0.02 + g.shipPitch;
@@ -752,14 +869,12 @@ export function renderScene(g: Game) {
   for (const b of shipBeams) {
     lights.push({ x: b.x, y: b.y, r: SHIP_BEAM_RANGE, angle: b.angle, spread: SHIP_BEAM_SPREAD, a: lampNight });
   }
-  const lures: { x: number; y: number; glow: number }[] = [];
   const beastGlows: ReturnType<typeof leviathanGlows> = [];
   for (const c of world.creatures) {
     if (!inView(c.x) && c.kind !== 'leviathan') continue;
     if (c.kind === 'angler') {
       const glow = lureGlow(c);
-      const l = { ...anglerLure(c), glow };
-      lures.push(l);
+      const l = anglerLure(c);
       if (glow > 0) lights.push({ x: l.x, y: l.y, r: 70 * (0.4 + 0.6 * glow), a: glow });
     } else if (c.kind === 'jelly') {
       lights.push({ x: c.x, y: c.y, r: 50 });
@@ -784,17 +899,20 @@ export function renderScene(g: Game) {
     ctx.beginPath();
     ctx.arc(s.x, subY, spot.glow * reach, 0, Math.PI * 2);
     ctx.fill();
-    const tint = ctx.createRadialGradient(lamp.x, lamp.y, 0, lamp.x, lamp.y, spot.range * reach);
-    tint.addColorStop(0, `rgba(${spot.rgb},${0.016 * a * fade})`);
-    tint.addColorStop(1, `rgba(${spot.rgb},0)`);
-    ctx.fillStyle = tint;
-    for (let i = 0; i < 10; i++) {
-      const k = 0.4 + 0.8 * (i / 9);
-      ctx.beginPath();
-      ctx.moveTo(lamp.x, lamp.y);
-      ctx.arc(lamp.x, lamp.y, spot.range * reach, lamp.angle - spot.spread * k, lamp.angle + spot.spread * k);
-      ctx.closePath();
-      ctx.fill();
+    const sources: { x: number; y: number; angle: number; power?: number }[] = [lamp, ...boomLamps];
+    for (const l of sources) {
+      const tint = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, spot.range * reach);
+      tint.addColorStop(0, `rgba(${spot.rgb},${0.016 * a * fade * (l.power ?? 1)})`);
+      tint.addColorStop(1, `rgba(${spot.rgb},0)`);
+      ctx.fillStyle = tint;
+      for (let i = 0; i < 10; i++) {
+        const k = 0.4 + 0.8 * (i / 9);
+        ctx.beginPath();
+        ctx.moveTo(l.x, l.y);
+        ctx.arc(l.x, l.y, spot.range * reach, l.angle - spot.spread * k, l.angle + spot.spread * k);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
     ctx.restore();
   }
@@ -822,7 +940,7 @@ export function renderScene(g: Game) {
     crumple(ctx);
     ctx.save();
     crumplePiece(ctx, 'hull', crush);
-    if (g.save.skin !== 'oceangate') runningLights(ctx, t, g.warning, sternStretch(g.up.cargo), g.save.skin === 'standard');
+    if (g.save.skin !== 'oceangate' && g.save.skin !== 'sm13' && g.save.skin !== 'challenger') runningLights(ctx, t, g.warning, sternStretch(g.up.cargo), g.save.skin === 'standard');
     ctx.restore();
     if (g.save.skin === 'standard') {
       ctx.save();
@@ -834,11 +952,10 @@ export function renderScene(g: Game) {
     if (bottom > lerp(startPx, 0, night)) {
       const dark = Math.max(clamp((s.y - startPx) / (deepPx - startPx), 0, 1), night * 0.8);
       crumplePiece(ctx, 'glass', crush);
-      glassGlow(ctx, dark * 0.55 * cockpitPower, g.save.skin);
+      glassGlow(ctx, dark * 0.55 * cockpitPower, g.save.skin, g.subPose);
     }
     ctx.restore();
   }
-  for (const l of lures) drawLureBulb(ctx, l.x, l.y, t, l.glow);
   drawLeviathanGlows(ctx, beastGlows, t);
 
   // Sonar
@@ -915,6 +1032,26 @@ export function renderScene(g: Game) {
   ctx.font = `700 ${18 / view.zoom}px Fredoka, Nunito, sans-serif`;
   ctx.textAlign = 'center';
   ctx.lineJoin = 'round';
+  if (world.headers.length) {
+    ctx.font = `700 ${17 / view.zoom}px Fredoka, Nunito, sans-serif`;
+    ctx.lineWidth = 4 / view.zoom;
+    ctx.strokeStyle = 'rgba(20,36,90,0.9)';
+    ctx.fillStyle = '#FFFFFF';
+    for (const h of world.headers) {
+      if (!inView(h.x, 400)) continue;
+      ctx.strokeText(h.text, h.x, h.y);
+      ctx.fillText(h.text, h.x, h.y);
+    }
+    ctx.font = `600 ${13 / view.zoom}px Fredoka, Nunito, sans-serif`;
+    ctx.lineWidth = 3 / view.zoom;
+    ctx.fillStyle = '#BFE3FF';
+    for (const h of world.headers) {
+      if (!inView(h.x, 400)) continue;
+      ctx.strokeText(h.sub, h.x, h.y + 22 / view.zoom);
+      ctx.fillText(h.sub, h.x, h.y + 22 / view.zoom);
+    }
+    ctx.font = `700 ${18 / view.zoom}px Fredoka, Nunito, sans-serif`;
+  }
   for (const p of g.popups) {
     ctx.globalAlpha = Math.min(1, p.life / 0.4);
     ctx.lineWidth = 5 / view.zoom;
