@@ -137,7 +137,8 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
         steer(c, 0, 0, 1, dt);
         break;
       }
-      const speed = d < 600 ? MONSTER_SURGE : MONSTER_SPEED;
+      const lurk = c.state === 'lurk';
+      const speed = lurk ? (d < 60 ? 0 : Math.min(MONSTER_SPEED, d * 0.6)) : d < 600 ? MONSTER_SURGE : MONSTER_SPEED;
       const stop = d > 400 && !world.clearLine(c.x, c.y, target.x, target.y) ? world.routeStep(c.x, c.y, target.x, target.y) : null;
       const want = stop ? Math.atan2(stop.y - c.y, stop.x - c.x) : Math.atan2(dy, dx);
       let heading = want + Math.PI;

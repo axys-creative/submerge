@@ -196,7 +196,7 @@ export const WEIGHTS = {
   /** Speed multiplier for going down while the weights are on. */
   descent: 1.8,
   /** Speed multiplier for going up once they are dropped. */
-  ascent: 1.7,
+  ascent: 1.1,
   /** Extra downward pull in px/s² while they are on. */
   pull: 90,
   /** Multiplier on the battery cost of holding depth while they are on. */

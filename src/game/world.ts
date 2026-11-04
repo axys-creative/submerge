@@ -150,7 +150,7 @@ export interface Creature {
   minY: number;
   maxY: number;
   speed: number;
-  state: 'idle' | 'chase' | 'rest' | 'lunge' | 'dead';
+  state: 'idle' | 'chase' | 'rest' | 'lunge' | 'dead' | 'lurk';
   /** Seconds since the creature died (anglerfish only). */
   dying: number;
   timer: number;

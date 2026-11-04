@@ -231,9 +231,15 @@ export class UI {
       dimBtn.blur();
     });
     const audio = this.game.audio;
-    $(this.root, "#zen-prev").onclick = () => audio.zenSkip(-1);
-    $(this.root, "#zen-next").onclick = () => audio.zenSkip(1);
-    $(this.root, "#zen-play").onclick = () => audio.zenPlayPause();
+    const player = $(this.root, "#zen-player");
+    player.addEventListener("mousedown", (e) => e.preventDefault());
+    player.addEventListener("click", (e) => {
+      const id = (e.target as HTMLElement).closest("button")?.id;
+      if (id === "zen-prev") audio.zenSkip(-1);
+      else if (id === "zen-next") audio.zenSkip(1);
+      else if (id === "zen-play") audio.zenPlayPause();
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
     try {
       this.setDim(localStorage.getItem(DIM_KEY) === "1");
     } catch {}

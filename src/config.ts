@@ -69,10 +69,12 @@ export const CRUSH_DEPTH_SHOWN = 6000;
 export const WEIGHT_HEARING_MARGIN = 1000;
 
 /** In the Crimson Sea's deep cave: the depth in meters that wakes the monster, the pause before it rises, and its chase speeds in px/s. */
-export const MONSTER_DEPTH = 3900;
+export const MONSTER_DEPTH = 2400;
 export const MONSTER_WAIT = 2;
-export const MONSTER_SPEED = 230;
-export const MONSTER_SURGE = 310;
+export const MONSTER_SPEED = 287.5;
+export const MONSTER_SURGE = 387.5;
+/** After the sub docks, the leviathan lurks this many meters under the ship. */
+export const MONSTER_WATCH_DEPTH = 100;
 
 /** How much bigger the monster is drawn and collides than its base design, and how many head positions its body follows (16 px apart). */
 export const MONSTER_SCALE = 1.7;

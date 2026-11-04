@@ -34,6 +34,7 @@ import {
   MONSTER_DEPTH,
   MONSTER_SCALE,
   MONSTER_TRAIL,
+  MONSTER_WATCH_DEPTH,
   SWALLOW_CLOSE,
   GLITCH_TIME,
   BOOST_SPEED,
@@ -232,8 +233,9 @@ const CLAW_RADIUS = 36;
 const CLAW_MOUNT = { x: 2, y: 22 };
 /** Seagulls are heard within three island widths (an island is about 500 px across). */
 const GULL_EARSHOT = 1500;
-const SINK_START = 40;
+const SINK_START = 5;
 const SINK_RAMP = 60;
+const SINK_MIN_RAMP = 0.55;
 const SINK_ACCEL = 24;
 const SINK_MAX_FACTOR = 6;
 /** The sub counts as at the surface (refilling air) once it is above ENTER, until it sinks below STAY. */
@@ -403,7 +405,7 @@ export class Game {
   /** The Crimson Sea monster: it wakes deep in the cavern, then rises from below and chases. */
   /** The sub being eaten by the leviathan: seconds since the mouth took it, and whether the wreck message has been shown. */
   swallow: { t: number; done: boolean } | null = null;
-  private monster: { stage: "idle" | "wait" | "chase"; t: number } = { stage: "idle", t: 0 };
+  private monster: { stage: "idle" | "wait" | "chase" | "watch"; t: number } = { stage: "idle", t: 0 };
   private growlTimer = 0;
   /** Seconds of instrument glitching left in the Crimson Sea, and the wait until the next one. */
   glitch = 0;
@@ -744,7 +746,7 @@ export class Game {
     this.save.money -= WEIGHTS.cost;
     this.save.weights = true;
     this.audio.play("chime1");
-    if (this.mode === "docked") this.resetSub();
+    if (this.mode === "docked") this.resetSub(this.monster.stage === "watch");
     this.persist();
     return true;
   }
@@ -975,10 +977,13 @@ export class Game {
     if (this.travel) this.updateTravel(dt);
 
     const target = this.mode === "diving" && live ? { x: this.sub.x, y: this.sub.y } : null;
+    const watch = live
+      ? { x: this.ship.x, y: MONSTER_WATCH_DEPTH * PX_PER_M }
+      : null;
     const creatures = this.world.creatures;
     for (const c of creatures) {
       if (this.world.def.catalog) c.phase += dt;
-      else updateCreature(c, dt, this.world, target);
+      else updateCreature(c, dt, this.world, c.state === "lurk" ? watch : target);
     }
     for (let i = creatures.length - 1; i >= 0; i--) {
       if (creatures[i].state === "dead" && creatures[i].dying > DEATH_FADE_END)
@@ -1091,7 +1096,14 @@ export class Game {
     this.audio.play("splash");
     this.treasureAlert = 0;
     const x = this.dockedX();
-    this.resetSub();
+    const watched = this.monster.stage === "watch";
+    this.resetSub(watched);
+    if (watched) {
+      this.monster = { stage: "chase", t: 0 };
+      const hunter = this.world.creatures.find((c) => c.kind === "leviathan");
+      if (hunter) hunter.state = "idle";
+      this.growlTimer = 2;
+    }
     const s = this.sub;
     s.x = x;
     s.y = this.hoistedY();
@@ -1152,7 +1164,13 @@ export class Game {
     this.mode = "docked";
     this.hoist = 0;
     this.lowering = false;
-    this.resetSub();
+    const beast = this.monster.stage === "chase" || this.monster.stage === "watch";
+    this.resetSub(beast);
+    if (beast) {
+      this.monster = { stage: "watch", t: 0 };
+      const lurker = this.world.creatures.find((c) => c.kind === "leviathan");
+      if (lurker) lurker.state = "lurk";
+    }
     this.blips = [];
     this.popup(
       this.ship.x + SUB_DOCK_OFFSET * this.ship.facing,
@@ -1298,7 +1316,8 @@ export class Game {
           "#9CF2C4",
         );
       }
-      const ramp = Math.min(1, (sinkDepth - SINK_START) / SINK_RAMP);
+      const ramp =
+        SINK_MIN_RAMP + (1 - SINK_MIN_RAMP) * Math.min(1, (sinkDepth - SINK_START) / SINK_RAMP);
       s.vy +=
         SINK_ACCEL *
         ramp *
@@ -2537,22 +2556,24 @@ export class Game {
     this.cam.y = clamp(this.cam.y, minY, Math.max(minY, this.world.maxFloor + 160 - hh));
   }
 
-  private resetSub() {
+  private resetSub(keepBeast = false) {
     this.deepWarned = false;
     this.weightsOn = this.save.weights;
     this.candlesLeft = this.save.candles;
-    this.monster = { stage: "idle", t: 0 };
+    if (!keepBeast) this.monster = { stage: "idle", t: 0 };
     this.swallow = null;
     this.glitch = 0;
     this.glitchHeld = false;
     this.deathGlitch = null;
     this.glitchWait = GLITCH_GAP[0] + Math.random() * (GLITCH_GAP[1] - GLITCH_GAP[0]);
-    this.audio.stop("monster");
     this.audio.stop("static");
-    const beasts = this.world.creatures;
-    for (let i = beasts.length - 1; i >= 0; i--)
-      if (beasts[i].kind === "leviathan") beasts.splice(i, 1);
-    this.world.spawnLeviathan();
+    if (!keepBeast) {
+      this.audio.stop("monster");
+      const beasts = this.world.creatures;
+      for (let i = beasts.length - 1; i >= 0; i--)
+        if (beasts[i].kind === "leviathan") beasts.splice(i, 1);
+      this.world.spawnLeviathan();
+    }
     this.weightsDropped = false;
     this.weightFx = [];
     this.halfAir = false;
