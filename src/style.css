@@ -77,8 +77,8 @@ kbd {
   position: absolute;
   inset: 0 0 auto;
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  grid-template-areas: 'vitals . purse menu';
+  grid-template-columns: auto auto 1fr auto auto;
+  grid-template-areas: 'vitals zen . purse menu';
   align-items: start;
   gap: 10px;
   padding: calc(env(safe-area-inset-top, 0px) + 12px) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
@@ -106,6 +106,72 @@ kbd {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+}
+
+.zen-player {
+  grid-area: zen;
+  display: grid;
+  gap: 4px;
+  width: 200px;
+}
+
+.zen-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zen-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: none;
+  width: 22px;
+  height: 18px;
+}
+
+.zen-bars i {
+  flex: 1;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--sea);
+  transform: scaleY(0.15);
+  transform-origin: bottom;
+  transition: transform 0.08s linear;
+}
+
+.zen-title {
+  flex: 1;
+  min-width: 0;
+  margin-left: 4px;
+  font-family: var(--display);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.zen-player button {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.zen-player button:hover {
+  background: var(--line);
+}
+
+.zen-player button svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
 }
 
 .dim-switch {
@@ -1052,7 +1118,7 @@ textarea:focus {
 @media (max-width: 600px) {
   .hud {
     grid-template-columns: 1fr auto auto;
-    grid-template-areas: 'vitals purse menu';
+    grid-template-areas: 'vitals purse menu' 'zen zen zen';
     gap: 8px;
   }
   .money {
@@ -1086,6 +1152,9 @@ textarea:focus {
   align-items: center;
   gap: 10px;
   margin: 6px 0;
+}
+.switch-row {
+  justify-content: space-between;
 }
 .sound-row input[type='range'] {
   --p: 50%;

@@ -1,6 +1,7 @@
 import lockIcon from "../assets/icons/icon-lock.svg?raw";
 import infoIcon from "../assets/icons/icon-info.svg?raw";
 import type { Game } from "../game/game";
+import { ZEN_BARS } from "../game/audio";
 import type { Action } from "../game/input";
 import { exportCode, importCode, type SwitchMode } from "../game/save";
 import { CELL } from "../game/explored";
@@ -37,11 +38,23 @@ const ICON = {
   hull: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>',
   air: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="14" r="6"/><circle cx="17.5" cy="6.5" r="3.5"/></svg>',
   bolt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M20 5v14l-11-7Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M4 5v14l11-7Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/></svg>',
   menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/></svg>',
 };
 
 const DIM_KEY = "submerge.ui.v1";
 const MAX_TEST_LEVEL = 3;
+const DEV_KEY = "submerge-dev";
+const devModeOn = () => {
+  try {
+    const v = localStorage.getItem(DEV_KEY);
+    if (v !== null) return v === "1";
+  } catch {}
+  return ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+};
 
 type ModalKind = "title" | "shop" | "menu" | "message" | "map" | "inventory";
 
@@ -85,6 +98,15 @@ export class UI {
             <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
           </div>
         </div>
+        <div class="panel zen-player" id="zen-player">
+          <div class="zen-row">
+          <div class="zen-bars" id="zen-bars"><i></i><i></i><i></i><i></i><i></i></div>
+          <span class="zen-title" id="zen-title">Track 1</span>
+          <button tabindex="-1" id="zen-prev" aria-label="Previous track">${ICON.prev}</button>
+          <button tabindex="-1" id="zen-play" aria-label="Play">${ICON.play}</button>
+          <button tabindex="-1" id="zen-next" aria-label="Next track">${ICON.next}</button>
+          </div>
+        </div>
         <div class="panel purse" id="purse" role="button" tabindex="-1" aria-label="Open inventory"><div class="money" id="hud-money">$0</div><div class="cargo" id="hud-cargo">Hold empty</div><div class="trash" id="hud-trash" hidden></div></div>
         <button class="icon-btn" id="btn-menu" aria-label="Menu">${ICON.menu}</button>
       </div>
@@ -116,6 +138,8 @@ export class UI {
       <div class="debug-upgrades" id="debug-up"></div>
       <div class="overlay" id="modal" hidden></div>`;
     this.modal = $(this.root, "#modal");
+
+    this.applyDevMode();
 
     $(this.root, "#debug-up").onclick = (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
@@ -206,6 +230,10 @@ export class UI {
       this.toast(this.dim ? "Zen mode on: hover a panel to reveal it" : "Zen mode off");
       dimBtn.blur();
     });
+    const audio = this.game.audio;
+    $(this.root, "#zen-prev").onclick = () => audio.zenSkip(-1);
+    $(this.root, "#zen-next").onclick = () => audio.zenSkip(1);
+    $(this.root, "#zen-play").onclick = () => audio.zenPlayPause();
     try {
       this.setDim(localStorage.getItem(DIM_KEY) === "1");
     } catch {}
@@ -338,10 +366,27 @@ export class UI {
 
   // ---- HUD ---------------------------------------------------------------
 
+  private zenLevels = new Array<number>(ZEN_BARS).fill(0);
+  private zenBarEls: HTMLElement[] = [];
+
+  private updateZen() {
+    const a = this.game.audio;
+    this.zenBarEls = this.zenBarEls.length ? this.zenBarEls : [...$(this.root, "#zen-bars").children] as HTMLElement[];
+    a.zenLevels(this.zenLevels);
+    this.zenBarEls.forEach((el, i) => (el.style.transform = `scaleY(${0.15 + 0.85 * this.zenLevels[i]})`));
+    this.set("zen", `${a.zenTrack}${a.zenPlaying}`, () => {
+      $(this.root, "#zen-title").textContent = `Track ${a.zenTrack + 1}`;
+      const play = $(this.root, "#zen-play");
+      play.innerHTML = a.zenPlaying ? ICON.pause : ICON.play;
+      play.setAttribute("aria-label", a.zenPlaying ? "Pause" : "Play");
+    });
+  }
+
   update() {
     const g = this.game;
     const s = g.sub;
     const diving = g.mode === "diving";
+    this.updateZen();
 
     this.set("hull", `${s.hull}/${g.maxHull}`, () => {
       const lostTo = this.prevHull > s.hull ? Math.min(this.prevHull, g.maxHull) : 0;
@@ -1153,6 +1198,10 @@ export class UI {
     };
   }
 
+  private applyDevMode() {
+    $(this.root, "#debug-up").style.display = devModeOn() ? "" : "none";
+  }
+
   private skinList() {
     const g = this.game;
     return SKIN_ORDER.map((id) => {
@@ -1246,6 +1295,7 @@ export class UI {
           <p>Vibe coded with Claude by <a href="https://aarongarciacreative.com/" target="_blank" rel="noopener noreferrer">Aaron Garcia</a>.</p>
           <p class="muted">For my children, Aaliyah and Eden.</p>
         </details>
+        <div class="sound-row switch-row"><span>Dev mode</span><button class="dim-switch${devModeOn() ? " on" : ""}" id="dev-mode" role="switch" aria-checked="${devModeOn()}" aria-label="Dev mode"><span class="dim-knob"></span></button></div>
       </div>`,
     );
     const skinsAcc = $<HTMLDetailsElement>(this.modal, "#skins-acc");
@@ -1270,6 +1320,17 @@ export class UI {
       if (target === this.modal) return this.close();
       const act = target.closest<HTMLElement>("[data-act]")?.dataset.act;
       if (act === "resume") this.close();
+      const devBtn = target.closest<HTMLElement>("#dev-mode");
+      if (devBtn) {
+        const on = !devModeOn();
+        try {
+          localStorage.setItem(DEV_KEY, on ? "1" : "0");
+        } catch {}
+        devBtn.classList.toggle("on", on);
+        devBtn.setAttribute("aria-checked", String(on));
+        this.applyDevMode();
+        if (!on && g.world.def.catalog) g.sailTo({ zone: ZONE_ORDER[1], side: "west" });
+      }
       const pick = target.closest<HTMLElement>("[data-pick-skin]")?.dataset.pickSkin as SkinId | undefined;
       if (pick && g.save.skins.includes(pick)) {
         g.setSkin(pick);

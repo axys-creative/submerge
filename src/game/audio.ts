@@ -43,6 +43,10 @@ const FILES = {
   portal3: ["sound-portal-3.m4a"],
 } as const;
 
+const ZEN_TRACKS = ["sound-zen-track-1.m4a", "sound-zen-track-2.m4a", "sound-zen-track-3.m4a"];
+const ZEN_VOLUME = 0.8;
+export const ZEN_BARS = 5;
+
 type Sound = keyof typeof FILES;
 type Scene = "surface" | "dive";
 
@@ -141,6 +145,13 @@ export class AudioManager {
   private musicFilter: BiquadFilterNode | null = null;
   private musicDepth: GainNode | null = null;
   private muffle = 0;
+  private zenPaused = true;
+  zenTrack = 0;
+  private zenEl: HTMLAudioElement | null = null;
+  private zenBus: GainNode | null = null;
+  private zenAnalyser: AnalyserNode | null = null;
+  private zenData: Uint8Array<ArrayBuffer> | null = null;
+  private zenStop = 0;
   private musicOff = false;
   private musicTracks: GainNode[] = [];
   private musicTrack = 0;
@@ -190,13 +201,77 @@ export class AudioManager {
   setMusicOff(off: boolean) {
     if (off === this.musicOff) return;
     this.musicOff = off;
-    if (this.ctx && this.musicBus) {
-      this.musicBus.gain.setTargetAtTime(
-        off ? 0 : this.musicVolume * VOLUME.music,
-        this.ctx.currentTime,
-        1.2,
-      );
+    this.fadeMusic();
+  }
+
+  private fadeMusic() {
+    if (!this.ctx || !this.musicBus) return;
+    const off = this.musicOff || this.zenPlaying;
+    this.musicBus.gain.setTargetAtTime(
+      off ? 0 : this.musicVolume * VOLUME.music,
+      this.ctx.currentTime,
+      1.2,
+    );
+  }
+
+  /** The sub's music player: while playing it replaces the zone themes and ignores the depth muffle, as if played inside the sub. */
+  get zenPlaying() {
+    return !this.zenPaused;
+  }
+
+  zenPlayPause() {
+    this.zenPaused = !this.zenPaused;
+    this.fadeMusic();
+    this.applyZen();
+  }
+
+  zenSkip(dir: 1 | -1) {
+    this.zenTrack = (this.zenTrack + dir + ZEN_TRACKS.length) % ZEN_TRACKS.length;
+    this.zenPaused = false;
+    this.fadeMusic();
+    if (this.zenEl) this.zenEl.src = BASE + ZEN_TRACKS[this.zenTrack];
+    this.applyZen();
+  }
+
+  /** Bar heights 0..1 from the playing track's spectrum. */
+  zenLevels(out: number[]) {
+    if (!this.zenAnalyser || !this.zenData || !this.zenPlaying) return out.fill(0);
+    this.zenAnalyser.getByteFrequencyData(this.zenData);
+    const per = Math.floor(this.zenData.length / 2 / out.length);
+    for (let i = 0; i < out.length; i++) {
+      let sum = 0;
+      for (let j = 0; j < per; j++) sum += this.zenData[i * per + j];
+      out[i] = Math.min(1, (sum / per / 255) * 1.4);
     }
+    return out;
+  }
+
+  private applyZen() {
+    if (!this.ctx || !this.zenBus || !this.zenEl) return;
+    clearTimeout(this.zenStop);
+    const playing = this.zenPlaying;
+    this.zenBus.gain.setTargetAtTime(
+      playing ? this.musicVolume * ZEN_VOLUME : 0,
+      this.ctx.currentTime,
+      playing ? 1.2 : 0.4,
+    );
+    if (playing) this.zenEl.play().catch(() => {});
+    else this.zenStop = window.setTimeout(() => this.zenEl?.pause(), 1500);
+  }
+
+  private startZen() {
+    if (!this.ctx || !this.out) return;
+    const el = new Audio(BASE + ZEN_TRACKS[this.zenTrack]);
+    el.crossOrigin = "anonymous";
+    el.loop = true;
+    this.zenEl = el;
+    this.zenBus = this.ctx.createGain();
+    this.zenBus.gain.value = 0;
+    this.zenAnalyser = this.ctx.createAnalyser();
+    this.zenAnalyser.fftSize = 256;
+    this.zenData = new Uint8Array(this.zenAnalyser.frequencyBinCount);
+    this.ctx.createMediaElementSource(el).connect(this.zenBus).connect(this.zenAnalyser).connect(this.out);
+    this.applyZen();
   }
 
   setPropeller(on: boolean, level = 1) {
@@ -384,7 +459,8 @@ export class AudioManager {
     if (this.out) this.out.gain.value = this.muted ? 0 : 1;
     if (this.master) this.master.gain.value = this.volume;
     if (this.musicBus)
-      this.musicBus.gain.value = this.musicOff ? 0 : this.musicVolume * VOLUME.music;
+      this.musicBus.gain.value = this.musicOff || this.zenPlaying ? 0 : this.musicVolume * VOLUME.music;
+    if (this.zenBus) this.zenBus.gain.value = this.zenPlaying ? this.musicVolume * ZEN_VOLUME : 0;
   }
 
   private voices = new Map<Sound, Set<AudioBufferSourceNode>>();
@@ -459,6 +535,7 @@ export class AudioManager {
         this.beds.set(name, gain);
       }
       this.startMusic();
+      this.startZen();
       this.applyBeds();
     } catch {
       this.ctx = null;
