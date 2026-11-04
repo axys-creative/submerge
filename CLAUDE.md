@@ -8,8 +8,8 @@ Each upgrade has `stock` slots in `src/data/upgrades.ts`, one per purchasable le
 
 | Slot | Plating | Tank | Battery | Propeller | Hold | Bumpers | Light | Sonar |
 |---|---|---|---|---|---|---|---|---|
-| Sunny Shallows | | Coral Cove | Gull Rock | | | Gull Rock | | |
-| Coral Gardens | yes | | yes | | yes | | yes | |
+| Sunny Shallows | Coral Cove | Coral Cove | Gull Rock | | | Gull Rock | | |
+| Coral Gardens | | | yes | | yes | | yes | |
 | Kelp Canyons or Midnight Trench | yes | yes | | yes | | yes | | yes |
 | Midnight Trench or Moana Deep | | | | | | | yes | yes |
 | Moana Deep | Palm Atoll | Palm Atoll | Trench Pier | Palm Atoll | | Palm Atoll | Trench Pier | Trench Pier |

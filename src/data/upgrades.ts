@@ -95,7 +95,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   plating: {
     title: "Plating",
     blurb: "Dive deeper before the hull starts to buckle.",
-    stock: [{ zones: [1] }, { zones: [2, 3] }, { zones: [4], shop: PALM }],
+    stock: [{ zones: [0], shop: "Coral Cove" }, { zones: [2, 3] }, { zones: [4], shop: PALM }],
     levels: [
       { name: "Silver Shell", cost: 0, effect: `Safe to ${num(STATS.depthRating[0])} m` },
       { name: "Graphite Steel", cost: 300, effect: `Safe to ${num(STATS.depthRating[1])} m` },

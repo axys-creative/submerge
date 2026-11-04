@@ -113,6 +113,14 @@ kbd {
   display: grid;
   gap: 4px;
   width: 200px;
+  transition: opacity 0.4s ease, transform 0.4s ease, visibility 0s;
+}
+
+.zen-player.away {
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .zen-row {
@@ -327,6 +335,14 @@ kbd {
 
 .dial.batt {
   --dial-color: var(--sun);
+}
+
+.dials .dial {
+  transition: filter 0.5s ease, transform 0.5s ease;
+}
+
+#ui.ui-docked .dials .dial {
+  filter: saturate(0.45);
 }
 
 .dial.big {
@@ -1770,6 +1786,36 @@ textarea:focus {
   transition: opacity 0.4s;
 }
 
+#ui .hud .panel.vitals {
+  transform-origin: top left;
+  transition: opacity 0.4s, transform 0.5s ease;
+}
+
+#ui.ui-docked .hud .panel.vitals {
+  transform: scale(0.94);
+}
+
+#ui .hud .panel.zen-player {
+  transition: opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s, visibility 0s;
+}
+
+#ui .hud .panel.zen-player.away {
+  transition: opacity 0.4s ease, transform 0.4s ease, visibility 0s 0.4s;
+  pointer-events: none;
+}
+
+#ui .depth-meter {
+  transition: opacity 0.4s ease, transform 0.4s ease, visibility 0s;
+}
+
+#ui .depth-meter.away {
+  opacity: 0;
+  transform: translate(10px, -50%) scale(0.96);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease, visibility 0s 0.4s;
+}
+
 #ui.ui-dim .hud .panel,
 #ui.ui-dim .minimap,
 #ui.ui-dim .minimap-tab,
@@ -1998,6 +2044,18 @@ body:not(.is-touch) .dial-col:hover .dial-pop {
   border-radius: 8px;
   background: var(--line);
   position: relative;
+  overflow: hidden;
+  max-height: 64px;
+  transition: opacity 0.4s ease, transform 0.4s ease, max-height 0.4s ease, margin-top 0.4s ease, padding 0.4s ease;
+}
+
+.seg.away {
+  opacity: 0;
+  transform: translateY(-6px);
+  max-height: 0;
+  margin-top: -6px;
+  padding-block: 0;
+  pointer-events: none;
 }
 
 .seg-thumb {

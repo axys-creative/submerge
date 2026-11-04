@@ -76,6 +76,12 @@ export interface ZoneDef {
   portalStone?: { x: number };
   /** An airless moon: black sky with a few stars, no sun, moon, clouds or day and night. */
   space?: boolean;
+  /** Tiny hazy islands on the horizon, purely decorative. */
+  farScenery?: boolean;
+  /** Where the far islands sit (world x when the camera is there); without it they repeat across the zone. */
+  farIslandsAt?: number[];
+  /** World x of a tiny cruise ship on the horizon. */
+  farShipAt?: number;
   /** The island shop here also sells the dive weights. */
   sellsWeights?: boolean;
   kelp: number;
@@ -107,6 +113,9 @@ const MOANA_FLOOR = Array.from({ length: 36 }, (_, i) => {
 export const ZONES: ZoneDef[] = [
   {
     name: 'Sunny Shallows',
+    farScenery: true,
+    farIslandsAt: [3400],
+    farShipAt: 1800,
     diveZoom: 1,
     map: { x: 30, y: 110 },
     width: 9000,
@@ -200,6 +209,7 @@ export const ZONES: ZoneDef[] = [
   },
   {
     name: 'Coral Gardens',
+    farScenery: true,
     diveZoom: 0.85,
     map: { x: 92, y: 110 },
     width: 9500,

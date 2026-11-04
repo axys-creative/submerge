@@ -113,6 +113,115 @@ const SKY_HEIGHT = 400;
 /** How strong the water's wash is at each depth in px (10 px is 1 m); it reaches zero at the deepest sea floor. */
 const WASH_STOPS: [number, number][] = [[0, 0.55], [30, 0.4], [100, 0.3], [300, 0.2], [1000, 0.1]];
 
+/** Spacing in layer px between far islands, and how little they move with the camera (0 = stuck to the screen, 1 = fixed to the world). */
+const FAR_SPACING = 2400;
+const FAR_PARALLAX = 0.2;
+
+/** The far ship sails right at this many px per second, over a stretch it fades in and out of. */
+const FAR_SHIP_SPEED = 3;
+const FAR_SHIP_RANGE = 1600;
+
+const farRand = (i: number, salt: number) => {
+  const v = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
+  return v - Math.floor(v);
+};
+
+/** Far islands as tiny hazy specks on the waterline, each with a few trees and sometimes a house. */
+function drawFarIslands(ctx: CanvasRenderingContext2D, from: number, to: number, shift: number, color: string, night: number, fixed?: number[]) {
+  ctx.fillStyle = color;
+  const first = fixed ? 0 : Math.floor(from / FAR_SPACING);
+  const last = fixed ? fixed.length - 1 : Math.floor(to / FAR_SPACING);
+  for (let i = first; i <= last; i++) {
+    if (!fixed && farRand(i, 1) < 0.2) continue;
+    const x = fixed ? fixed[i] + shift : i * FAR_SPACING + (farRand(i, 2) - 0.5) * 1200 + shift;
+    const w = 22 + farRand(i, 3) * 14;
+    const ground = (dx: number) => 2 - 10 * Math.pow(Math.max(0, 1 - (dx / w) * (dx / w)), 0.6);
+    ctx.beginPath();
+    ctx.moveTo(x - w, 16);
+    for (let dx = -w; dx <= w; dx += w / 12) ctx.lineTo(x + dx, ground(dx));
+    ctx.lineTo(x + w, 16);
+    ctx.closePath();
+    ctx.fill();
+    const trees = 2 + Math.floor(farRand(i, 4) * 3);
+    for (let n = 0; n < trees; n++) {
+      const dx = (n / (trees - 1) - 0.5) * w * 1.1;
+      const th = 7 + farRand(i, 10 + n) * 5;
+      const base = ground(dx) + 1;
+      ctx.fillRect(x + dx - 0.5, base - th * 0.8, 1, th * 0.8);
+      ctx.beginPath();
+      ctx.ellipse(x + dx, base - th * 0.85, 3, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (farRand(i, 5) > 0.35) {
+      const hdx = (farRand(i, 6) - 0.5) * w * 0.5;
+      const base = ground(hdx) + 1.5;
+      const hx = x + hdx;
+      ctx.fillRect(hx - 3, base - 6, 6, 6);
+      ctx.beginPath();
+      ctx.moveTo(hx - 4, base - 6);
+      ctx.lineTo(hx, base - 10);
+      ctx.lineTo(hx + 4, base - 6);
+      ctx.closePath();
+      ctx.fill();
+      if (night > 0.05) {
+        ctx.fillStyle = `rgba(255,214,120,${0.55 * night})`;
+        ctx.fillRect(hx - 1, base - 4.5, 2, 2);
+        ctx.fillStyle = color;
+      }
+    }
+  }
+}
+
+/** A tiny cruise ship on the horizon, bow to the right, centered at x. */
+function drawFarShip(ctx: CanvasRenderingContext2D, x: number, haze: (c: string) => string, night: number) {
+  ctx.save();
+  ctx.translate(x, 0);
+  ctx.fillStyle = haze('#F2F4F7');
+  ctx.beginPath();
+  ctx.moveTo(-46, -6);
+  ctx.lineTo(44, -6);
+  ctx.lineTo(51, -9);
+  ctx.lineTo(52, -9);
+  ctx.lineTo(49.5, 1);
+  ctx.lineTo(-46, 1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillRect(-40, -11, 74, 5);
+  ctx.fillRect(-34, -15, 58, 4);
+  ctx.fillRect(-20, -18, 30, 3);
+  ctx.fillStyle = haze('#B02A28');
+  ctx.beginPath();
+  ctx.moveTo(-46, 1);
+  ctx.lineTo(49.5, 1);
+  ctx.lineTo(45, 8);
+  ctx.lineTo(-46, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = haze('#2B3550');
+  ctx.fillRect(-46, 0.2, 95.5, 0.9);
+  ctx.fillStyle = haze('#D9442F');
+  ctx.beginPath();
+  ctx.moveTo(-18, -18);
+  ctx.lineTo(-10, -18);
+  ctx.lineTo(-9, -24);
+  ctx.lineTo(-19, -23);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = haze('#C8CDD6');
+  ctx.fillRect(6, -22, 0.8, 4);
+
+  const rows: [number, number, number][] = [[-9, -38, 31], [-13.5, -32, 21], [-16.8, -18, 7], [-3.5, -42, 44]];
+  ctx.fillStyle = haze('#6F7A8E');
+  for (const [y, x0, x1] of rows) for (let wx = x0; wx <= x1; wx += 3) ctx.fillRect(wx, y, 1, 1);
+  if (night > 0.05) {
+    ctx.fillStyle = `rgba(255,214,120,${0.55 * night})`;
+    for (const [y, x0, x1] of rows) for (let wx = x0; wx <= x1; wx += 3) ctx.fillRect(wx, y, 1, 1);
+    ctx.fillStyle = `rgba(255,120,100,${0.55 * night})`;
+    ctx.fillRect(6, -23, 1, 1);
+  }
+  ctx.restore();
+}
+
 const SHIP_BEAM_RANGE = 190;
 const SHIP_BEAM_SPREAD = 0.5;
 
@@ -227,6 +336,20 @@ export function renderScene(g: Game) {
     }
     ctx.globalAlpha = 1;
     ctx.restore();
+  }
+
+  if (def.farScenery && top < 20) {
+    const shift = cam.x * (1 - FAR_PARALLAX);
+    const fixed = def.farIslandsAt?.map((ax) => ax - ax * (1 - FAR_PARALLAX));
+    drawFarIslands(ctx, left - 400 - shift, right + 400 - shift, shift, mixColor(mixColor(def.sky[1], '#7C9CB8', 0.55), '#0B1430', night * 0.7), night, fixed);
+    if (def.farShipAt !== undefined) {
+      const haze = (c: string) => mixColor(mixColor(c, def.sky[1], 0.35), '#0B1430', night * 0.7);
+      const run = (t * FAR_SHIP_SPEED + FAR_SHIP_RANGE / 2) % FAR_SHIP_RANGE;
+      const edge = Math.min(1, run / 250, (FAR_SHIP_RANGE - run) / 250);
+      ctx.globalAlpha = edge;
+      drawFarShip(ctx, def.farShipAt * FAR_PARALLAX + cam.x * (1 - FAR_PARALLAX) + run - FAR_SHIP_RANGE / 2, haze, night);
+      ctx.globalAlpha = 1;
+    }
   }
 
   for (const isl of def.islands) {

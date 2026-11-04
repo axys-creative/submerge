@@ -59,7 +59,7 @@ const VOLUME: Record<Sound, number> = {
   depths: 0.7,
   propeller: 0.6,
   sailing: 0.25,
-  tetherReel: 0.15,
+  tetherReel: 0.2,
   tetherHydraulic: 0.5,
   implosion: 1,
   horn: 0.8,
@@ -221,6 +221,13 @@ export class AudioManager {
 
   zenPlayPause() {
     this.zenPaused = !this.zenPaused;
+    this.fadeMusic();
+    this.applyZen();
+  }
+
+  zenPause() {
+    if (this.zenPaused) return;
+    this.zenPaused = true;
     this.fadeMusic();
     this.applyZen();
   }

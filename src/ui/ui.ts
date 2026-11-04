@@ -89,16 +89,16 @@ export class UI {
             <div class="dial-col"><div class="dial air" id="hud-air">${RING}${ICON.air}</div><span class="pct" id="pct-air">100%</span><div class="dial-pop" id="pop-air"></div></div>
             <div class="dial-col"><div class="dial batt" id="hud-batt">${RING}${ICON.bolt}</div><span class="pct" id="pct-batt">100%</span><div class="dial-pop" id="pop-batt"></div></div>
           </div>
-          <div class="seg" id="lamp-seg" data-switch="lamp" role="group" aria-label="Spotlight" hidden>
+          <div class="seg away" id="lamp-seg" data-switch="lamp" role="group" aria-label="Spotlight" hidden>
             <span>Light</span><i class="seg-thumb"></i>
             <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
           </div>
-          <div class="seg" id="sonar-seg" data-switch="sonar" role="group" aria-label="Sonar" hidden>
+          <div class="seg away" id="sonar-seg" data-switch="sonar" role="group" aria-label="Sonar" hidden>
             <span>Sonar</span><i class="seg-thumb"></i>
             <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
           </div>
         </div>
-        <div class="panel zen-player" id="zen-player">
+        <div class="panel zen-player away" id="zen-player">
           <div class="zen-row">
           <div class="zen-bars" id="zen-bars"><i></i><i></i><i></i><i></i><i></i></div>
           <span class="zen-title" id="zen-title">Track 1</span>
@@ -124,7 +124,7 @@ export class UI {
           <button class="round-btn primary" id="btn-dive" data-act="dive" hidden>Dive</button>
         </div>
       </div>
-      <div class="depth-meter" id="depth-meter" hidden>
+      <div class="depth-meter away" id="depth-meter">
         <div class="panel dm-tag" id="dm-current"></div>
         <div class="dm-track" id="dm-track">
           <div class="dm-frame"><div class="dm-scale" id="dm-scale">${this.depthMeterBands()}<div class="dm-warn" id="dm-warn"></div><div class="dm-crush" id="dm-crush"></div><div class="dm-limit" id="dm-limit"></div></div></div>
@@ -300,7 +300,7 @@ export class UI {
     const g = this.game;
     const diving = g.mode === "diving";
     const meter = $(this.root, "#depth-meter");
-    meter.hidden = !diving;
+    meter.classList.toggle("away", !diving);
     if (!diving) {
       this.deepestZone = 0;
       return;
@@ -393,6 +393,9 @@ export class UI {
     const s = g.sub;
     const diving = g.mode === "diving";
     this.updateZen();
+    $(this.root, "#zen-player").classList.toggle("away", !diving);
+    this.root.classList.toggle("ui-docked", !diving);
+    this.root.querySelectorAll(".seg").forEach((seg) => seg.classList.toggle("away", !diving));
 
     this.set("hull", `${s.hull}/${g.maxHull}`, () => {
       const lostTo = this.prevHull > s.hull ? Math.min(this.prevHull, g.maxHull) : 0;

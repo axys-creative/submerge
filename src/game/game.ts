@@ -882,6 +882,7 @@ export class Game {
       this.mode === "docked" && !this.paused && !this.travel && Math.abs(this.input.axis().x) > 0.2,
     );
     this.audio.setMusicOff(!!this.world.def.space);
+    if (this.mode !== "diving") this.audio.zenPause();
     this.audio.setNightMusic(daylight(this.day).night > 0.5);
     this.audio.setCrimson(
       !!this.world.def.space && this.underwater,
