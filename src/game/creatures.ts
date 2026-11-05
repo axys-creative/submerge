@@ -161,7 +161,10 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
       cruise(30, 900, 40, 50, 0.12, 8, 0.1, 0.35);
       break;
     case 'turtle':
-      cruise(34, 500, 14, 28, 0.3, 14, 0.45, 0.6);
+      if (d < 180) {
+        c.heading = dx > 0 ? -1 : 1;
+        steer(c, (-dx / d) * 95, (-dy / d) * 60, 2.5, dt);
+      } else cruise(34, 500, 14, 28, 0.3, 14, 0.45, 0.6);
       break;
     case 'stingray': {
       const flee = d < 220;

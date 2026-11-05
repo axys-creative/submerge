@@ -43,10 +43,7 @@ const KIND_DEPTH: Record<CreatureKind, [number, number]> = {
   bluewhale: [25, 160],
   leviathan: [250, 400],
 };
-/** A trench under each column reaches at least this far below the sea floor, so even a shallow animal has one. */
-const TRENCH_MIN_BELOW = 100;
-/** Space around the animal on either side of its trench, and the narrowest a column is laid out, so the sub fits inside. */
-const TRENCH_PAD = 30;
+/** The narrowest a column is laid out, so the sub fits beside the animals. */
 const MIN_COLUMN_EXTENT = 100;
 const SHALLOW_M = 35;
 const DEEP_M = 200;
@@ -92,7 +89,7 @@ function build() {
   };
   ([[0.7, 0.2, 'small'], [1.1, 0.8, 'medium'], [1.5, 0.2, 'large']] as const).forEach(([size, tint, name]) => add({ label: `Rock (${name})`, deco: { kind: 'rock', size, tint } }));
   ([[0.8, 'short'], [1.1, 'medium'], [1.5, 'tall']] as const).forEach(([size, name]) => add({ label: `Kelp (${name})`, deco: { kind: 'kelp', size, tint: 0.5 } }));
-  [0.1, 0.3, 0.5, 0.7, 0.9].forEach((tint, i) => add({ label: `Coral ${i + 1}`, deco: { kind: 'coral', size: 1.2, tint } }));
+  [0.1, 0.35, 0.6, 0.85].forEach((tint, i) => add({ label: `Coral ${i + 1}`, deco: { kind: 'coral', size: 1.2, tint } }));
   [0.1, 0.5, 0.9].forEach((tint, i) => add({ label: `Starfish ${i + 1}`, deco: { kind: 'starfish', size: 1, tint } }));
   [0.2, 0.8].forEach((tint, i) => add({ label: `Wood plank ${i + 1}`, deco: { kind: 'plank', size: 1.2, tint } }));
   ([[0.9, 0.2, 'single'], [1.2, 0.8, 'double']] as const).forEach(([size, tint, name]) => add({ label: `Hydrothermal vent (${name})`, deco: { kind: 'vent', size, tint } }));
@@ -113,7 +110,6 @@ function build() {
   const rampFrom = x;
   const creatures: CatalogCreature[] = [];
   const columns: { x: number; label: string; zones: string }[] = [];
-  const shafts: { name: string; x: number; width: number; depth: number }[] = [];
   let cursor = rampFrom + RAMP + 500;
   for (const column of CREATURE_COLUMNS) {
     const extent = Math.max(MIN_COLUMN_EXTENT, ...column.map((k) => COLUMN_EXTENT[k] ?? CREATURE_EXTENT[k]));
@@ -123,7 +119,6 @@ function build() {
     const first = DEPTH_ZONES[zoneIndexAt(shallow)].name.replace(' Zone', '');
     const last = DEPTH_ZONES[zoneIndexAt(deep)].name.replace(' Zone', '');
     columns.push({ x: cursor + extent, label, zones: `${first === last ? first : `${first} – ${last}`} Zone` });
-    shafts.push({ name: label, x: cursor + extent, width: extent * 2 + TRENCH_PAD * 2, depth: Math.max(Math.ceil(deep / 50) * 50, DEEP_M + TRENCH_MIN_BELOW) });
     let y = COLUMN_TOP;
     for (const kind of column) {
       if (y > COLUMN_TOP) y += ROW_EXTRA[kind] ?? 0;
@@ -150,7 +145,7 @@ function build() {
     return SHALLOW_M + (DEEP_M - SHALLOW_M) * smooth(u);
   });
   const headerY = Math.min(...creatures.map((c) => c.tagY)) - HEADER_ABOVE;
-  return { width, floor, wrecks, terrain, creatures, columns, shafts, headerY };
+  return { width, floor, wrecks, terrain, creatures, columns, headerY };
 }
 
 /** The test zone's layout: terrain, wrecks and items on a shallow floor beside the ship, then every animal hanging in open water. */

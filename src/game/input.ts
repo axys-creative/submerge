@@ -12,8 +12,8 @@ const KEYMAP: Record<string, Action> = {
   Space: 'dive',
   KeyE: 'action',
   Enter: 'action',
-  KeyJ: 'crankJ',
-  KeyK: 'crankK',
+  KeyU: 'crankJ',
+  KeyI: 'crankK',
   KeyQ: 'drop',
   Slash: 'drop',
   Period: 'hold',
@@ -26,8 +26,6 @@ const KEYMAP: Record<string, Action> = {
   KeyP: 'menu',
 };
 
-const CRANK_ALIAS: Record<string, Action> = { KeyE: 'crankJ', KeyR: 'crankK' };
-
 export class Input {
   /** Analog stick from the touch joystick, each axis -1..1. */
   stick = { x: 0, y: 0 };
@@ -39,15 +37,12 @@ export class Input {
   constructor() {
     addEventListener('keydown', (e) => {
       const a = KEYMAP[e.code];
-      const crank = CRANK_ALIAS[e.code];
-      if (!a && !crank) return;
+      if (!a) return;
       const t = e.target;
       if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
       if (t instanceof HTMLButtonElement && (e.code === 'Enter' || e.code === 'Space')) return;
       e.preventDefault();
-      if (crank && !e.repeat) this.tap(crank);
       if (e.code === 'KeyE' && !e.repeat) this.tap('hold');
-      if (!a) return;
       if (!e.repeat) this.tap(a);
       this.held.add(a);
     });

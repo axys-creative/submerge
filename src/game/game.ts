@@ -685,19 +685,15 @@ export class Game {
   }
 
   /** Price of the next purchase of an item, or null when it is fully bought. */
-  gearCost(id: GearId) {
-    if (id === "candles")
-      return this.save.candles >= GEAR.candles.max ? null : GEAR.candles.costs[this.save.candles];
+  gearCost(id: Exclude<GearId, "candles">) {
     return this.save[id] ? null : GEAR[id].cost;
   }
 
-  buyGear(id: GearId) {
+  buyGear(id: Exclude<GearId, "candles">) {
     const cost = this.gearCost(id);
     if (cost === null || this.save.money < cost) return false;
     this.save.money -= cost;
-    if (id === "candles") this.save.candles++;
-    else this.save[id] = true;
-    this.candlesLeft = this.save.candles;
+    this.save[id] = true;
     this.audio.play("chime1");
     this.persist();
     return true;
@@ -1337,7 +1333,7 @@ export class Game {
         this.ui.toast(
           this.ui.touch
             ? "Battery empty! Tap the two crank buttons back and forth"
-            : "Battery empty! Press E and R back and forth to hand-crank",
+            : "Battery empty! Press U and I back and forth to hand-crank",
         );
       }
     }
@@ -1353,13 +1349,11 @@ export class Game {
     } else {
       if (this.world.blocked(px, s.x, s.y, this.subHalf, this.subBelow)) {
         this.bump(Math.abs(s.vx));
-        this.kickUpDust(
-          px + Math.sign(s.vx) * this.subHalf,
-          s.y,
-          -Math.sign(s.vx),
-          0,
-          Math.abs(s.vx),
-        );
+        const cx = px + Math.sign(s.vx) * this.subHalf;
+        const fy = this.world.floorAt(cx);
+        const cy = fy > s.y - this.subAbove && fy < s.y + this.subBelow ? fy - 2 : s.y;
+        const [nx, ny] = this.world.surfaceNormal(cx, cy, [-Math.sign(s.vx), 0]);
+        this.kickUpDust(cx, cy, nx, ny, Math.abs(s.vx));
         s.x = px;
         s.vx = 0;
       }
@@ -1380,7 +1374,9 @@ export class Game {
           s.y = clearAt(s.x);
           if (s.vy > 0) {
             this.bump(s.vy);
-            this.kickUpDust(s.x, s.y + this.subBelow, 0, -1, s.vy);
+            const fy = s.y + this.subBelow;
+            const [nx, ny] = this.world.surfaceNormal(s.x, fy - 2, [0, -1]);
+            this.kickUpDust(s.x, fy, nx, ny, s.vy);
             s.vy *= -0.2;
           }
           s.vx *= 0.97;
@@ -1425,7 +1421,11 @@ export class Game {
     else if (electrolysis) {
       s.battery = Math.max(0, s.battery - GEAR.electrolysis.drain * dt);
       s.oxygen = Math.min(this.maxOxygen, s.oxygen + GEAR.electrolysis.rate * dt);
-    } else s.oxygen = Math.max(0, s.oxygen - dt * (this.save.scrubbers ? GEAR.scrubbers.drain : 1));
+    } else {
+      const scrubbing = this.save.scrubbers && s.battery > 0;
+      if (scrubbing) s.battery = Math.max(0, s.battery - GEAR.scrubbers.batteryDrain * dt);
+      s.oxygen = Math.max(0, s.oxygen - dt * (scrubbing ? GEAR.scrubbers.drain : 1));
+    }
     const needsCandle =
       s.y / PX_PER_M >= CANDLE_MIN_DEPTH
         ? s.oxygen < this.maxOxygen * CANDLE_AIR
@@ -1462,8 +1462,8 @@ export class Game {
       "rudders",
       s.battery <= 0,
       this.ui.touch
-        ? "Battery dead! Use the rudders: tap the E and R buttons"
-        : "Battery dead! Use the rudders with E and R (or J and K)",
+        ? "Battery dead! Use the rudders: tap the U and I buttons"
+        : "Battery dead! Use the rudders with U and I",
       "#E5484D",
     );
     const metersLeft = this.depthRating - depth;
@@ -1548,9 +1548,13 @@ export class Game {
       }
     }
 
-    if (this.claw.t < 0 && this.input.pressed("dive")) this.fireClaw(a);
+    if (this.claw.t < 0 && this.input.pressed("dive")) {
+      if (s.battery > 0) this.fireClaw(a);
+      else this.denyClaw();
+    }
     this.updateClaw(dt);
 
+    this.world.sinkTrash(dt);
     for (const it of this.world.items) {
       if (!it.alive) continue;
       const r = SUB_RADIUS + ITEMS[it.kind].size * 0.5;
@@ -1602,6 +1606,14 @@ export class Game {
       existing.text = text;
       existing.color = color;
     } else this.speech.unshift({ text, color, life: Infinity, age: 0, key });
+  }
+
+  private denyClaw() {
+    this.audio.play("invalid");
+    if (this.t - this.fullNoticeAt > 4) {
+      this.fullNoticeAt = this.t;
+      this.say("The battery's dead, so the claw won't move!", "#F7C948");
+    }
   }
 
   private fireClaw(aim: { x: number; y: number }) {
@@ -1672,8 +1684,8 @@ export class Game {
       const side = (Math.random() - 0.5) * 200;
       const life = (1.1 + Math.random() * 1.2) * 3;
       this.dust.push({
-        x: x + (Math.random() - 0.5) * 70 * Math.abs(ny),
-        y: y + (Math.random() - 0.5) * 70 * Math.abs(nx),
+        x: x - ny * (Math.random() - 0.5) * 70,
+        y: y + nx * (Math.random() - 0.5) * 70,
         vx: nx * away - ny * side,
         vy: ny * away + nx * side,
         r: 1.5 + Math.random() * 3.5,
@@ -1701,20 +1713,18 @@ export class Game {
     s.y = py;
     if (w.caveHit(nx, py, half, above, below)) {
       this.bump(Math.abs(s.vx));
-      this.kickUpDust(
-        px + Math.sign(s.vx) * half,
-        s.y,
-        -Math.sign(s.vx),
-        0,
-        Math.abs(s.vx),
-      );
+      const cx = px + Math.sign(s.vx) * half;
+      const [nx, ny] = w.surfaceNormal(cx, s.y, [-Math.sign(s.vx), 0]);
+      this.kickUpDust(cx, s.y, nx, ny, Math.abs(s.vx));
       s.x = px;
       s.vx = 0;
     }
     s.y = ny;
     if (w.caveHit(s.x, ny, half, above, below)) {
       this.bump(Math.abs(s.vy));
-      this.kickUpDust(s.x, py + Math.sign(s.vy) * (s.vy > 0 ? below : above), 0, -Math.sign(s.vy), Math.abs(s.vy));
+      const cy = py + Math.sign(s.vy) * (s.vy > 0 ? below : above);
+      const [nx, ny] = w.surfaceNormal(s.x, cy, [0, -Math.sign(s.vy)]);
+      this.kickUpDust(s.x, cy, nx, ny, Math.abs(s.vy));
       s.y = py;
       s.vy *= -0.2;
     }
@@ -2044,7 +2054,7 @@ export class Game {
   private enterZone(zone: number) {
     const kept = (this.save.trash[zone] ?? []).filter(() => Math.random() < TRASH_KEEP);
     this.save.trash[zone] = kept;
-    return new World(zone, kept);
+    return new World(zone, kept, this.save.caveLoot[zone] ?? []);
   }
 
   /** The zone's clean-up progress, or null when it has no trash. */
@@ -2068,6 +2078,11 @@ export class Game {
     this.audio.play("chime1");
     this.say("Achievement: Squeaky Clean!", "#FFD95A");
     this.ui.toast(`Achievement unlocked: Squeaky Clean · ${ZONES[zone].name}`);
+    if (zone < GEAR.candles.max && this.save.candles < zone + 1) {
+      this.save.candles = zone + 1;
+      this.candlesLeft = this.save.candles;
+      this.ui.toast(`Unlocked: oxygen candle (carry ${this.save.candles} of ${GEAR.candles.max})`);
+    }
     this.persist();
   }
 
@@ -2087,8 +2102,9 @@ export class Game {
     it.alive = false;
     this.audio.play(def.trash ? "chime4" : def.value <= LOW_VALUE ? "chime3" : "chime2");
     it.respawnAt =
-      it.trash !== undefined ? Infinity : this.t + (it.wreck >= 0 ? 240 : 60 + Math.random() * 60);
+      it.trash !== undefined || it.cave !== undefined ? Infinity : this.t + (it.wreck >= 0 ? 240 : 60 + Math.random() * 60);
     if (it.trash !== undefined) this.noteTrash(it.trash);
+    if (it.cave !== undefined) (this.save.caveLoot[this.save.zone] ??= []).push(it.cave);
     this.save.cargo[it.kind] = (this.save.cargo[it.kind] ?? 0) + 1;
     this.popup(
       it.x,

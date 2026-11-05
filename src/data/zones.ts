@@ -76,6 +76,8 @@ export interface ZoneDef {
   portalStone?: { x: number };
   /** An airless moon: black sky with a few stars, no sun, moon, clouds or day and night. */
   space?: boolean;
+  /** How many times wider than the original design this zone's islands are; defaults to `ISLAND_WIDTH`. */
+  islandWidth?: number;
   /** Tiny hazy islands on the horizon, purely decorative. */
   farScenery?: boolean;
   /** Where the far islands sit (world x when the camera is there); without it they repeat across the zone. */
@@ -85,9 +87,8 @@ export interface ZoneDef {
   /** The island shop here also sells the dive weights. */
   sellsWeights?: boolean;
   kelp: number;
-  coral: number;
-  /** Dense patches of vibrant coral on the sea floor. */
-  reefs?: number;
+  /** Coral clusters on the shallow sea floor. */
+  coral?: number;
   rocks: number;
   /** Skeleton pieces (skulls, rib cages, bones, whole skeletons) scattered on the sea floor. */
   bones?: number;
@@ -202,8 +203,7 @@ export const ZONES: ZoneDef[] = [
       ],
     }],
     kelp: 60,
-    coral: 40,
-    reefs: 5,
+    coral: 30,
     rocks: 50,
     meadows: [{ x0: 6700, x1: 8000, kelp: 20 }],
   },
@@ -298,8 +298,7 @@ export const ZONES: ZoneDef[] = [
       },
     ],
     kelp: 30,
-    coral: 90,
-    reefs: 14,
+    coral: 70,
     rocks: 40,
   },
   {
@@ -359,11 +358,11 @@ export const ZONES: ZoneDef[] = [
     ],
     kelp: 140,
     coral: 25,
-    reefs: 2,
     rocks: 60,
   },
   {
     name: 'Midnight Trench',
+    islandWidth: 1,
     diveZoom: 0.6,
     map: { x: 175, y: 150 },
     width: 11000,
@@ -394,6 +393,7 @@ export const ZONES: ZoneDef[] = [
   },
   {
     name: 'Moana Deep',
+    islandWidth: 1,
     sellsWeights: true,
     diveZoom: 0.5,
     map: { x: 255, y: 110 },
@@ -440,7 +440,6 @@ export const ZONES: ZoneDef[] = [
       ],
     }],
     kelp: 0,
-    coral: 0,
     rocks: 60,
   },
   {
@@ -504,7 +503,6 @@ export const ZONES: ZoneDef[] = [
     islands: [],
     wrecks: [],
     kelp: 0,
-    coral: 0,
     rocks: 70,
   },
   {
@@ -523,9 +521,7 @@ export const ZONES: ZoneDef[] = [
     creatures: [],
     islands: [],
     wrecks: CATALOG.wrecks,
-    shafts: CATALOG.shafts,
     kelp: 0,
-    coral: 0,
     rocks: 0,
   },
 ];

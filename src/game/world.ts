@@ -16,13 +16,13 @@ const MIN_FLOOR = 15 * PX_PER_M;
 const FLOOR_SOFTNESS = 25;
 
 /** Closest two surface items may spawn to each other, in px. */
-const ITEM_SPACING = 160;
-/** Closest two coral pieces may sit, and closest an item may rest to coral, so loot never hides in a crowd of lookalikes. */
 const CORAL_SPACING = 150;
+const ITEM_SPACING = 160;
 const TRASH_SPACING = 140;
+const FLOATING_TRASH: ItemKind[] = ['bottle', 'boot', 'can'];
+const TRASH_SINK_SPEED = 6;
 const WRECK_TRASH_SPACING = 70;
 const FREIGHTER_TRASH = 9;
-const ITEM_CORAL_GAP = 120;
 const NAV_CELL = 120;
 const NAV_CLEAR = 130;
 
@@ -75,6 +75,10 @@ export interface ItemInst {
   spot?: { x: number; y: number };
   /** Which of the zone's fixed trash spots this is, for junk that never respawns. */
   trash?: number;
+  /** Which of the zone's cave loot slots this is; once taken it never comes back. */
+  cave?: number;
+  /** Junk drifting down through open water until it lands on the floor. */
+  sinking?: boolean;
 }
 
 /** One round piece of tunnel; a cave is the union of many overlapping blobs. */
@@ -175,7 +179,7 @@ export interface Deco {
   size: number;
   phase: number;
   tint: number;
-  /** Sideways bend in px from the sub brushing past (kelp), the tilt in radians of bones and starfish, or the floor's slope for coral; and its speed. */
+  /** Sideways bend in px from the sub brushing past (kelp), the tilt in radians of bones and starfish, or the floor's slope for coral and planks; and its speed. */
   push: number;
   pushV: number;
 }
@@ -231,7 +235,7 @@ export class World {
   /** How many fixed trash spots this zone ended up with. */
   trashTotal = 0;
 
-  constructor(readonly index: number, cleared: number[] = []) {
+  constructor(readonly index: number, cleared: number[] = [], caveTaken: number[] = []) {
     this.def = ZONES[index];
     this.width = this.def.width;
     // Terrain and scenery use a fixed seed so a zone always looks the same; loot and creatures vary.
@@ -260,7 +264,7 @@ export class World {
       this.placeItem(it);
       this.items.push(it);
     }
-    this.placeCaveLoot();
+    this.placeCaveLoot(caveTaken);
     this.def.wrecks.forEach((w, i) => {
       this.wreckFx.push(createWreckFx(w.kind));
       const it = this.blankItem();
@@ -556,13 +560,16 @@ export class World {
     });
   }
 
-  private placeCaveLoot() {
+  private placeCaveLoot(taken: number[]) {
     const r = this.rng;
+    let slot = 0;
     for (const p of this.passages) {
       if (!p.loot) continue;
       const low = p.pts.reduce((a, b) => (b[1] > a[1] ? b : a));
       for (let i = 0; i < p.loot; i++) {
         const it = this.blankItem();
+        it.cave = slot++;
+        if (taken.includes(it.cave)) continue;
         const kind = p.kinds?.[i] ?? this.pickKind(Math.min(low[1], 890), true, true);
         if (!kind) continue;
         const width = p.pts.length === 1 ? p.r : p.r * TUNNEL_WIDEN;
@@ -606,6 +613,23 @@ export class World {
     return y;
   }
 
+  /** Unit vector pointing out of the rock at (x, y), found by sampling around it; `fallback` is used when no open side is found. */
+  surfaceNormal(x: number, y: number, fallback: [number, number]): [number, number] {
+    let nx = 0;
+    let ny = 0;
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const cx = Math.cos(a);
+      const cy = Math.sin(a);
+      if (!this.caveSolid(x + cx * 18, y + cy * 18)) {
+        nx += cx;
+        ny += cy;
+      }
+    }
+    const m = Math.hypot(nx, ny);
+    return m < 0.5 ? fallback : [nx / m, ny / m];
+  }
+
   /** True when moving from x0 to x1 means climbing ground steeper than MAX_SLOPE at height y. */
   blocked(x0: number, x1: number, y: number, halfWidth: number, margin: number): boolean {
     const to = this.clearFloorAt(x1, halfWidth) - margin;
@@ -635,7 +659,7 @@ export class World {
     return this.deco.some((d) => d.kind === 'coral' && Math.abs(d.x - x) < gap);
   }
 
-  /** Rise of the sea floor per px sideways at x, limited so coral never leans past a steep face. */
+  /** Rise of the sea floor per px sideways at x, limited so planks never lean past a steep face. */
   private floorSlope(x: number) {
     return clamp((this.floorAt(x + 30) - this.floorAt(x - 30)) / 60, -0.8, 0.8);
   }
@@ -653,7 +677,7 @@ export class World {
     };
     add('rock', this.def.rocks, Infinity);
     add('kelp', this.def.kelp, 260);
-    add('coral', this.def.coral, 170);
+    add('coral', this.def.coral ?? 0, 170);
     this.def.meadows?.forEach((m, i) => {
       const g = mulberry32(this.index * 4001 + i * 131 + 77);
       const step = (m.x1 - m.x0) / m.kelp;
@@ -662,16 +686,6 @@ export class World {
         this.deco.push({ kind: 'kelp', x, y: this.floorAt(x), size: rand(g, 0.7, 1.4), phase: g() * 10, tint: g(), push: 0, pushV: 0 });
       }
     });
-    for (let i = 0; i < scaled(this.def.reefs ?? 0); i++) {
-      const cx = rand(r, 400, this.width - 400);
-      const n = 5 + Math.floor(r() * 5);
-      for (let j = 0; j < n; j++) {
-        const x = cx + rand(r, -700, 700);
-        const y = this.floorAt(x);
-        if (y / PX_PER_M > 170 || this.atMouth(x, y) || this.coralNear(x, CORAL_SPACING) || Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 30) continue;
-        this.deco.push({ kind: 'coral', x, y, size: rand(r, 0.8, 1.9), phase: r() * 10, tint: r(), push: this.floorSlope(x), pushV: 0 });
-      }
-    }
     if (this.abyss) {
       const { x, y } = this.abyss.relic;
       let ground = y;
@@ -714,10 +728,10 @@ export class World {
       lay(x, (v) => floorBelow(v, g - 30));
       placed++;
     }
-    const WOOD: Record<string, [number, number, number]> = { sloop: [3, -170, 170], galleon: [5, -420, 420], containers: [4, -330, 300], freighter: [6, 0, 2800] };
+    const WOOD: Record<string, [number, number, number]> = { sloop: [3, -212, 212], galleon: [5, -420, 420], containers: [4, -330, 300], freighter: [6, 0, 2800] };
     for (const w of this.def.wrecks) {
       const [n, from, to] = WOOD[w.kind];
-      const lootX = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 110);
+      const lootX = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 138);
       for (let i = 0; i < n; i++) {
         let x = w.x + rand(r, from, to);
         for (let tries = 0; tries < 30 && Math.abs(x - lootX) < 100; tries++) x = w.x + rand(r, from, to);
@@ -756,7 +770,7 @@ export class World {
         const x = rand(r, 250, this.width - 250);
         const floor = this.floorAt(x);
         if (Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 20) continue;
-        if (this.atMouth(x, floor) || this.coralNear(x, ITEM_CORAL_GAP)) continue;
+        if (this.atMouth(x, floor)) continue;
         if (xs.some((o) => Math.abs(o - x) < TRASH_SPACING)) continue;
         let kind = kinds[Math.floor(r() * kinds.length)];
         if (kind === 'tire' && this.def.meadows?.some((m) => x >= m.x0 && x <= m.x1) && meadowTires++) {
@@ -766,7 +780,7 @@ export class World {
         const it = this.blankItem();
         it.kind = kind;
         it.x = x;
-        it.y = kind === 'bottle' && r() < 0.25 ? rand(r, 120, floor - 80) : floor - ITEMS[kind].size * 0.45;
+        this.dropTrash(it, floor, r);
         it.trash = this.trashTotal++;
         it.alive = !cleared.includes(it.trash);
         it.respawnAt = Infinity;
@@ -785,7 +799,7 @@ export class World {
         const it = this.blankItem();
         it.kind = kind;
         it.x = x;
-        it.y = kind === 'bottle' && r() < 0.25 ? rand(r, 120, floor - 80) : floor - ITEMS[kind].size * 0.45;
+        this.dropTrash(it, floor, r);
         it.trash = this.trashTotal++;
         it.alive = !cleared.includes(it.trash);
         it.respawnAt = Infinity;
@@ -793,6 +807,24 @@ export class World {
         xs.push(x);
         placed++;
       }
+    }
+  }
+
+  private dropTrash(it: ItemInst, floor: number, r: () => number) {
+    const rest = floor - ITEMS[it.kind].size * 0.45;
+    if (FLOATING_TRASH.includes(it.kind) && r() < 0.25) {
+      it.y = rand(r, 120, floor - 80);
+      it.sinking = true;
+    } else it.y = rest;
+  }
+
+  /** Lets floating junk drift down, landing on the floor. */
+  sinkTrash(dt: number) {
+    for (const it of this.items) {
+      if (!it.sinking || !it.alive) continue;
+      const rest = this.floorAt(it.x) - ITEMS[it.kind].size * 0.45;
+      it.y = Math.min(rest, it.y + TRASH_SINK_SPEED * dt);
+      if (it.y >= rest) it.sinking = false;
     }
   }
 
@@ -813,8 +845,7 @@ export class World {
       if (Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 20) continue;
       if (this.atMouth(x, floor)) continue;
       if (this.items.some((o) => o !== it && o.alive && Math.abs(o.x - x) < ITEM_SPACING)) continue;
-      if (this.coralNear(x, ITEM_CORAL_GAP)) continue;
-      const kind = this.pickKind(floor / PX_PER_M);
+            const kind = this.pickKind(floor / PX_PER_M);
       if (!kind) continue;
       it.kind = kind;
       it.x = x;
@@ -829,7 +860,7 @@ export class World {
   /** Puts a wreck's loot back at its spot: a chest, or a sloop's coins at its bow. */
   private placeChest(it: ItemInst) {
     const w = this.def.wrecks[it.wreck];
-    it.x = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 110);
+    it.x = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 138);
     it.y = this.floorAt(it.x) - (it.kind === 'coin' ? ITEMS.coin.size * 0.45 : 16);
     it.alive = true;
   }

@@ -2,6 +2,7 @@ import { mixColor, mulberry32, rrect } from '../util';
 import { ISLAND_WIDTH } from '../config';
 import { drawTankShape, drawShipPropeller, logo } from './sub';
 import type { SkinId } from '../data/skins';
+import { drawCoral } from './coral';
 import { drawBones, type BoneKind } from './bones';
 import { drawLostSub, LOST_WRECK_SCALE } from './lostSub';
 import { CRANE_TIP, SHIP_LAMPS } from './shipMounts';
@@ -142,7 +143,7 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   const lit = night > 0.3;
   const glass = lit ? '#FFD66B' : GLASS;
   const shine = lit ? 0.55 : 0.9;
-  for (const x of [-18, 8, 34]) {
+  for (const x of [-25, 1, 27]) {
     ctx.fillStyle = cabin.hull;
     rrect(ctx, x - 1.5, -69.5, 25, 15, 6);
     ctx.fill();
@@ -154,15 +155,19 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
   }
   ctx.beginPath();
   ctx.moveTo(62, -68);
-  ctx.lineTo(80, -54);
-  ctx.lineTo(62, -54);
+  ctx.lineTo(80, -56);
+  ctx.lineTo(62, -56);
   ctx.closePath();
   fillRounded(ctx, glass, 3);
   ctx.strokeStyle = `rgba(255,255,255,${shine})`;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(63.5, -58);
-  ctx.quadraticCurveTo(63.5, -63.5, 68, -64.5);
+  ctx.moveTo(65, -59);
+  ctx.quadraticCurveTo(65, -62.4, 68, -60.4);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(70.5, -58.7);
+  ctx.lineTo(72.5, -57.4);
   ctx.stroke();
 
   for (const l of SHIP_LAMPS) {
@@ -326,9 +331,9 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
 }
 
 /** Where the dock's slanted poles meet the water, as offsets from the island center; they run on down into the underwater mountain. */
-export const DOCK_POLES = [0.5, 0.7, 0.9].map((f) => 250 * ISLAND_WIDTH - 100 + 250 * f + 5);
+export const dockPoles = (w: number) => [0.5, 0.7, 0.9].map((f) => 250 * w - 100 + 250 * f + 5);
 
-export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: string, night = 0) {
+export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: string, night = 0, width = ISLAND_WIDTH) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   const d = (c: string) => (night > 0 ? mixColor(c, '#0B1430', night * 0.55) : c);
@@ -346,7 +351,7 @@ export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: strin
   };
 
   ctx.save();
-  ctx.scale(ISLAND_WIDTH, 1);
+  ctx.scale(width, 1);
   ctx.fillStyle = d('#F5D58A');
   ctx.beginPath();
   ctx.moveTo(-250, 6);
@@ -363,14 +368,18 @@ export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: strin
   ctx.fill();
   ctx.restore();
 
-  const reach = 250 * ISLAND_WIDTH;
+  const reach = 250 * width;
   const deckL = reach - 100;
   const deckR = reach + 150;
   const deckY = -9;
   ctx.fillStyle = d('#6B4A2B');
-  for (let x = deckL + 14; x < deckR; x += 46) {
-    rrect(ctx, x, deckY + 4, 7, 40, 2);
-    ctx.fill();
+  ctx.strokeStyle = d('#6B4A2B');
+  ctx.lineWidth = 9;
+  for (const off of dockPoles(width)) {
+    ctx.beginPath();
+    ctx.moveTo(off, -4);
+    ctx.lineTo(off - 8, 6);
+    ctx.stroke();
   }
   ctx.fillStyle = d('#B98A55');
   rrect(ctx, deckL, deckY, deckR - deckL, 7, 2);
@@ -397,7 +406,7 @@ export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: strin
   rrect(ctx, deckR - 9, deckY - 36, 9, 10, 3);
   ctx.fill();
 
-  const spread = 170 * (ISLAND_WIDTH - 1);
+  const spread = 170 * (width - 1);
   palm(ctx, -120 - spread, -44, 1, t, d);
   palm(ctx, 150 + spread, -34, -0.8, t + 1, d);
   if (spread) {
@@ -770,7 +779,7 @@ export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleo
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.rotate(-0.12);
-  if (kind === 'galleon') ctx.scale(3, 3);
+  ctx.scale(kind === 'galleon' ? 3 : 1.25, kind === 'galleon' ? 3 : 1.25);
   const hull = () => {
     ctx.beginPath();
     ctx.moveTo(-110, -16);
@@ -897,13 +906,25 @@ export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleo
     ctx.lineTo(70, -80);
     ctx.stroke();
     ctx.fillStyle = 'rgba(231,220,194,0.7)';
+    const swing = fx?.sail?.push ?? 0;
+    const at = (x: number, y: number): [number, number] => {
+      const k = Math.pow(Math.max(0, (y + 88) / 50), 1.3);
+      return [x + swing * k, y - Math.abs(swing) * 0.12 * k];
+    };
+    const path: [string, ...[number, number][]][] = [
+      ['m', at(-20, -82)],
+      ['l', at(20, -88)],
+      ['q', at(26, -60), at(14, -40)],
+      ['l', at(4, -50)],
+      ['l', at(-6, -38)],
+      ['q', at(-24, -60), at(-20, -82)],
+    ];
     ctx.beginPath();
-    ctx.moveTo(-20, -82);
-    ctx.lineTo(20, -88);
-    ctx.quadraticCurveTo(26, -60, 14, -40);
-    ctx.lineTo(4, -50);
-    ctx.lineTo(-6, -38);
-    ctx.quadraticCurveTo(-24, -60, -20, -82);
+    for (const [op, a, b] of path) {
+      if (op === 'm') ctx.moveTo(a[0], a[1]);
+      else if (op === 'l') ctx.lineTo(a[0], a[1]);
+      else ctx.quadraticCurveTo(a[0], a[1], b![0], b![1]);
+    }
     ctx.fill();
   }
   ctx.restore();
@@ -1026,6 +1047,11 @@ export interface WreckFx {
   glass: FallenGlass[];
   /** Sideways swing of each deck crane's hook cable. */
   cranes: { push: number; pushV: number; drive: number; held: boolean }[];
+  /** How the wreck is drawn: its tilt and scale, so the sub's position can be mapped into its space. */
+  tilt: number;
+  scale: number;
+  /** Sideways swing of the galleon's torn sail. */
+  sail?: { push: number; pushV: number; drive: number; held: boolean };
 }
 
 function drawShard(ctx: CanvasRenderingContext2D, sh: GlassShard) {
@@ -1453,8 +1479,6 @@ function rockPath(ctx: CanvasRenderingContext2D, R: number, tint: number) {
   return false;
 }
 
-const CORAL = ['#FF5C8A', '#FF8A3D', '#FFC83D', '#B36BFF', '#3DD6C6', '#FF6F91', '#5CC8FF', '#9BE564', '#FF4D6D', '#F7A8FF'];
-
 const STARFISH = ['#F28C38', '#E5484D', '#F58FB0', '#8E6CCF', '#F7C948', '#D9A066', '#4F8FD8', '#FF6F61'];
 const STAR_ARMS = [5, 5, 5, 5, 6, 7, 9, 12];
 const frac = (v: number) => v - Math.floor(v);
@@ -1616,8 +1640,12 @@ export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: nu
     drawPlank(ctx, size, tint, push);
     return;
   }
+  if (kind === 'coral') {
+    drawCoral(ctx, size, tint, t, push);
+    return;
+  }
   if (kind === 'stone') kind = 'rock';
-  if (kind !== 'kelp' && kind !== 'coral' && kind !== 'rock') {
+  if (kind !== 'kelp' && kind !== 'rock') {
     drawBones(ctx, kind, size, tint, push);
     return;
   }
@@ -1660,109 +1688,5 @@ export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: nu
       ctx.ellipse(x + Math.cos(angle) * 10, y + Math.sin(angle) * 10, 10, 4, angle, 0, Math.PI * 2);
       ctx.fill();
     }
-  } else {
-    const c = CORAL[Math.floor(tint * CORAL.length) % CORAL.length];
-    const light = mixColor(c, '#FFFFFF', 0.4);
-    const dark = mixColor(c, '#3A1030', 0.35);
-    const type = frac(tint * 17.3);
-    ctx.save();
-    ctx.strokeStyle = c;
-    ctx.fillStyle = c;
-    if (type < 0.35) {
-      const n = 4 + Math.floor(frac(tint * 5.1) * 4);
-      ctx.lineWidth = 7 * size;
-      for (let i = 0; i < n; i++) {
-        const x = (i - (n - 1) / 2) * 11 * size;
-        const y = -(24 + 22 * frac(tint * (i + 3) * 13.7)) * size;
-        ctx.strokeStyle = c;
-        ctx.beginPath();
-        ctx.moveTo(0, 4);
-        ctx.quadraticCurveTo(x * 0.3, y * 0.5, x, y);
-        ctx.stroke();
-        if (y < -36 * size) {
-          ctx.lineWidth = 4.5 * size;
-          ctx.beginPath();
-          ctx.moveTo(x * 0.6, y * 0.55);
-          ctx.lineTo(x + 9 * size * (i % 2 ? 1 : -1), y - 8 * size);
-          ctx.stroke();
-          ctx.lineWidth = 7 * size;
-        }
-        ctx.fillStyle = light;
-        ctx.beginPath();
-        ctx.arc(x, y, 5 * size, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else if (type < 0.6) {
-      const R = 36 * size;
-      const sway = Math.sin(t * 1.2 + tint * 9) * 0.05;
-      ctx.lineWidth = 4 * size;
-      ctx.beginPath();
-      ctx.moveTo(0, 4);
-      ctx.lineTo(0, -10 * size);
-      ctx.stroke();
-      ctx.translate(0, -10 * size);
-      ctx.globalAlpha = 0.35;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, R, Math.PI * 1.15 + sway, Math.PI * 1.85 + sway);
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 2.2 * size;
-      for (let i = 0; i < 9; i++) {
-        const a = Math.PI * (1.15 + (i / 8) * 0.7) + sway;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R);
-        ctx.stroke();
-      }
-      ctx.strokeStyle = light;
-      ctx.lineWidth = 1.6 * size;
-      for (const f of [0.5, 0.75, 1]) {
-        ctx.beginPath();
-        ctx.arc(0, 0, R * f, Math.PI * 1.15 + sway, Math.PI * 1.85 + sway);
-        ctx.stroke();
-      }
-    } else if (type < 0.8) {
-      const rx = 24 * size;
-      const ry = 18 * size;
-      ctx.beginPath();
-      ctx.ellipse(0, 4, rx, ry, 0, Math.PI, 0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = dark;
-      ctx.lineWidth = 1.8 * size;
-      for (let i = 0; i < 4; i++) {
-        const y = 2 - i * 4.5 * size;
-        const w = rx * (1 - i * 0.2) * 0.86;
-        ctx.beginPath();
-        ctx.moveTo(-w, y);
-        for (let k = 1; k <= 6; k++) ctx.quadraticCurveTo(-w + ((k - 0.5) * 2 * w) / 6, y + (k % 2 ? -3 : 3) * size, -w + (k * 2 * w) / 6, y);
-        ctx.stroke();
-      }
-      ctx.fillStyle = 'rgba(255,255,255,0.22)';
-      ctx.beginPath();
-      ctx.ellipse(-rx * 0.35, -ry * 0.55, rx * 0.3, ry * 0.18, -0.4, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      const n = 4 + Math.floor(frac(tint * 9.3) * 2);
-      for (let i = 0; i < n; i++) {
-        const x = (i - (n - 1) / 2) * 11 * size;
-        const h = (22 + 20 * frac(tint * (i + 2) * 19.1)) * size;
-        const w = 8 * size;
-        const base = 4 + push * x + Math.abs(push) * w * 0.5 + 2;
-        ctx.fillStyle = c;
-        rrect(ctx, x - w / 2, base - h, w, h, [w / 2, w / 2, 0, 0]);
-        ctx.fill();
-        ctx.fillStyle = light;
-        rrect(ctx, x - w / 2 + 1.5 * size, base - h + 3 * size, 2 * size, h - 6 * size, 1);
-        ctx.fill();
-        ctx.fillStyle = dark;
-        ctx.beginPath();
-        ctx.ellipse(x, base - h + 2.5 * size, w * 0.32, w * 0.22, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    ctx.restore();
   }
 }

@@ -209,19 +209,15 @@ const SCRUBBER_DRAIN = 0.65;
 
 export type GearId = "candles" | "scrubbers" | "electrolysis";
 
-/** Air gear sold in the island shops from `firstZone` (0-based) onward. */
+/** Air gear sold in the island shops from `firstZone` (0-based) onward; candles are instead unlocked by cleaning up zones 1 to 3. */
 export const GEAR = {
   candles: {
     name: "Oxygen Candles",
-    /** Price of carrying 1, 2 and 3 candles. */
-    costs: [150, 300, 600],
-    cost: 150,
     max: 3,
-    firstZone: 1,
     /** Seconds of air one candle adds. */
     seconds: 20,
     blurb:
-      "Chemical candles that burn out extra air. One lights itself when your air is nearly gone. Each upgrade carries one more, and docking restocks them all.",
+      "Chemical candles that burn out extra air. One lights itself when your air is nearly gone. Cleaning up the trash in each of the first three zones lets you carry one more, and docking restocks them all.",
   },
   scrubbers: {
     name: "CO₂ Scrubbers",
@@ -229,7 +225,9 @@ export const GEAR = {
     firstZone: 2,
     /** Fraction of the normal air use while they run. */
     drain: SCRUBBER_DRAIN,
-    blurb: `Filters out the carbon dioxide that makes stale air toxic, so your tank lasts about ${Math.round((1 / SCRUBBER_DRAIN - 1) * 100)}% longer.`,
+    /** Battery spent per second while they run; with a dead battery they stop. */
+    batteryDrain: 3,
+    blurb: `Filters out the carbon dioxide that makes stale air toxic, so your tank lasts about ${Math.round((1 / SCRUBBER_DRAIN - 1) * 100)}% longer. They run on the battery, and stop when it is empty.`,
   },
   electrolysis: {
     name: "Electrolysis Unit",

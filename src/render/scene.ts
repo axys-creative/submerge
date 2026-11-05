@@ -5,7 +5,7 @@ import { ITEMS } from '../data/items';
 import { CATALOG } from '../data/catalog';
 import { buoyLabel, routesFrom, PORTALS } from '../data/routes';
 import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, drawGlassCracks, runningLights, sternStretch, anchorFor, lampFor, challengerBoomTips, challengerViewport, CAPSULE_SIDE_VIEWPORT, COCKPIT, REAR_LAMP } from '../art/sub';
-import { drawShip, drawIsland, DOCK_POLES, drawCloud, cloudShape, drawBuoy, drawPortal, drawPortalStone, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
+import { drawShip, drawIsland, dockPoles, drawCloud, cloudShape, drawBuoy, drawPortal, drawPortalStone, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
 import { BACKGROUND_KINDS, CREATURE_EXTENT } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
@@ -353,10 +353,10 @@ export function renderScene(g: Game) {
   }
 
   for (const isl of def.islands) {
-    if (!inView(isl.x, 300 * ISLAND_WIDTH)) continue;
+    if (!inView(isl.x, 250 * (def.islandWidth ?? ISLAND_WIDTH) + 250)) continue;
     ctx.save();
     ctx.translate(isl.x, 0);
-    drawIsland(ctx, t, isl.name, lampNight);
+    drawIsland(ctx, t, isl.name, lampNight, def.islandWidth ?? ISLAND_WIDTH);
     ctx.restore();
   }
 
@@ -426,7 +426,7 @@ export function renderScene(g: Game) {
 
   // Each island is the peak of a faint mountain that keeps going down behind everything.
   const peakDepth = world.floorMax + 200;
-  const mountains = def.islands.filter((isl) => inView(isl.x, (250 + peakDepth * 0.25 + 40) * ISLAND_WIDTH));
+  const mountains = def.islands.filter((isl) => inView(isl.x, (250 + peakDepth * 0.25 + 40) * (def.islandWidth ?? ISLAND_WIDTH)));
   if (mountains.length) {
     ctx.save();
     ctx.beginPath();
@@ -442,7 +442,7 @@ export function renderScene(g: Game) {
     fade.addColorStop(1, mixColor(water1, abyss, 0.3));
     for (const isl of mountains) {
       if (y1 <= y0) continue;
-      const half = (y: number) => (250 + y * 0.25 + Math.sin(y * 0.01 + isl.x) * 18 * Math.min(1, y / 200)) * ISLAND_WIDTH;
+      const half = (y: number) => (250 + y * 0.25 + Math.sin(y * 0.01 + isl.x) * 18 * Math.min(1, y / 200)) * (def.islandWidth ?? ISLAND_WIDTH);
       const rows: number[] = [y0];
       for (let y = Math.floor(y0 / 60) * 60 + 60; y <= y1; y += 60) if (y > y0) rows.push(y);
       ctx.beginPath();
@@ -461,7 +461,7 @@ export function renderScene(g: Game) {
       ctx.strokeStyle = mixColor('#6B4A2B', water0, 0.45);
       ctx.lineWidth = 9;
       ctx.lineCap = 'round';
-      for (const off of DOCK_POLES) {
+      for (const off of dockPoles(def.islandWidth ?? ISLAND_WIDTH)) {
         let px = isl.x + off;
         let py = 0;
         while (px > isl.x + half(py) - 12 && py < 500) {

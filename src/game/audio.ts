@@ -170,8 +170,8 @@ export class AudioManager {
   private hitIndex = 0;
   private whaleFarTimer = 4;
   private whaleNearTimer = 0;
-  volume = 0.5;
-  musicVolume = 0.33;
+  volume = 0.25;
+  musicVolume = 0.15;
   muted = false;
 
   constructor() {

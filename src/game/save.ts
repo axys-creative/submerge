@@ -34,6 +34,8 @@ export interface SaveData {
   explored: Record<number, string>;
   /** Trash spots already collected per zone index. */
   trash: Record<number, number[]>;
+  /** Cave loot slots already taken per zone index; caves never restock. */
+  caveLoot: Record<number, number[]>;
   /** Whether the portal stone has been taken, opening the portals between Moana Deep and Crimson Sea. */
   portal: boolean;
   /** Whether the Crimson Sea monster has started chasing, which brings back that zone's portal. */
@@ -65,6 +67,7 @@ export function newSave(): SaveData {
     electrolysis: false,
     explored: {},
     trash: {},
+    caveLoot: {},
     portal: false,
     visited: [0],
     monsterWoke: false,
@@ -114,6 +117,10 @@ export function sanitize(raw: any): SaveData | null {
   for (let z = 0; z < ZONES.length; z++) {
     const t = raw.trash?.[z];
     if (Array.isArray(t)) s.trash[z] = [...new Set(t.map((n: unknown) => Math.floor(num(n, 0, 99, -1))).filter((n: number) => n >= 0))].slice(0, 100);
+  }
+  for (let z = 0; z < ZONES.length; z++) {
+    const t = raw.caveLoot?.[z];
+    if (Array.isArray(t)) s.caveLoot[z] = [...new Set(t.map((n: unknown) => Math.floor(num(n, 0, 99, -1))).filter((n: number) => n >= 0))].slice(0, 100);
   }
   s.portal = raw.portal === true;
   if (Array.isArray(raw.visited)) s.visited = [...new Set<number>([0, ...raw.visited.map((n: unknown) => Math.floor(num(n, 0, ZONES.length - 1, 0)))])];

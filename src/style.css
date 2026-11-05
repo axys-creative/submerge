@@ -1068,6 +1068,36 @@ textarea:focus {
   filter: grayscale(1);
 }
 
+.upg {
+  position: relative;
+  overflow: hidden;
+}
+
+.upg.sold > :not(.sold-banner) {
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+
+.sold-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150%;
+  padding: 6px 0;
+  translate: -50% -50%;
+  rotate: 25deg;
+  background: #c0392b;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  text-align: center;
+  text-transform: uppercase;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.3);
+  pointer-events: none;
+  z-index: 1;
+}
+
 .upg-head {
   display: flex;
   align-items: center;
@@ -1792,7 +1822,19 @@ textarea:focus {
 }
 
 #ui.ui-docked .hud .panel.vitals {
-  transform: scale(0.94);
+  transform: scale(0.9);
+}
+
+#ui .hud .panel.purse {
+  transform-origin: top right;
+}
+
+#ui.ui-docked .hud .panel.purse {
+  transform: scale(0.9);
+}
+
+#ui.ui-docked .hud .panel.purse:active {
+  transform: scale(0.9) translateY(2px);
 }
 
 #ui .hud .panel.zen-player {
@@ -1814,6 +1856,25 @@ textarea:focus {
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.4s ease, transform 0.4s ease, visibility 0s 0.4s;
+}
+
+#ui .minimap,
+#ui .minimap-tab {
+  transform-origin: left bottom;
+  transition: opacity 0.4s, transform 0.5s ease;
+}
+
+#ui .minimap-tab {
+  transform-origin: left calc(100% + 109px);
+}
+
+.is-touch #ui .minimap-tab {
+  transform-origin: left calc(100% + 73px);
+}
+
+#ui.ui-docked .minimap,
+#ui.ui-docked .minimap-tab {
+  transform: scale(0.9);
 }
 
 #ui.ui-dim .hud .panel,
@@ -2022,9 +2083,32 @@ body:not(.is-touch) .dial-col:hover .dial-pop {
   display: block;
 }
 
+body:not(.is-touch) .dm-depth:hover ~ #pop-hold {
+  display: block;
+}
+
+#pop-hold {
+  left: 44px;
+  top: 18px;
+}
+
+body:not(.is-touch) .vitals:has(#lamp-seg > span:hover) #pop-lamp,
+body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
+  display: block;
+}
+
 #ui.ui-dark .dial-pop {
   background: rgba(14, 24, 56, 0.97);
   box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+
+#ui.ui-dark .dial-pop p {
+  color: #c9d4f5;
+}
+
+#ui.ui-dark .dial-pop b {
+  color: #fff;
 }
 
 #ui.ui-dark .dial-pop kbd {
@@ -2128,7 +2212,7 @@ body:not(.is-touch) .dial-col:hover .dial-pop {
 #ui .hud .panel.purse {
   pointer-events: auto;
   cursor: pointer;
-  transition: transform 0.06s;
+  transition: transform 0.5s ease;
 }
 
 #ui .hud .panel.purse:hover {
@@ -2136,6 +2220,7 @@ body:not(.is-touch) .dial-col:hover .dial-pop {
 }
 
 #ui .hud .panel.purse:active {
+  transition-duration: 0.06s;
   transform: translateY(2px);
 }
 

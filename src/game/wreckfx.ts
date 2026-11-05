@@ -1,11 +1,9 @@
 import { clamp } from '../util';
 import { FREIGHTER_CRANES, CRANE_TIP_X, CRANE_HOOK_DROP, glassPlan, type WreckFx } from '../art/scenery';
 
-const TILT = -0.04;
-const SCALE = 2;
 const SHARD_REACH = 90;
 const GLASS_SINK = 45;
-const GLASS_DELAY: [number, number] = [0.3, 0.7];
+const GLASS_DELAY: [number, number] = [0.1, 0.3];
 const GLASS_GRAVITY = 70;
 const CABLE_REACH = 90;
 const CABLE_LAG = 10;
@@ -16,10 +14,19 @@ const CABLE_OVERSHOOT = 20;
 const CABLE_CAP = CABLE_LIMIT * 2;
 const CABLE_MAX_SPEED = 150;
 const CABLE_SLOW = 0.2;
+const SAIL_LENGTH = 40;
+const SAIL_LIMIT = SAIL_LENGTH * 0.8;
+const SAIL_X = 0;
+const SAIL_REACH = 40;
+const SAIL_TOP = -95;
+const SAIL_BOTTOM = -32;
 
 export function createWreckFx(kind: string): WreckFx | null {
+  if (kind === 'galleon') return { glass: [], cranes: [], tilt: -0.12, scale: 3, sail: { push: 0, pushV: 0, drive: 0, held: false } };
   if (kind !== 'freighter') return null;
   return {
+    tilt: -0.04,
+    scale: 2,
     glass: glassPlan().shards.map(() => ({ state: 0, x: 0, y: 0, vx: 0, vy: 0, rot: 0, rotV: 0, wait: -1 })),
     cranes: FREIGHTER_CRANES.map(() => ({ push: 0, pushV: 0, drive: 0, held: false })),
   };
@@ -34,8 +41,9 @@ export function updateWreckFx(
   dt: number,
   floorAt: (x: number) => number,
 ) {
-  const cos = Math.cos(TILT);
-  const sin = Math.sin(TILT);
+  const SCALE = fx.scale;
+  const cos = Math.cos(fx.tilt);
+  const sin = Math.sin(fx.tilt);
   const toLocal = (wx: number, wy: number) => {
     const dx = (wx - ox) / SCALE;
     const dy = (wy - oy) / SCALE;
@@ -98,4 +106,17 @@ export function updateWreckFx(
     c.pushV += (-2.2 * CABLE_LENGTH * Math.sin(c.push / CABLE_LENGTH) - CABLE_OVERSHOOT * excess - c.pushV * 2.4) * sdt;
     c.push = clamp(c.push + c.pushV * sdt, -CABLE_CAP, CABLE_CAP);
   });
+
+  const sail = fx.sail;
+  if (sail) {
+    const touching = !!me && Math.abs(me.x - SAIL_X) < SAIL_REACH + (sail.held ? 12 : 0) && me.y > SAIL_TOP && me.y < SAIL_BOTTOM && (me.x - SAIL_X) * Math.sign(sub!.vx) > -4;
+    sail.held = touching;
+    const target = touching ? ((sub!.vx * 0.9) / SCALE) * Math.max(0, 1 - Math.abs(me!.x - SAIL_X) / SAIL_REACH) * 6 : 0;
+    sail.drive += (target - sail.drive) * Math.min(1, CABLE_LAG * dt);
+    sail.pushV = clamp(sail.pushV + sail.drive * dt, -CABLE_MAX_SPEED, CABLE_MAX_SPEED);
+    const sdt = dt * CABLE_SLOW * 2;
+    const excess = Math.max(0, Math.abs(sail.push) - SAIL_LIMIT) * Math.sign(sail.push);
+    sail.pushV += (-2.2 * SAIL_LENGTH * Math.sin(sail.push / SAIL_LENGTH) - CABLE_OVERSHOOT * excess - sail.pushV * 1.6) * sdt;
+    sail.push = clamp(sail.push + sail.pushV * sdt, -SAIL_LIMIT * 1.3, SAIL_LIMIT * 1.3);
+  }
 }

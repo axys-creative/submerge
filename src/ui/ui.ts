@@ -81,6 +81,7 @@ export class UI {
 
   constructor(private game: Game) {
     this.root = document.getElementById("ui")!;
+    this.root.classList.add("ui-docked");
     this.root.innerHTML = `
       <div class="hud">
         <div class="panel vitals">
@@ -97,6 +98,8 @@ export class UI {
             <span>Sonar</span><i class="seg-thumb"></i>
             <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
           </div>
+          <div class="dial-pop" id="pop-lamp"><h4>Spotlight</h4><p>Press <kbd>L</kbd> to switch between off, on and auto.</p></div>
+          <div class="dial-pop" id="pop-sonar"><h4>Sonar</h4><p>Press <kbd>O</kbd> to switch between off, on and auto.</p></div>
         </div>
         <div class="panel zen-player away" id="zen-player">
           <div class="zen-row">
@@ -116,8 +119,8 @@ export class UI {
         <div class="stick-zone" id="stick-zone"></div>
         <div class="stick" id="stick"><div class="knob" id="knob"></div></div>
         <div class="touch-buttons">
-          <button class="round-btn crank" data-act="crankJ" hidden>E</button>
-          <button class="round-btn crank" data-act="crankK" hidden>R</button>
+          <button class="round-btn crank" data-act="crankJ" hidden>U</button>
+          <button class="round-btn crank" data-act="crankK" hidden>I</button>
           <button class="round-btn secondary" id="btn-drop" data-act="drop" hidden>Drop</button>
 <button class="round-btn secondary" id="btn-boost" data-act="boost" data-hold hidden>Boost</button>
           <button class="round-btn secondary" id="btn-spot" data-act="action" hidden>Shop</button>
@@ -129,7 +132,7 @@ export class UI {
         <div class="dm-track" id="dm-track">
           <div class="dm-frame"><div class="dm-scale" id="dm-scale">${this.depthMeterBands()}<div class="dm-warn" id="dm-warn"></div><div class="dm-crush" id="dm-crush"></div><div class="dm-limit" id="dm-limit"></div></div></div>
           <div class="dm-labels" id="dm-labels">${this.depthMeterLabels()}</div>
-          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b><div class="panel dm-tag dm-safe" id="dm-limit-tag"></div></div>
+          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b><div class="dial-pop" id="pop-hold"><h4>Depth lock</h4><p>Press <kbd>E</kbd> or <kbd>.</kbd>, or click the reading, to hold your depth. It uses battery, and steering up or down lets go.</p></div><div class="panel dm-tag dm-safe" id="dm-limit-tag"></div></div>
         </div>
         <div class="dm-foot"><div class="panel dm-tag" id="dm-next"></div></div>
       </div>
@@ -536,7 +539,7 @@ export class UI {
     if (g.mode === "docked") {
       if (spot?.kind === "shop") return `${key("E")}Visit the ${esc(spot.name)} shop`;
       if (spot?.kind === "portal") return `${key("E")}Enter the portal`;
-      if (spot?.kind === "sail") return `${key("E")}Open the route map`;
+      if (spot?.kind === "sail") return `${this.touch ? "" : "<kbd>E</kbd> or <kbd>Enter</kbd> "}Open the route map`;
       return this.touch
         ? "Drag to sail · Tap Dive to launch"
         : "<kbd>←</kbd><kbd>→</kbd> Sail &nbsp;·&nbsp; <kbd>Shift</kbd> Boost &nbsp;·&nbsp; <kbd>Space</kbd> Dive";
@@ -544,8 +547,8 @@ export class UI {
     const s = g.sub;
     if (s.battery <= 0)
       return this.touch
-        ? "Battery empty! Tap E and R back and forth"
-        : "Battery empty! Tap <kbd>E</kbd><kbd>R</kbd> back and forth to crank";
+        ? "Battery empty! Tap U and I back and forth"
+        : "Battery empty! Tap <kbd>U</kbd><kbd>I</kbd> back and forth to crank";
     if (g.depthM > g.depthRating) return `Too deep! Rise above ${g.depthRating} m`;
     if (s.oxygen < g.maxOxygen * 0.25) return "Air running low! Head for the surface";
     if (g.weightsOn && s.diveTime < 7)
@@ -737,7 +740,7 @@ export class UI {
     const save = g.save;
     const row = (text: string) => `<p>${text}</p>`;
     const tank = UPGRADES.oxygen.levels[g.up.oxygen];
-    const stretch = save.scrubbers ? 1 / GEAR.scrubbers.drain : 1;
+    const stretch = save.scrubbers && s.battery > 0 ? 1 / GEAR.scrubbers.drain : 1;
     const air = Math.ceil(s.oxygen * stretch);
     const total = Math.round(g.maxOxygen * stretch);
     this.set(
@@ -762,8 +765,12 @@ export class UI {
         if (save.scrubbers)
           lines.push(
             row(
-              `<b>${GEAR.scrubbers.name}</b> filter the CO₂, so air lasts ${Math.round((1 / GEAR.scrubbers.drain - 1) * 100)}% longer.`,
+              `<b>${GEAR.scrubbers.name}</b> ${s.battery > 0 ? `filter the CO₂, so air lasts ${Math.round((1 / GEAR.scrubbers.drain - 1) * 100)}% longer, drawing on the battery.` : "are offline: the battery is empty."}`,
             ),
+          );
+        if (save.scrubbers)
+          lines.push(
+            row(`The <b>${GEAR.scrubbers.name}</b> also draw power while you are below the surface.`),
           );
         if (save.electrolysis)
           lines.push(
@@ -797,7 +804,7 @@ export class UI {
           row(
             this.touch
               ? "If it runs out, tap the two crank buttons back and forth to turn the rudders by hand."
-              : "If it runs out, press <kbd>E</kbd> and <kbd>R</kbd> back and forth to turn the rudders by hand.",
+              : "If it runs out, press <kbd>U</kbd> and <kbd>I</kbd> back and forth to turn the rudders by hand.",
           ),
         ];
         if (g.lampOn)
@@ -1032,7 +1039,7 @@ export class UI {
           <p>Start over? This erases your saved sub, money and upgrades.</p>
           <div class="row"><button class="btn danger" data-act="erase">Erase and start over</button><button class="btn ghost" data-act="cancel">Keep my game</button></div>
         </div>
-        <p class="title-hint">${this.touch ? "Drag on the left side to steer. Buttons on the right." : "Arrow keys or WASD to move · Space to dive · E to use shops · Esc for the menu"}</p>
+        <p class="title-hint">${this.touch ? "Drag on the left side to steer. Buttons on the right." : "Arrow keys or WASD to move · Space to dive · E or Enter to use shops · Esc for the menu"}</p>
       </div>`,
       "title-overlay",
     );
@@ -1240,8 +1247,8 @@ export class UI {
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>"} to sail the ship.</li>
             <li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while sailing to boost.</li>
             <li>${this.touch ? "Tap <b>Dive</b>" : "Press <kbd>Space</kbd>"} to drop the sub. Drive back up to the ship to dock, recharge and repair.</li>
-            <li>Sail next to an island and ${this.touch ? "tap <b>Shop</b>" : "press <kbd>E</kbd>"} to sell your haul and buy upgrades.</li>
-            <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>E</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
+            <li>Sail next to an island and ${this.touch ? "tap <b>Shop</b>" : "press <kbd>E</kbd> or <kbd>Enter</kbd>"} to sell your haul and buy upgrades.</li>
+            <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>E</kbd> or <kbd>Enter</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
           </ul>
           <h4 class="howto-title">Submarine</h4>
           <ul class="howto">
@@ -1252,7 +1259,7 @@ export class UI {
             ${g.save.weights ? `<li>${this.touch ? "Tap <b>Drop</b>" : "Press <kbd>Q</kbd> or <kbd>/</kbd>"} to drop the dive weights for a quick ride up.</li>` : ""}
             ${this.touch ? "" : "<li>Press <kbd>L</kbd> to cycle the spotlight, and <kbd>O</kbd> to cycle the sonar, between off, on and auto.</li>"}
             <li>Surface anywhere to refill your air.</li>
-            <li>When the battery runs out, ${this.touch ? "tap the <b>E</b> and <b>R</b> buttons" : "press <kbd>E</kbd> and <kbd>R</kbd>"} back and forth to hand-crank.</li>
+            <li>When the battery runs out, ${this.touch ? "tap the <b>U</b> and <b>I</b> buttons" : "press <kbd>U</kbd> and <kbd>I</kbd>"} back and forth to hand-crank.</li>
             <li>${this.touch ? "Tap <b>Menu</b>" : "Press <kbd>Esc</kbd> or <kbd>P</kbd>"} to pause.</li>
           </ul>
         </details>
@@ -1412,7 +1419,7 @@ export class UI {
         this.renderShop();
       }
       if (act === "buyGear") {
-        const id = btn.dataset.id as GearId;
+        const id = btn.dataset.id as Exclude<GearId, "candles">;
         if (this.game.buyGear(id)) {
           this.toast(`Bought ${GEAR[id].name}`);
           this.renderShop();
@@ -1436,7 +1443,7 @@ export class UI {
       const row = (e.target as HTMLElement).closest<HTMLElement>(".upg");
       const id = row?.dataset.id;
       this.shopPreview =
-        row && id && id in UPGRADES && !row.classList.contains("maxed") ? (id as UpgradeId) : null;
+        row && id && id in UPGRADES && !row.classList.contains("maxed") && !row.classList.contains("sold") ? (id as UpgradeId) : null;
     };
     this.modal.addEventListener("pointerover", setPreview);
     this.modal.addEventListener("focusin", setPreview);
@@ -1483,11 +1490,12 @@ export class UI {
           const stock = stockAt(id, g.save.stock[id], g.save.zone, this.shopIsland);
           const soldOut = !!next && stock.open < 0;
           const action = soldOut
-            ? `<span class="maxed-tag">Sold out here</span>`
+            ? `<button class="btn small" disabled>Buy ${money(next.cost)}</button> <span class="muted">Sold out here</span>`
             : next
               ? `<button class="btn small" data-act="buy" data-id="${id}" ${g.save.money < next.cost ? "disabled" : ""}>Buy ${money(next.cost)}</button> <span class="muted">${stock.left} in stock here</span>`
               : `<span class="maxed-tag">Maxed out</span>`;
-          return `<div class="upg ${next ? "" : "maxed"}${!next || soldOut ? " gray" : ""}" data-id="${id}" tabindex="-1">
+          return `<div class="upg ${next ? "" : "maxed"}${!next ? " gray" : ""}${soldOut ? " sold" : ""}" data-id="${id}" tabindex="-1">
+        ${soldOut ? `<span class="sold-banner">Sold out</span>` : ""}
         <div class="upg-head"><h3>${def.title}</h3><div class="pips">${pips}</div></div>
         <p class="upg-now">${esc(now.name)} · ${esc(now.effect)}</p>
         ${next ? `<p class="upg-next">Next: <b>${esc(next.name)}</b> · ${esc(next.effect)}</p>` : `<p class="upg-next">${esc(def.blurb)}</p>`}
@@ -1514,20 +1522,14 @@ export class UI {
   private gearCards() {
     const g = this.game;
     return (Object.keys(GEAR) as GearId[])
-      .filter((id) => g.save.zone >= GEAR[id].firstZone)
+      .filter((id): id is Exclude<GearId, "candles"> => id !== "candles" && g.save.zone >= GEAR[id].firstZone)
       .map((id) => {
         const gear = GEAR[id];
         const cost = g.gearCost(id);
         const full = cost === null;
-        const count = g.save.candles;
-        const now =
-          id === "candles"
-            ? `Carries ${count} of ${GEAR.candles.max}`
-            : full
-              ? "Installed"
-              : "One-time purchase";
+        const now = full ? "Installed" : "One-time purchase";
         const action = full
-          ? `<span class="maxed-tag">${id === "candles" ? "Maxed out" : "Owned"}</span>`
+          ? `<span class="maxed-tag">Owned</span>`
           : `<button class="btn small" data-act="buyGear" data-id="${id}" ${g.save.money < cost ? "disabled" : ""}>Buy ${money(cost)}</button>`;
         return `<div class="upg ${full ? "maxed" : ""}" data-id="${id}" tabindex="-1">
         <div class="upg-head"><h3>${gear.name}</h3></div>
