@@ -1,17 +1,19 @@
 import { Explored } from "./explored";
 import { BONE_KINDS, type BoneKind } from "../art/bones";
 import { debrisColors } from "../art/sub";
+import { kelpHeight } from "../art/scenery";
 import { Input } from "./input";
 import { World, MAX_SLOPE, type Creature, type ItemInst } from "./world";
 import { updateWreckFx } from "./wreckfx";
 import { updateCreature } from "./creatures";
 import { DAY_SECONDS, NOON, START_DAY, daylight } from "../render/daylight";
+import { rainAt } from "../render/weather";
 import { AudioManager } from "./audio";
 import { loadSave, newSave, writeSave, type SaveData, type SwitchMode } from "./save";
 import { GEAR, STATS, UPGRADES, WEIGHTS, stockAt, type GearId, type UpgradeId } from "../data/upgrades";
 import { weightMounts, WEIGHT_Y, GATE_THRUSTER_BUBBLES, challengerBase, challengerWeights } from "../art/sub";
 import { ITEMS, ITEM_KINDS } from "../data/items";
-import { ZONES } from "../data/zones";
+import { ZONES, type WreckKind } from "../data/zones";
 import { SKINS, CAPSULE_DEATHS, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
 import { CREATURES, CREATURE_EXTENT, whalePitch, type CreatureKind } from "../data/creatures";
 import { leviathanSpine } from "../data/leviathan";
@@ -150,6 +152,8 @@ export interface Popup {
   life: number;
 }
 
+const WRECK_SONAR_RADIUS: Record<WreckKind, number> = { sloop: 250, galleon: 450, containers: 400, freighter: 1400 };
+
 export interface Blip {
   x: number;
   y: number;
@@ -165,6 +169,8 @@ export interface Blip {
   relic?: boolean;
   /** Junk, drawn as a dimmer dot than treasure. */
   trash?: boolean;
+  /** A shipwreck on the sea floor, drawn as an outline. */
+  wreck?: WreckKind;
   /** A skeleton piece on the sea floor, drawn as an outline. */
   bone?: { kind: BoneKind; size: number; tint: number; push: number };
   /** The outline image for `shape`, drawn the first time it is needed. */
@@ -188,8 +194,8 @@ const SPOT_NOTES: Partial<Record<CreatureKind, { key: string; text: string; colo
     text: "A bigfin squid! Those long arms are harmless.",
     color: "#6CC5F0",
   },
-  shark: { key: "shark", text: "A shark! Let's keep our distance.", color: "#E5484D" },
-  hammerhead: { key: "shark", text: "A shark! Let's keep our distance.", color: "#E5484D" },
+  shark: { key: "shark", text: "Watch out for sharks", color: "#E5484D" },
+  hammerhead: { key: "shark", text: "Watch out for sharks", color: "#E5484D" },
   whale: {
     key: "whale",
     text: "A sperm whale! Steer clear and don't make contact.",
@@ -221,6 +227,9 @@ const SWING_K = 8.5;
 const SWING_DAMPING = 1.6;
 const SWING_PUSH = 0.35;
 const KELP_REACH = 100;
+const KELP_PUSH = 0.85;
+const KELP_STIFFNESS = 1;
+const KELP_DAMPING = 0.6;
 /** How deep the ship's hull reaches below the waterline, how close in px a kelp tip must be to it to be brushed, and half the hull's length. */
 const SHIP_DRAFT = 26;
 const KELP_SHIP_GAP = 10;
@@ -278,6 +287,11 @@ export class Game {
   hasSave: boolean;
   mode: Mode = "docked";
   day = START_DAY;
+  days = START_DAY;
+  /** How hard it is raining now, 0 to 1. */
+  rain = 0;
+  /** Forces rain on or off from the dev panel; null follows the weather cycle. */
+  debugRain: boolean | null = null;
   audio = new AudioManager();
   underwater = false;
   private driving = false;
@@ -456,6 +470,7 @@ export class Game {
     this.applyZoneSwitches(true);
     this.ship.x = clamp(this.save.shipX, SHIP_MARGIN, this.world.width - SHIP_MARGIN);
     this.day = this.save.day;
+    this.days = this.save.days;
     this.resetSub();
     this.snapCamera();
     this.resize();
@@ -623,6 +638,7 @@ export class Game {
     this.syncExplored();
     this.save.shipX = this.ship.x;
     this.save.day = this.day;
+    this.save.days = this.days;
     writeSave(this.save);
     this.hasSave = true;
   }
@@ -643,6 +659,7 @@ export class Game {
     this.applyZoneSwitches(true);
     this.ship.x = clamp(s.shipX, SHIP_MARGIN, this.world.width - SHIP_MARGIN);
     this.day = s.day;
+    this.days = s.days;
     this.ship.vx = 0;
     this.mode = "docked";
     this.hoist = 1;
@@ -945,7 +962,14 @@ export class Game {
     this.driving = false;
     this.warning = false;
     if (this.world.def.catalog) this.day = NOON;
-    else if (!this.paused) this.day = (this.day + dt / DAY_SECONDS) % 1;
+    else if (!this.paused) {
+      this.day = (this.day + dt / DAY_SECONDS) % 1;
+      this.days += dt / DAY_SECONDS;
+    }
+    const dry = this.world.def.space || this.world.def.catalog;
+    const wantRain = dry ? 0 : this.debugRain === null ? rainAt(this.days) : this.debugRain ? 1 : 0;
+    this.rain += clamp(wantRain - this.rain, -dt * 0.25, dt * 0.25);
+    this.audio.rainTick(dt, this.rain, this.depthM);
     const live = !this.paused && !this.travel;
     const cavern = this.world.abyss?.zoom;
     const inAbyss =
@@ -986,7 +1010,7 @@ export class Game {
       if (creatures[i].state === "dead" && creatures[i].dying > DEATH_FADE_END)
         creatures.splice(i, 1);
     }
-    this.world.update(this.t);
+    this.world.update(this.t, { x: this.cam.x, y: this.cam.y, hw: this.view.w / 2, hh: this.view.h / 2 });
     this.world.trackReveal(this.sub.x, this.sub.y, dt);
     this.updateExplored();
     this.updateEffects(dt);
@@ -1327,7 +1351,7 @@ export class Game {
     s.x = clamp(s.x + s.vx * dt, 60, this.world.width - 60);
     s.y += s.vy * dt;
     if (s.battery > 0 && moving) {
-      s.battery = Math.max(0, s.battery - Math.hypot(s.x - px, s.y - py));
+      s.battery = Math.max(0, s.battery - Math.hypot(s.x - px, s.y - py) * STATS.driveDrain[this.propellerLevel]);
       if (s.battery === 0 && !this.batteryWarned) {
         this.batteryWarned = true;
         this.ui.toast(
@@ -2113,6 +2137,7 @@ export class Game {
       def.trash ? "#B8C7D9" : def.value <= LOW_VALUE ? "#FFFFFF" : "#FFD95A",
     );
     this.emitBubbles(it.x, it.y, 6, 20);
+    if (this.cargoCount() === this.cargoCap - 1) this.say("Room for one more. Let's make it count.", "#F7C948");
     return true;
   }
 
@@ -2273,6 +2298,12 @@ export class Game {
         });
       }
     }
+    for (const w of this.world.def.wrecks) {
+      const y = this.world.floorAt(w.x) + 16;
+      if (this.pinged.has(w) || !hit(w.x, y, WRECK_SONAR_RADIUS[w.kind])) continue;
+      this.pinged.add(w);
+      this.blips.push({ x: w.x, y, danger: false, life: ping.linger, max: ping.linger, wreck: w.kind });
+    }
     for (const w of this.weightFx) {
       if (this.pinged.has(w) || !hit(w.x, w.y, 10)) continue;
       this.pinged.add(w);
@@ -2370,26 +2401,27 @@ export class Game {
     const s = this.sub;
     const near = this.mode === "diving";
     for (const d of this.world.deco) {
-      if (d.kind !== "kelp") continue;
+      if (d.kind !== "kelp" && d.kind !== "giantkelp") continue;
+      const height = kelpHeight(d.kind, d.size);
       const dx = d.x - s.x;
       if (near && Math.abs(dx) < KELP_REACH && !this.world.atMouth(d.x, d.y)) {
-        const height = 90 + d.size * 80;
         if (s.y > d.y - height - 20 && s.y < d.y + 10) {
           const influence = 1 - Math.abs(dx) / KELP_REACH;
           const drag = s.vx * 0.9 + Math.sign(dx) * Math.abs(s.vy) * 0.4;
-          d.pushV += drag * influence * 6 * dt;
+          d.pushV += drag * influence * KELP_PUSH * dt;
         }
       }
       if (
         this.mode === "docked" &&
         Math.abs(this.ship.vx) > 5 &&
-        d.y - (90 + d.size * 80) < SHIP_DRAFT + KELP_SHIP_GAP
+        d.y - height < SHIP_DRAFT + KELP_SHIP_GAP
       ) {
         const edge = Math.max(0, Math.abs(d.x - this.ship.x) - SHIP_HALF_LENGTH);
-        if (edge < KELP_REACH) d.pushV += this.ship.vx * 0.9 * (1 - edge / KELP_REACH) * 6 * dt;
+        if (edge < KELP_REACH) d.pushV += this.ship.vx * 0.9 * (1 - edge / KELP_REACH) * KELP_PUSH * dt;
       }
-      d.pushV += (-d.push * 14 - d.pushV * 3) * dt;
-      d.push = clamp(d.push + d.pushV * dt, -50, 50);
+      const stiff = 1 + (d.push / 60) ** 2;
+      d.pushV += (-d.push * KELP_STIFFNESS * stiff - d.pushV * KELP_DAMPING) * dt;
+      d.push = clamp(d.push + d.pushV * dt, -140, 140);
     }
   }
 

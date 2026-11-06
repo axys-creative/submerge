@@ -21,7 +21,7 @@ Then open http://localhost:5173.
 | ------------------------------ | ----------------------- | --------------------- |
 | Sail the ship / steer the sub  | Arrow keys or WASD      | Drag on the left side |
 | Dive                           | Space or ↓              | Dive button           |
-| Shop or sail to the next zone  | E or Enter              | Shop / Sail button    |
+| Shop or sail to the next zone  | Enter or E              | Shop / Sail button    |
 | Hand-crank with a dead battery | U and I, back and forth | U and I buttons       |
 | Menu, save codes               | Esc or P                | ☰ button             |
 

@@ -48,7 +48,7 @@ const GATE_ORB = { x: 55.4, y: 0, r: 7 };
 /** The capsule skin's small round viewport in its dome. */
 const CAPSULE_VIEWPORT = { x: 46, y: 0 };
 /** The capsule skin's round viewport in the side of its tube. */
-export const CAPSULE_SIDE_VIEWPORT = { x: -30, y: 0 };
+export const CAPSULE_SIDE_VIEWPORT = { x: -16, y: 0 };
 /** Where the sonar sits on the tower. */
 const SONAR_MOUNT = { x: 17, y: -29 };
 /** Where the OceanGate skin's sonar sits: on the hull's top edge, above the logo near the rear. */
@@ -162,11 +162,22 @@ function drawScrubber(ctx: CanvasRenderingContext2D, facing: number) {
   ctx.textBaseline = 'alphabetic';
 }
 
-/** The electrolysis unit: a small box on the hull top with a green O2 light. */
+/** The electrolysis unit: a small box on the hull top with a green O2 light and a slatted seawater inlet on its front. */
 function drawElectrolysis(ctx: CanvasRenderingContext2D, t: number, facing: number) {
   ctx.fillStyle = '#2D3A4D';
   rrect(ctx, 22, -31, 13, 10, 2.5);
   ctx.fill();
+  ctx.fillStyle = '#5B6B82';
+  rrect(ctx, 34, -29.5, 4.5, 7, 1.5);
+  ctx.fill();
+  ctx.strokeStyle = '#1C2533';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  for (const y of [-27.5, -26, -24.5]) {
+    ctx.moveTo(35.2, y);
+    ctx.lineTo(37.5, y);
+  }
+  ctx.stroke();
   ctx.fillStyle = '#6BE38A';
   ctx.globalAlpha = 0.65 + 0.35 * Math.sin(t * 3);
   ctx.beginPath();
@@ -250,8 +261,8 @@ export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, p
     return;
   }
   part('prop', () => rear(() => drawPropeller(ctx, p, prop, up.propeller)));
+  part('battery', () => rear(() => drawBattery(ctx, up.battery, t, p)));
   if (!capsule) {
-    part('battery', () => rear(() => drawBattery(ctx, up.battery, t, p)));
     part('tower', () => drawTower(ctx, p));
     part('tank', () => rear(() => drawTank(ctx, up.oxygen, p)));
   }
@@ -849,7 +860,7 @@ const CRACKS: [number, number][][] = [
 export function drawGlassCracks(ctx: CanvasRenderingContext2D, progress: number, skin: SkinId = 'standard') {
   const standard = skin === 'standard';
   ctx.save();
-  if (standard) ctx.translate(40, -3);
+  if (standard) ctx.translate(39, 9);
   else if (skin === 'oceangate') ctx.translate(GATE_ORB.x + 3, GATE_ORB.y);
   else if (skin === 'sm13') ctx.translate(LOST_PORTHOLE.x, LOST_PORTHOLE.y);
   else ctx.translate(CAPSULE_VIEWPORT.x, CAPSULE_VIEWPORT.y);

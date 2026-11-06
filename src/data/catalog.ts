@@ -3,7 +3,7 @@ import { ITEMS, ITEM_KINDS, type ItemKind } from './items';
 import type { BoneKind } from '../art/bones';
 import { DEPTH_ZONES, zoneIndexAt } from './depthZones';
 
-type DecoKind = 'kelp' | 'coral' | 'rock' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
+type DecoKind = 'kelp' | 'giantkelp' | 'coral' | 'rock' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
 
 export interface CatalogTerrain {
   x: number;
@@ -88,7 +88,10 @@ function build() {
     x += TERRAIN_GAP;
   };
   ([[0.7, 0.2, 'small'], [1.1, 0.8, 'medium'], [1.5, 0.2, 'large']] as const).forEach(([size, tint, name]) => add({ label: `Rock (${name})`, deco: { kind: 'rock', size, tint } }));
-  ([[0.8, 'short'], [1.1, 'medium'], [1.5, 'tall']] as const).forEach(([size, name]) => add({ label: `Kelp (${name})`, deco: { kind: 'kelp', size, tint: 0.5 } }));
+  ([[0.8, 'short'], [1.1, 'medium'], [1.5, 'tall']] as const).forEach(([size, name]) => add({ label: `Kelp stalk (${name})`, deco: { kind: 'kelp', size, tint: 0.2 } }));
+  ([[1.1, 'bunch'], [1.5, 'tall bunch']] as const).forEach(([size, name]) => add({ label: `Kelp ${name}`, deco: { kind: 'kelp', size, tint: 0.5 } }));
+  add({ label: 'Kelp ribbon', deco: { kind: 'kelp', size: 1.2, tint: 0.85 } });
+  ([[0.7, 'medium'], [1.3, 'tall']] as const).forEach(([size, name]) => add({ label: `Giant kelp (${name})`, deco: { kind: 'giantkelp', size, tint: 0.4 } }));
   [0.1, 0.35, 0.6, 0.85].forEach((tint, i) => add({ label: `Coral ${i + 1}`, deco: { kind: 'coral', size: 1.2, tint } }));
   [0.1, 0.5, 0.9].forEach((tint, i) => add({ label: `Starfish ${i + 1}`, deco: { kind: 'starfish', size: 1, tint } }));
   [0.2, 0.8].forEach((tint, i) => add({ label: `Wood plank ${i + 1}`, deco: { kind: 'plank', size: 1.2, tint } }));

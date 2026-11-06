@@ -4,15 +4,20 @@ Canvas 2D submarine game (Vite + TypeScript). Zone data is in `src/data/zones.ts
 
 ## Shop stock
 
-Each upgrade has `stock` slots in `src/data/upgrades.ts`, one per purchasable level. A slot names the zones (and sometimes the shop) that hold it; buying any level uses up the first unused slot that matches the shop, so the player can take the first level from a late shop and the last from an early one, but never two from one slot. Shops hide upgrades they have no slot for, and gray out ones that are sold out or maxed. Kelp Canyons and Midnight Trench are alternate routes, so mid-game slots list both (`[2, 3]`); the best slots are in Moana Deep, split over Palm Atoll and Trench Pier.
+Each upgrade has `stock` slots in `src/data/upgrades.ts`, one per purchasable level. A slot names the shop that holds it (it can name two, which then share the one unit of stock; none do now), so every shop sells at most one level of an upgrade and at most 3 kinds. Buying any level uses up the first unused slot that matches the shop, so the player can take the first level from a late shop and the last from an early one. Shops hide upgrades they have no slot for, and gray out ones that are sold out or maxed. Players are expected to sail back to earlier zones to shop.
 
-| Slot | Plating | Tank | Battery | Propeller | Hold | Bumpers | Light | Sonar |
-|---|---|---|---|---|---|---|---|---|
-| Sunny Shallows | Coral Cove | Coral Cove | Gull Rock | | | Gull Rock | | |
-| Coral Gardens | | | yes | | yes | | yes | |
-| Kelp Canyons or Midnight Trench | yes | yes | | yes | | yes | | yes |
-| Midnight Trench or Moana Deep | | | | | | | yes | yes |
-| Moana Deep | Palm Atoll | Palm Atoll | Trench Pier | Palm Atoll | | Palm Atoll | Trench Pier | Trench Pier |
+| Zone | Shop | Sells |
+|---|---|---|
+| 1 Sunny Shallows | Coral Cove | Plating, Tank |
+| 1 Sunny Shallows | Gull Rock | Battery, Propeller, Bumpers |
+| 2 Coral Gardens | Pearl Atoll | Battery, Cargo Hold, Spotlight |
+| 3 Kelp Canyons | Driftwood Dock | Plating, Propeller, Sonar, CO₂ Scrubbers |
+| 3 Kelp Canyons | Lantern Isle | Tank, Bumpers, Spotlight |
+| 4 Midnight Trench | Last Light Atoll | Tank, Spotlight, Sonar |
+| 5 Moana Deep | Palm Atoll | Battery, Sonar, Electrolysis Unit |
+| 5 Moana Deep | Trench Pier | Plating, Bumpers, dive weights |
+
+Air gear is set by `gear` on the island in `src/data/zones.ts`, and the dive weights by `weights`.
 
 ## Catalog zone
 
@@ -35,7 +40,7 @@ Planned, not built yet. Details are open for discussion.
 Built so far: `SkinId` in `src/data/skins.ts`, `save.skin`, a Skin row in the test panel, and five skins, all in `drawSub` (`src/art/sub.ts`). Skins are cosmetic only and never change what the upgrades do.
 
 - Standard: the original sub.
-- Expedition Capsule (`capsule`): a white tube with a metal dome nose, a top fairing and a side thruster. It drops the tower, antenna, tank and battery but still shows the other upgrades' looks.
+- Expedition Capsule (`capsule`): a white tube with a metal dome nose, a top fairing and a side thruster. It drops the tower, antenna and tank but keeps the battery pod, and still shows the other upgrades' looks.
 - OceanGate (`oceangate`): a plain white rectangle with a swept tail, a brass dome nose and black landing gear. It ignores the upgrades' looks entirely.
 - Deepsea Challenger (`challenger`): the tall green research sub from the Mariana Trench dive, drawn from a reference image in `src/art/challenger.ts` (a window onto its batteries, flood lights and a sampling arm on the front side, two stabilizing fins on the back, a camera dome with antenna rods). Cosmetic except for depth: while worn its safe depth is `CHALLENGER_DEPTH_RATING` (11,050 m, from its 16,500 psi hull: the 11,000 m Challenger Deep plus 50 m) instead of the plating's. It lies on its side while hooked to the ship and rights itself slowly once the tether has gone back up after launch (`subPose` in `src/game/game.ts`, 0 lying to 1 upright), then lies down again as soon as the tether drops near the surface on the way back. The sprite is mirrored for the water (utility arm leads) but not on the ship (fins down), so it launches facing opposite the ship, which keeps what's on screen the same, and turns when the player steers. The spotlight sits on its flood lights (`lampFor`) and the crane hooks onto its upward side (`anchorFor`). Its collision is the same as the other skins' and ignores its height. How to unlock it is not decided yet; the Skin row in the test panel is the only way to wear it.
 - SM-13 (`sm13`): the lost submarine from the Crimson Sea abyss, upright and without its bite marks, shrunk to the sub's size (`src/art/lostSub.ts`). It ignores the upgrades' looks. Unlocks the first time the sub arrives in the Crimson Sea through the portal (`updateTravel` in `src/game/game.ts`); the "unlocked" toast waits until 5 seconds into the next dive.

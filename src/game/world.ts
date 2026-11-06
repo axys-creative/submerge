@@ -18,6 +18,18 @@ const FLOOR_SOFTNESS = 25;
 /** Closest two surface items may spawn to each other, in px. */
 const CORAL_SPACING = 150;
 const ITEM_SPACING = 160;
+const RESPAWN_HIDE_MARGIN = 80;
+
+/** The camera's rectangle around (x, y) with half sizes hw and hh. */
+export interface View {
+  x: number;
+  y: number;
+  hw: number;
+  hh: number;
+}
+
+/** Whether a spot is on screen or just outside it, so nothing pops in where the player can see. */
+const inView = (v: View, x: number, y: number) => Math.abs(x - v.x) < v.hw + RESPAWN_HIDE_MARGIN && Math.abs(y - v.y) < v.hh + RESPAWN_HIDE_MARGIN;
 const TRASH_SPACING = 140;
 const FLOATING_TRASH: ItemKind[] = ['bottle', 'boot', 'can'];
 const TRASH_SINK_SPEED = 6;
@@ -173,7 +185,7 @@ export interface Creature {
 }
 
 export interface Deco {
-  kind: 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
+  kind: 'kelp' | 'giantkelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
   x: number;
   y: number;
   size: number;
@@ -643,15 +655,23 @@ export class World {
     return this.terrainAt(c + l.offset) - l.lift + Math.sin(c * 0.002 * (1 + layer * 0.4) + this.shape[3] + layer * 2) * l.amp;
   }
 
-  update(t: number) {
+  update(t: number, view?: View) {
     for (const it of this.items) {
       if (it.alive || t < it.respawnAt) continue;
       if (it.spot) {
+        if (view && inView(view, it.spot.x, it.spot.y)) continue;
         it.x = it.spot.x;
         it.y = it.spot.y;
         it.alive = true;
-      } else if (it.wreck >= 0) this.placeChest(it);
-      else this.placeItem(it);
+      } else if (it.wreck >= 0) {
+        const w = this.def.wrecks[it.wreck];
+        const x = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 138);
+        if (view && inView(view, x, this.floorAt(x))) continue;
+        this.placeChest(it);
+      } else {
+        this.placeItem(it, view);
+        if (!it.alive) it.respawnAt = t + 1;
+      }
     }
   }
 
@@ -685,6 +705,29 @@ export class World {
         const x = m.x0 + (j + 0.5) * step + rand(g, -step * 0.35, step * 0.35);
         this.deco.push({ kind: 'kelp', x, y: this.floorAt(x), size: rand(g, 0.7, 1.4), phase: g() * 10, tint: g(), push: 0, pushV: 0 });
       }
+    });
+    this.def.forests?.forEach((f, i) => {
+      const g = mulberry32(this.index * 5003 + i * 197 + 41);
+      const n = scaled(f.count);
+      const step = (f.x1 - f.x0) / n;
+      for (let j = 0; j < n; j++) {
+        const x = f.x0 + (j + 0.5) * step + rand(g, -step * 0.45, step * 0.45);
+        const giant = g() < (f.giant ?? 0.7);
+        this.deco.push({ kind: giant ? 'giantkelp' : 'kelp', x, y: this.floorAt(x), size: rand(g, 0.5, 1.4), phase: g() * 10, tint: g(), push: 0, pushV: 0 });
+      }
+    });
+    this.def.beds?.forEach((b, i) => {
+      const g = mulberry32(this.index * 6007 + i * 211 + 13);
+      const put = (kind: Deco['kind'], count = 0) => {
+        for (let j = 0; j < scaled(count); j++) {
+          const x = rand(g, b.x0, b.x1);
+          if (kind === 'coral' && this.coralNear(x, CORAL_SPACING)) continue;
+          this.deco.push({ kind, x, y: this.floorAt(x), size: rand(g, 0.7, 1.4), phase: g() * 10, tint: g(), push: kind === 'coral' ? this.floorSlope(x) : 0, pushV: 0 });
+        }
+      };
+      put('rock', b.rocks);
+      put('coral', b.coral);
+      put('kelp', b.kelp);
     });
     if (this.abyss) {
       const { x, y } = this.abyss.relic;
@@ -837,13 +880,14 @@ export class World {
     return { kind: 'seaweed', x: 0, y: 0, alive: true, respawnAt: 0, phase: this.rng() * 10, wreck: -1 };
   }
 
-  private placeItem(it: ItemInst) {
+  private placeItem(it: ItemInst, view?: View) {
     const r = this.rng;
     for (let tries = 0; tries < 25; tries++) {
       const x = rand(r, 250, this.width - 250);
       const floor = this.floorAt(x);
       if (Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 20) continue;
       if (this.atMouth(x, floor)) continue;
+      if (view && inView(view, x, floor)) continue;
       if (this.items.some((o) => o !== it && o.alive && Math.abs(o.x - x) < ITEM_SPACING)) continue;
             const kind = this.pickKind(floor / PX_PER_M);
       if (!kind) continue;

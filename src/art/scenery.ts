@@ -8,7 +8,7 @@ import { drawLostSub, LOST_WRECK_SCALE } from './lostSub';
 import { CRANE_TIP, SHIP_LAMPS } from './shipMounts';
 import { drawIronShip } from './ironShip';
 
-export type DecoKind = 'kelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
+export type DecoKind = 'kelp' | 'giantkelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a: number) {
   ctx.save();
@@ -1616,6 +1616,90 @@ function drawVent(ctx: CanvasRenderingContext2D, size: number, tint: number, t: 
   }
 }
 
+
+export const kelpHeight = (kind: DecoKind, size: number) => (kind === 'giantkelp' ? 260 + size * 260 : 90 + size * 80);
+
+/** A wavy-edged leaf from the origin up to its tip; `sway` is how far the tip leans sideways. */
+function kelpBlade(ctx: CanvasRenderingContext2D, len: number, width: number, sway: number, t: number, seed: number, fill: string, rib: string) {
+  const N = 22;
+  const mid = (k: number) => sway * k * k + Math.sin(t * 1.3 + seed + k * 3) * 5 * k;
+  const half = (k: number) => width * Math.pow(Math.sin(Math.PI * Math.min(1, 0.12 + k * 0.88)), 0.7) * (1 + 0.35 * Math.sin(k * 12 + seed * 2.3)) * (1 - 0.5 * k * k);
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const k = i / N;
+    ctx.lineTo(mid(k) - half(k), -len * k);
+  }
+  for (let i = N; i >= 0; i--) {
+    const k = i / N;
+    ctx.lineTo(mid(k) + half(k) * 0.85, -len * k);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = rib;
+  ctx.lineWidth = Math.max(1, width * 0.08);
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const k = (i / N) * 0.92;
+    ctx.lineTo(mid(k), -len * k);
+  }
+  ctx.stroke();
+}
+
+const BLADE_PUSH = 0.45;
+const BLADE_SCALE = 0.75;
+
+function drawKelp(ctx: CanvasRenderingContext2D, size: number, tint: number, t: number, push: number) {
+  const h = 90 + size * 80;
+  if (tint < 0.34) return drawGiantKelp(ctx, size, tint, t, push, h);
+  const bunch = tint < 0.67;
+  const blades = bunch ? [[-0.22, 0.8, 0.12], [0.03, 1, 0.16], [0.24, 0.72, 0.12], [-0.06, 0.55, 0.1]] : [[0, 1, 0.19]];
+  const hb = h * BLADE_SCALE;
+  blades.forEach(([lean, f, w], i) => {
+    ctx.save();
+    ctx.rotate(lean);
+    const wave = Math.sin(t * 1.1 + tint * 10 + i * 1.7) * 14 + push * BLADE_PUSH;
+    const light = (i + Math.floor(tint * 10)) % 2;
+    kelpBlade(ctx, hb * f, hb * w * (bunch ? 0.95 : 0.8), wave * 1.6, t, tint * 20 + i * 2, bunch ? (light ? '#7DBB42' : '#5FA83A') : '#9BC53D', bunch ? 'rgba(40,110,40,0.5)' : 'rgba(70,130,40,0.5)');
+    ctx.restore();
+  });
+}
+
+function drawGiantKelp(ctx: CanvasRenderingContext2D, size: number, tint: number, t: number, push: number, h = 260 + size * 260) {
+  const sc = Math.min(1, Math.max(0.5, h / 420));
+  const lean = Math.sin(t * 0.6 + tint * 9) * 26 + Math.sin(t * 1.1 + tint * 4) * 8 + push;
+  const at = (k: number): [number, number] => [lean * k * k + Math.sin(t * 0.9 + tint * 7 + k * 5) * 6 * k, -h * k];
+  ctx.strokeStyle = '#3F8F4A';
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  for (let i = 0; i <= 24; i++) {
+    const [x, y] = at(i / 24);
+    ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  const n = Math.round(h / (34 * sc));
+  for (let i = 1; i <= n; i++) {
+    const k = i / (n + 1);
+    const [x, y] = at(k);
+    const side = i % 2 ? 1 : -1;
+    const flap = Math.sin(t * 1.5 + i * 1.1 + tint * 8) * 0.18;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(side * (0.75 + flap));
+    ctx.fillStyle = '#B7C95A';
+    ctx.beginPath();
+    ctx.ellipse(0, -5, 3.5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    kelpBlade(ctx, 46 * sc * (1.1 - 0.5 * k), 11 * sc, side * 10 * sc, t, i + tint * 9, i % 3 ? '#7DBB42' : '#9BC53D', 'rgba(40,110,40,0.45)');
+    ctx.restore();
+  }
+  const [x, y] = at(1);
+  ctx.save();
+  ctx.translate(x, y);
+  kelpBlade(ctx, 70 * sc, 12 * sc, lean * 0.15, t, tint * 5, '#8FC447', 'rgba(40,110,40,0.45)');
+  ctx.restore();
+}
+
 export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: number, tint: number, t: number, push = 0, pale = false) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -1645,7 +1729,7 @@ export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: nu
     return;
   }
   if (kind === 'stone') kind = 'rock';
-  if (kind !== 'kelp' && kind !== 'rock') {
+  if (kind !== 'kelp' && kind !== 'giantkelp' && kind !== 'rock') {
     drawBones(ctx, kind, size, tint, push);
     return;
   }
@@ -1668,25 +1752,8 @@ export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: nu
     ctx.fill();
     ctx.restore();
   } else if (kind === 'kelp') {
-    const h = 90 + size * 80;
-    const sway = Math.sin(t * 1.1 + tint * 10) * 14 + push;
-    ctx.strokeStyle = '#3E9E5A';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(0, 4);
-    ctx.quadraticCurveTo(sway * 0.4, -h * 0.5, sway, -h);
-    ctx.stroke();
-    ctx.fillStyle = '#4FB86B';
-    for (let i = 1; i < 6; i++) {
-      const k = i / 6;
-      const x = sway * (0.8 * k + 0.2 * k * k);
-      const y = 4 * (1 - k) * (1 - k) - h * k;
-      const side = i % 2 ? 1 : -1;
-      const flap = Math.sin(t * 1.8 + i * 0.9 + tint * 7) * 0.25;
-      const angle = side > 0 ? -0.45 + flap : Math.PI + 0.45 - flap;
-      ctx.beginPath();
-      ctx.ellipse(x + Math.cos(angle) * 10, y + Math.sin(angle) * 10, 10, 4, angle, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    drawKelp(ctx, size, tint, t, push);
+  } else {
+    drawGiantKelp(ctx, size, tint, t, push);
   }
 }

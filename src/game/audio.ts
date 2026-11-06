@@ -41,6 +41,7 @@ const FILES = {
   portal1: ["sound-portal-1.m4a"],
   portal2: ["sound-portal-2.m4a"],
   portal3: ["sound-portal-3.m4a"],
+  shopDoor: ["sound-store-entry-leave.m4a"],
 } as const;
 
 const ZEN_TRACKS = ["sound-zen-track-1.m4a", "sound-zen-track-2.m4a", "sound-zen-track-3.m4a"];
@@ -61,7 +62,7 @@ const VOLUME: Record<Sound, number> = {
   sailing: 0.25,
   tetherReel: 0.2,
   tetherHydraulic: 0.5,
-  implosion: 1,
+  implosion: 0.5,
   horn: 0.8,
   clank1: 0.8,
   clank2: 0.8,
@@ -93,6 +94,7 @@ const VOLUME: Record<Sound, number> = {
   portal1: 0.8,
   portal2: 1,
   portal3: 0.75,
+  shopDoor: 0.25,
 };
 
 /** Playback speed per sound, applied on top of any rate passed to `play`; above 1 is faster and higher pitched. */
@@ -129,6 +131,11 @@ const OPEN_HZ = 18000;
 const MUFFLED_HZ = 250;
 const MUFFLED_GAIN = 0.2;
 const GULL_MUFFLED_HZ = 450;
+const RAIN_VOLUME = 0.12;
+/** Depth in meters over which the rain dulls to a muffled drumming, and where it can no longer be heard. */
+const RAIN_MUFFLE_M = 6;
+const RAIN_REACH_M = 40;
+const RAIN_MUFFLED_HZ = 700;
 
 /** Hull creaks (depth 1, then depth 2) start at these fractions of the plating's depth rating. */
 const DEPTH_1_FROM = 0.4;
@@ -164,6 +171,8 @@ export class AudioManager {
   private gullFilter: BiquadFilterNode | null = null;
   private gullBus: GainNode | null = null;
   private gullMuffled = 0;
+  private rainGain: GainNode | null = null;
+  private rainFilter: BiquadFilterNode | null = null;
   private depthTravel = 0;
   private depthNext = 40;
   private depthY = 0;
@@ -368,6 +377,36 @@ export class AudioManager {
     this.gullMuffled += (target - this.gullMuffled) * (1 - Math.exp(-10 * dt));
     this.gullFilter.frequency.value = OPEN_HZ * (GULL_MUFFLED_HZ / OPEN_HZ) ** this.gullMuffled;
     this.gullBus.gain.value = 1 - 0.55 * this.gullMuffled;
+  }
+
+  /** A steady hiss of rain, loud at the surface and muffled to a murmur once the sub is under. */
+  rainTick(dt: number, level: number, depthM: number) {
+    if (!this.ctx || !this.master) return;
+    if (!this.rainGain) {
+      if (level <= 0.01) return;
+      const len = this.ctx.sampleRate * 2;
+      const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const high = this.ctx.createBiquadFilter();
+      high.type = "highpass";
+      high.frequency.value = 700;
+      this.rainFilter = this.ctx.createBiquadFilter();
+      this.rainFilter.type = "lowpass";
+      this.rainFilter.frequency.value = 9000;
+      this.rainGain = this.ctx.createGain();
+      this.rainGain.gain.value = 0;
+      src.connect(high).connect(this.rainFilter).connect(this.rainGain).connect(this.master);
+      src.start();
+    }
+    const under = Math.min(1, Math.max(0, depthM / RAIN_MUFFLE_M));
+    const reach = Math.max(0, 1 - Math.max(0, depthM) / RAIN_REACH_M);
+    const now = this.ctx.currentTime;
+    this.rainFilter!.frequency.setTargetAtTime(9000 * (RAIN_MUFFLED_HZ / 9000) ** under, now, 0.3);
+    this.rainGain!.gain.setTargetAtTime(RAIN_VOLUME * level * (1 - 0.5 * under) * reach * reach, now, 0.4);
   }
 
   /** Plays the seagull clip every so often at the surface, by day, when within earshot of an island (nearness 0..1). */

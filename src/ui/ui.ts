@@ -41,7 +41,8 @@ const ICON = {
   prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M20 5v14l-11-7Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M4 5v14l11-7Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
-  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/></svg>',
+  pause:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/></svg>',
   menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/></svg>',
 };
 
@@ -75,7 +76,7 @@ export class UI {
   private cache = new Map<string, string>();
   private toastTimer = 0;
   private shopRaf = 0;
-  private shopPreview: UpgradeId | null = null;
+  private shopPreview: UpgradeId | "scrubbers" | "electrolysis" | "weights" | null = null;
   private prevHull = 0;
   private shopIsland = "";
 
@@ -146,13 +147,19 @@ export class UI {
 
     $(this.root, "#debug-up").onclick = (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-        "[data-dbg], [data-zone], [data-all], [data-weights], [data-gear], [data-fast], [data-skin]",
+        "[data-dbg], [data-zone], [data-all], [data-weights], [data-gear], [data-fast], [data-skin], [data-rain]",
       );
       if (!btn) return;
       btn.blur();
       if (btn.dataset.skin) {
         const at = SKIN_ORDER.indexOf(this.game.save.skin) + Number(btn.dataset.skin);
         this.game.setSkin(SKIN_ORDER[(at + SKIN_ORDER.length) % SKIN_ORDER.length]);
+        return;
+      }
+      if (btn.dataset.rain) {
+        const order = [null, true, false] as const;
+        const at = order.indexOf(this.game.debugRain) + Number(btn.dataset.rain);
+        this.game.debugRain = order[(at + order.length) % order.length];
         return;
       }
       if (btn.dataset.fast) {
@@ -202,7 +209,10 @@ export class UI {
     };
 
     $(this.root, "#btn-menu").addEventListener("click", () => this.openMenu());
-    addEventListener("keydown", (e) => this.mapKeys(e), true);
+    addEventListener("keydown", (e) => {
+      this.mapKeys(e);
+      this.shopKeys(e);
+    }, true);
     $(this.root, "#purse").addEventListener("click", () => this.openInventory());
     $(this.root, "#dm-depth").addEventListener("click", () => this.game.input.tap("hold"));
     this.root
@@ -380,9 +390,13 @@ export class UI {
 
   private updateZen() {
     const a = this.game.audio;
-    this.zenBarEls = this.zenBarEls.length ? this.zenBarEls : [...$(this.root, "#zen-bars").children] as HTMLElement[];
+    this.zenBarEls = this.zenBarEls.length
+      ? this.zenBarEls
+      : ([...$(this.root, "#zen-bars").children] as HTMLElement[]);
     a.zenLevels(this.zenLevels);
-    this.zenBarEls.forEach((el, i) => (el.style.transform = `scaleY(${0.15 + 0.85 * this.zenLevels[i]})`));
+    this.zenBarEls.forEach(
+      (el, i) => (el.style.transform = `scaleY(${0.15 + 0.85 * this.zenLevels[i]})`),
+    );
     this.set("zen", `${a.zenTrack}${a.zenPlaying}`, () => {
       $(this.root, "#zen-title").textContent = `Track ${a.zenTrack + 1}`;
       const play = $(this.root, "#zen-play");
@@ -415,7 +429,7 @@ export class UI {
     this.set(
       "dbg",
       UPGRADE_ORDER.map((id) => g.save.upgrades[id]).join() +
-        `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}|${g.debugFast}|${g.save.skin}`,
+        `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}|${g.debugFast}|${g.save.skin}|${g.debugRain}`,
       () => {
         const zone = g.save.zone;
         const prevZone = ZONE_ORDER[ZONE_ORDER.indexOf(zone) - 1];
@@ -426,6 +440,7 @@ export class UI {
           "<h4>Zone (test)</h4>" +
           `<div class="dbg-row"><button tabindex="-1" data-zone="-1" title="${esc(ZONES[prevZone]?.name ?? "")}"${off(prevZone !== undefined)}>◀</button><span><b>Zone ${zoneNumber(zone)}/${ZONES.length - 1}</b><small>${ZONES[zone].name}</small></span><button tabindex="-1" data-zone="1" title="${esc(ZONES[nextZone]?.name ?? "")}"${off(nextZone !== undefined)}>▶</button></div>` +
           `<div class="dbg-row"><button tabindex="-1" data-fast="0"${g.debugFast ? "" : " disabled"}>−</button><span><b>Dev mode</b><small>${g.debugFast ? "On: fast, lit, wide, map revealed, no clipping, no damage" : "Off"}</small></span><button tabindex="-1" data-fast="1"${g.debugFast ? " disabled" : ""}>+</button></div>` +
+          `<div class="dbg-row"><button tabindex="-1" data-rain="-1">◀</button><span><b>Rain</b><small>${g.debugRain === null ? "Auto (follows the cycle)" : g.debugRain ? "Always raining" : "Never"}</small></span><button tabindex="-1" data-rain="1">▶</button></div>` +
           `<div class="dbg-row"><button tabindex="-1" data-skin="-1">◀</button><span><b>Skin</b><small>${SKINS[g.save.skin].name}</small></span><button tabindex="-1" data-skin="1">▶</button></div>` +
           "<h4>Upgrades (test)</h4>" +
           `<div class="dbg-row all"><button tabindex="-1" data-all="-1"${master > 0 ? "" : " disabled"}>−</button><span><b>All upgrades</b><small>Level ${master + 1}/${MAX_TEST_LEVEL + 1}</small></span><button tabindex="-1" data-all="1"${master < MAX_TEST_LEVEL ? "" : " disabled"}>+</button></div>` +
@@ -512,8 +527,8 @@ export class UI {
             : spot.kind === "portal"
               ? "Portal"
               : spot.side === "east"
-              ? "Map →"
-              : "← Map"
+                ? "Map →"
+                : "← Map"
           : "";
       this.set("t-spot", label, () => {
         const b = $(this.root, "#btn-spot");
@@ -537,9 +552,10 @@ export class UI {
     if (this.modalKind || g.travel) return "";
     const key = (k: string) => (this.touch ? "" : `<kbd>${k}</kbd> `);
     if (g.mode === "docked") {
-      if (spot?.kind === "shop") return `${key("E")}Visit the ${esc(spot.name)} shop`;
-      if (spot?.kind === "portal") return `${key("E")}Enter the portal`;
-      if (spot?.kind === "sail") return `${this.touch ? "" : "<kbd>E</kbd> or <kbd>Enter</kbd> "}Open the route map`;
+      if (spot?.kind === "shop") return `${this.touch ? "" : "<kbd>Enter</kbd> or <kbd>E</kbd> "}Visit the ${esc(spot.name)} shop`;
+      if (spot?.kind === "portal") return `${this.touch ? "" : "<kbd>Enter</kbd> or <kbd>E</kbd> "}Enter the portal`;
+      if (spot?.kind === "sail")
+        return `${this.touch ? "" : "<kbd>Enter</kbd> or <kbd>E</kbd> "}Open the route map`;
       return this.touch
         ? "Drag to sail · Tap Dive to launch"
         : "<kbd>←</kbd><kbd>→</kbd> Sail &nbsp;·&nbsp; <kbd>Shift</kbd> Boost &nbsp;·&nbsp; <kbd>Space</kbd> Dive";
@@ -768,10 +784,6 @@ export class UI {
               `<b>${GEAR.scrubbers.name}</b> ${s.battery > 0 ? `filter the CO₂, so air lasts ${Math.round((1 / GEAR.scrubbers.drain - 1) * 100)}% longer, drawing on the battery.` : "are offline: the battery is empty."}`,
             ),
           );
-        if (save.scrubbers)
-          lines.push(
-            row(`The <b>${GEAR.scrubbers.name}</b> also draw power while you are below the surface.`),
-          );
         if (save.electrolysis)
           lines.push(
             row(
@@ -791,7 +803,7 @@ export class UI {
     const range = Math.round(s.battery / PX_PER_M);
     this.set(
       "pop-batt",
-      `${Math.round(range / 10)}|${g.maxBattery}|${save.electrolysis}|${g.up.battery}|${g.up.light}|${g.up.sonar}|${g.depthHeld}|${g.weightsOn}|${g.lampOn}|${g.sonarOnline}`,
+      `${Math.round(range / 10)}|${g.maxBattery}|${save.electrolysis}|${save.scrubbers}|${g.up.battery}|${g.up.light}|${g.up.sonar}|${g.depthHeld}|${g.weightsOn}|${g.lampOn}|${g.sonarOnline}`,
       () => {
         const lines = [
           `<h4>Battery · ${esc(cell.name)}</h4>`,
@@ -833,6 +845,14 @@ export class UI {
           lines.push(
             row(
               `The <b>${GEAR.electrolysis.name}</b> also draws power, even when you are sitting still.`,
+            ),
+          );
+        if (save.scrubbers)
+          lines.push(
+            row(
+              save.electrolysis
+                ? `The <b>${GEAR.scrubbers.name}</b> sit idle while the ${GEAR.electrolysis.name} runs, so they use no extra power.`
+                : `The <b>${GEAR.scrubbers.name}</b> also draw about ${GEAR.scrubbers.batteryDrain} a second while you are below the surface, even sitting still, and stop when the battery is empty.`,
             ),
           );
         $(this.root, "#pop-batt").innerHTML = lines.join("");
@@ -991,13 +1011,74 @@ export class UI {
     buttons[next].focus();
   }
 
+  private denyBuy(card: HTMLElement) {
+    if (card.classList.contains("maxed")) return;
+    this.game.audio.play("invalid");
+    card.classList.remove("shake");
+    void card.offsetWidth;
+    card.classList.add("shake");
+  }
+
+  private shopKeys(e: KeyboardEvent) {
+    if (this.modalKind !== "shop" || e.ctrlKey || e.metaKey || e.altKey) return;
+    const dir: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0], KeyA: [-1, 0],
+      ArrowRight: [1, 0], KeyD: [1, 0],
+      ArrowUp: [0, -1], KeyW: [0, -1],
+      ArrowDown: [0, 1], KeyS: [0, 1],
+    };
+    const active = document.activeElement as HTMLElement | null;
+    const card = active?.closest<HTMLElement>(".upg") ?? null;
+    const top = active?.closest<HTMLElement>("[data-act=close], [data-act=sell]") ?? null;
+    if (e.code === "KeyE" || e.code === "Enter") {
+      if (card) {
+        e.preventDefault();
+        e.stopPropagation();
+        const buy = card.querySelector<HTMLButtonElement>("button[data-act^=buy]");
+        if (buy?.disabled) this.denyBuy(card);
+        if (buy && !buy.disabled) buy.click();
+        this.modal.querySelector<HTMLElement>(`.upg[data-id="${card.dataset.id}"]`)?.focus();
+      } else if (top) {
+        e.preventDefault();
+        e.stopPropagation();
+        const act = top.dataset.act;
+        top.click();
+        if (act === "sell") {
+          this.modal.querySelector<HTMLElement>("[data-act=sell], [data-act=close]")?.focus();
+        }
+      }
+      return;
+    }
+    const d = dir[e.code];
+    if (!d) return;
+    const cards = [...this.modal.querySelectorAll<HTMLElement>(".upg")];
+    const sell = this.modal.querySelector<HTMLElement>("[data-act=sell]");
+    const close = this.modal.querySelector<HTMLElement>("[data-act=close]");
+    e.preventDefault();
+    e.stopPropagation();
+    if (top) {
+      if (d[1] < 0 && top === sell) close?.focus();
+      if (d[1] > 0) (top === close ? (sell ?? cards[0]) : cards[0])?.focus();
+      return;
+    }
+    if (!cards.length) return;
+    const at = cards.indexOf(card as HTMLElement);
+    if (at < 0) return cards[0].focus();
+    const cols = getComputedStyle(cards[0].parentElement!).gridTemplateColumns.split(" ").length;
+    const next = at + d[0] + d[1] * cols;
+    if (next >= 0 && next < cards.length) cards[next].focus();
+    else if (d[1] < 0 && at < cols) (sell ?? close)?.focus();
+  }
+
   close() {
+    if (this.modalKind === "shop") this.game.audio.play("shopDoor");
     cancelAnimationFrame(this.shopRaf);
     this.game.skinPreview = false;
     clearTimeout(this.closeTimer);
     const menu =
-      this.modalKind === "menu" && !matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? this.modal.querySelector(".card.menu")
+      (this.modalKind === "menu" || this.modalKind === "shop") &&
+      !matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? this.modal.querySelector(".card.menu, .card.shop")
         : null;
     this.modalKind = null;
     this.game.paused = false;
@@ -1039,7 +1120,7 @@ export class UI {
           <p>Start over? This erases your saved sub, money and upgrades.</p>
           <div class="row"><button class="btn danger" data-act="erase">Erase and start over</button><button class="btn ghost" data-act="cancel">Keep my game</button></div>
         </div>
-        <p class="title-hint">${this.touch ? "Drag on the left side to steer. Buttons on the right." : "Arrow keys or WASD to move · Space to dive · E or Enter to use shops · Esc for the menu"}</p>
+        <p class="title-hint">${this.touch ? "Drag on the left side to steer. Buttons on the right." : "Arrow keys or WASD to move · Space to dive · Enter or E to use shops · Esc for the menu"}</p>
       </div>`,
       "title-overlay",
     );
@@ -1087,7 +1168,8 @@ export class UI {
       </div>`,
       "wreck-overlay",
     );
-    if (unlock) setTimeout(() => this.modalKind === "message" && this.game.audio.play("chime2"), 1600);
+    if (unlock)
+      setTimeout(() => this.modalKind === "message" && this.game.audio.play("chime2"), 1600);
     const buttons = this.modal.querySelectorAll<HTMLButtonElement>("button");
     setTimeout(() => {
       buttons.forEach((b) => (b.disabled = false));
@@ -1104,7 +1186,9 @@ export class UI {
 
   /** The route map: every zone and how they connect, with the routes from this zone end to choose from. */
   openRouteMap(from: Endpoint, portal?: Portal) {
-    const dests = portal ? [{ zone: portal.to, side: "west" as const }] : routesFrom(from.zone, from.side);
+    const dests = portal
+      ? [{ zone: portal.to, side: "west" as const }]
+      : routesFrom(from.zone, from.side);
     const half = 25;
     const same = (a: Endpoint, b: Endpoint) => a.zone === b.zone && a.side === b.side;
     const port = (e: Endpoint) => {
@@ -1112,13 +1196,16 @@ export class UI {
       return { x: m.x + (e.side === "east" ? half : -half), y: m.y };
     };
     const links = this.game.save.portal ? [...ROUTES, PORTAL_LINK] : ROUTES;
-    const edges = links.filter(([a]) => !portal || a === PORTAL_LINK[0]).map(([a, b]) => {
-      const pa = port(a);
-      const pb = port(b);
-      const mx = (pa.x + pb.x) / 2;
-      const active = portal ? a === PORTAL_LINK[0] : same(a, from) || same(b, from);
-      return `<path class="edge${a === PORTAL_LINK[0] ? " portal" : ""}${active ? " active" : ""}" d="M${pa.x},${pa.y} C${mx},${pa.y} ${mx},${pb.y} ${pb.x},${pb.y}"/>`;
-    }).join("");
+    const edges = links
+      .filter(([a]) => !portal || a === PORTAL_LINK[0])
+      .map(([a, b]) => {
+        const pa = port(a);
+        const pb = port(b);
+        const mx = (pa.x + pb.x) / 2;
+        const active = portal ? a === PORTAL_LINK[0] : same(a, from) || same(b, from);
+        return `<path class="edge${a === PORTAL_LINK[0] ? " portal" : ""}${active ? " active" : ""}" d="M${pa.x},${pa.y} C${mx},${pa.y} ${mx},${pb.y} ${pb.x},${pb.y}"/>`;
+      })
+      .join("");
     const nodes = ZONES.map((z, i) => {
       if (z.catalog || (portal && i !== from.zone && i !== portal.to)) return "";
       const here = i === from.zone;
@@ -1247,14 +1334,14 @@ export class UI {
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>"} to sail the ship.</li>
             <li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while sailing to boost.</li>
             <li>${this.touch ? "Tap <b>Dive</b>" : "Press <kbd>Space</kbd>"} to drop the sub. Drive back up to the ship to dock, recharge and repair.</li>
-            <li>Sail next to an island and ${this.touch ? "tap <b>Shop</b>" : "press <kbd>E</kbd> or <kbd>Enter</kbd>"} to sell your haul and buy upgrades.</li>
-            <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>E</kbd> or <kbd>Enter</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
+            <li>Sail next to an island and ${this.touch ? "tap <b>Shop</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to sell your haul and buy upgrades.</li>
+            <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
           </ul>
           <h4 class="howto-title">Submarine</h4>
           <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>"} to steer. The spotlight follows where you head.</li>
             <li>${this.touch ? "Tap <b>Grab</b>" : "Press <kbd>Space</kbd>"} to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
-            <li>Below about 40 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>.</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
+            <li>Below about 5 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>.</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
             ${g.propellerLevel >= 1 ? `<li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while steering to boost. It drains the battery fast.</li>` : ""}
             ${g.save.weights ? `<li>${this.touch ? "Tap <b>Drop</b>" : "Press <kbd>Q</kbd> or <kbd>/</kbd>"} to drop the dive weights for a quick ride up.</li>` : ""}
             ${this.touch ? "" : "<li>Press <kbd>L</kbd> to cycle the spotlight, and <kbd>O</kbd> to cycle the sonar, between off, on and auto.</li>"}
@@ -1311,7 +1398,7 @@ export class UI {
           <p>Vibe coded with Claude by <a href="https://aarongarciacreative.com/" target="_blank" rel="noopener noreferrer">Aaron Garcia</a>.</p>
           <p class="muted">For my children, Aaliyah and Eden.</p>
         </details>
-        <div class="sound-row switch-row"><span>Dev mode</span><button class="dim-switch${devModeOn() ? " on" : ""}" id="dev-mode" role="switch" aria-checked="${devModeOn()}" aria-label="Dev mode"><span class="dim-knob"></span></button></div>
+        <div class="sound-row switch-row"><span>Dev panel</span><button class="dim-switch${devModeOn() ? " on" : ""}" id="dev-mode" role="switch" aria-checked="${devModeOn()}" aria-label="Dev panel"><span class="dim-knob"></span></button></div>
       </div>`,
     );
     const skinsAcc = $<HTMLDetailsElement>(this.modal, "#skins-acc");
@@ -1347,7 +1434,9 @@ export class UI {
         this.applyDevMode();
         if (!on && g.world.def.catalog) g.sailTo({ zone: ZONE_ORDER[1], side: "west" });
       }
-      const pick = target.closest<HTMLElement>("[data-pick-skin]")?.dataset.pickSkin as SkinId | undefined;
+      const pick = target.closest<HTMLElement>("[data-pick-skin]")?.dataset.pickSkin as
+        | SkinId
+        | undefined;
       if (pick && g.save.skins.includes(pick)) {
         g.setSkin(pick);
         $(this.modal, "#skin-list").innerHTML = this.skinList();
@@ -1389,6 +1478,7 @@ export class UI {
   openShop(island: string) {
     this.shopIsland = island;
     this.shopPreview = null;
+    this.game.audio.play("shopDoor");
     this.open(
       "shop",
       `<div class="card shop">
@@ -1410,7 +1500,11 @@ export class UI {
       const target = e.target as HTMLElement;
       if (target === this.modal) return this.close();
       const btn = target.closest<HTMLElement>("[data-act]");
-      if (!btn) return;
+      if (!btn) {
+        const card = target.closest<HTMLElement>(".upg");
+        if (card && target.closest(".upg-buy") && card.querySelector("button:disabled")) this.denyBuy(card);
+        return;
+      }
       const act = btn.dataset.act;
       if (act === "close") this.close();
       if (act === "sell") {
@@ -1443,7 +1537,13 @@ export class UI {
       const row = (e.target as HTMLElement).closest<HTMLElement>(".upg");
       const id = row?.dataset.id;
       this.shopPreview =
-        row && id && id in UPGRADES && !row.classList.contains("maxed") && !row.classList.contains("sold") ? (id as UpgradeId) : null;
+        row &&
+        id &&
+        (id in UPGRADES || id === "scrubbers" || id === "electrolysis" || id === "weights") &&
+        !row.classList.contains("maxed") &&
+        !row.classList.contains("sold")
+          ? (id as NonNullable<typeof this.shopPreview>)
+          : null;
     };
     this.modal.addEventListener("pointerover", setPreview);
     this.modal.addEventListener("focusin", setPreview);
@@ -1452,7 +1552,7 @@ export class UI {
 
   private renderShop() {
     const g = this.game;
-    const sells = g.world.def.islands.find((i) => i.name === this.shopIsland)?.sells;
+    const island = g.world.def.islands.find((i) => i.name === this.shopIsland);
     $(this.modal, "#shop-wallet").textContent = money(g.save.money);
 
     const kinds = ITEM_KINDS.filter((k) => g.save.cargo[k]);
@@ -1477,9 +1577,7 @@ export class UI {
 
     $(this.modal, "#shop-upgrades").innerHTML =
       UPGRADE_ORDER.filter(
-        (id) =>
-          (!sells || sells.includes(id)) &&
-          stockAt(id, g.save.stock[id], g.save.zone, this.shopIsland).stocked,
+        (id) => stockAt(id, g.save.stock[id], g.save.zone, this.shopIsland).stocked,
       )
         .map((id) => {
           const def = UPGRADES[id];
@@ -1497,14 +1595,15 @@ export class UI {
           return `<div class="upg ${next ? "" : "maxed"}${!next ? " gray" : ""}${soldOut ? " sold" : ""}" data-id="${id}" tabindex="-1">
         ${soldOut ? `<span class="sold-banner">Sold out</span>` : ""}
         <div class="upg-head"><h3>${def.title}</h3><div class="pips">${pips}</div></div>
-        <p class="upg-now">${esc(now.name)} · ${esc(now.effect)}</p>
-        ${next ? `<p class="upg-next">Next: <b>${esc(next.name)}</b> · ${esc(next.effect)}</p>` : `<p class="upg-next">${esc(def.blurb)}</p>`}
+        ${next ? `<p class="upg-next"><b>${esc(next.name)}</b> · ${esc(next.gain ?? next.effect)}</p>` : `<p class="upg-next">${esc(def.blurb)}</p>`}
+        <p class="upg-now">Current: ${esc(now.name)} · ${esc(now.effect)}</p>
+        ${(next ?? now).drain ? `<span class="drain-badge">⚡ ${esc((next ?? now).drain!)}</span>` : ""}
         <div class="upg-buy">${action}</div>
       </div>`;
         })
         .join("") +
-      (sells ? "" : this.gearCards()) +
-      (!sells && g.world.def.sellsWeights ? this.weightsCard() : "");
+      this.gearCards() +
+      (island?.weights ? this.weightsCard() : "");
   }
 
   private shieldTip(hull: number, max: number) {
@@ -1521,8 +1620,8 @@ export class UI {
 
   private gearCards() {
     const g = this.game;
-    return (Object.keys(GEAR) as GearId[])
-      .filter((id): id is Exclude<GearId, "candles"> => id !== "candles" && g.save.zone >= GEAR[id].firstZone)
+    const sold = g.world.def.islands.find((i) => i.name === this.shopIsland)?.gear ?? [];
+    return sold
       .map((id) => {
         const gear = GEAR[id];
         const cost = g.gearCost(id);
@@ -1533,8 +1632,9 @@ export class UI {
           : `<button class="btn small" data-act="buyGear" data-id="${id}" ${g.save.money < cost ? "disabled" : ""}>Buy ${money(cost)}</button>`;
         return `<div class="upg ${full ? "maxed" : ""}" data-id="${id}" tabindex="-1">
         <div class="upg-head"><h3>${gear.name}</h3></div>
-        <p class="upg-now">${now}</p>
         <p class="upg-next">${gear.blurb}</p>
+        <p class="upg-now">${now}</p>
+        ${"batteryNote" in gear ? `<span class="drain-badge">⚡ ${esc(gear.batteryNote)}</span>` : ""}
         <div class="upg-buy">${action}</div>
       </div>`;
       })
@@ -1548,8 +1648,8 @@ export class UI {
       : `<button class="btn small" data-act="buyWeights" ${g.save.money < WEIGHTS.cost ? "disabled" : ""}>Buy ${money(WEIGHTS.cost)}</button>`;
     return `<div class="upg ${g.save.weights ? "maxed" : ""}" data-id="weights" tabindex="-1">
         <div class="upg-head"><h3>${WEIGHTS.name}</h3></div>
-        <p class="upg-now">${g.save.weights ? "Strapped on every dive" : "One-time purchase"}</p>
         <p class="upg-next">${WEIGHTS.blurb} Drop them with ${this.touch ? "the <b>Drop</b> button" : "<kbd>Q</kbd> or <kbd>?</kbd>"}.</p>
+        <p class="upg-now">${g.save.weights ? "Strapped on every dive" : "One-time purchase"}</p>
         <div class="upg-buy">${action}</div>
       </div>`;
   }
@@ -1568,10 +1668,20 @@ export class UI {
       const t = now / 1000;
       const up: Loadout = { ...this.game.up };
       const pid = this.shopPreview;
-      if (pid && up[pid] < UPGRADES[pid].levels.length - 1) up[pid]++;
+      const upgrade = pid && pid in UPGRADES ? (pid as UpgradeId) : null;
+      if (upgrade && up[upgrade] < UPGRADES[upgrade].levels.length - 1) up[upgrade]++;
+      const gear = { ...this.game.save };
+      if (pid === "scrubbers" || pid === "electrolysis") gear[pid] = true;
+      const name = upgrade
+        ? UPGRADES[upgrade].levels[up[upgrade]].name
+        : pid === "weights"
+          ? WEIGHTS.name
+          : pid
+            ? GEAR[pid as "scrubbers" | "electrolysis"].name
+            : "";
       this.set(
         "preview-label",
-        pid ? `Preview: ${UPGRADES[pid].levels[up[pid]].name}` : "Your sub",
+        pid ? `Preview: ${name}` : "Your sub",
         (v) => (label.textContent = v),
       );
 
@@ -1591,7 +1701,7 @@ export class UI {
       const scale = Math.min(w / 190, h / (this.game.save.skin === "challenger" ? 210 : 130));
       ctx.translate(w / 2, h / 2 + 6 + Math.sin(t * 1.6) * 4);
       ctx.scale(scale, scale);
-      drawSub(ctx, up, t, t * 6, false, false, 0, this.game.save, 1, this.game.save.skin, 1);
+      drawSub(ctx, up, t, t * 6, false, pid === "weights", 0, gear, 1, this.game.save.skin, 1);
       this.shopRaf = requestAnimationFrame(frame);
     };
     this.shopRaf = requestAnimationFrame(frame);

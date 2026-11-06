@@ -1,4 +1,5 @@
 import type { Game } from '../game/game';
+import type { WreckKind } from '../data/zones';
 import { SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE, CRACK_TIME, HOOK_DROP } from '../config';
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
@@ -9,11 +10,13 @@ import { drawShip, drawIsland, dockPoles, drawCloud, cloudShape, drawBuoy, drawP
 import { BACKGROUND_KINDS, CREATURE_EXTENT } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
+import { drawRainFall, drawRainRipples } from './weather';
 import { waveY, mixColor, lerp, clamp } from '../util';
 import { BACK_LAYERS } from '../game/world';
 import { daylight, STARS } from './daylight';
 import { lightCover, type Light } from './lighting';
 
+const WRECK_EXTENT: Record<WreckKind, number> = { sloop: 220, galleon: 440, containers: 340, freighter: 1700 };
 const DIM_W = 640;
 const DIM_H = 560;
 const DIM_OX = 320;
@@ -243,6 +246,8 @@ export function renderScene(g: Game) {
 
   const space = !!def.space;
   const { night, warm, sunAngle } = space ? { night: 0, warm: 0, sunAngle: 0 } : daylight(g.day);
+  const rain = space ? 0 : g.rain;
+  const clear = 1 - rain * 0.85;
   /** Lights on the ship: at night, and always on a moon. */
   const lampNight = space ? 1 : night;
   /** The color the water darkens toward in the deep. */
@@ -258,8 +263,9 @@ export function renderScene(g: Game) {
   // Sky
   if (top < 20) {
     const sky = ctx.createLinearGradient(0, -SKY_HEIGHT, 0, 0);
-    sky.addColorStop(0, mixColor(mixColor(def.sky[0], '#F28BA0', warm * 0.3), '#060B2A', night));
-    sky.addColorStop(1, mixColor(mixColor(def.sky[1], '#FFA070', warm * 0.55), '#1C2C68', night));
+    const gloom = mixColor('#8E99A6', '#141A2A', night);
+    sky.addColorStop(0, mixColor(mixColor(mixColor(def.sky[0], '#F28BA0', warm * 0.3), '#060B2A', night), gloom, rain * 0.8));
+    sky.addColorStop(1, mixColor(mixColor(mixColor(def.sky[1], '#FFA070', warm * 0.55), '#1C2C68', night), gloom, rain * 0.7));
     ctx.fillStyle = sky;
     ctx.fillRect(left - 20, top - 20, W + 40, -top + 40);
 
@@ -273,7 +279,7 @@ export function renderScene(g: Game) {
     if (night > 0 || space) {
       ctx.fillStyle = '#FFFFFF';
       (space ? STARS.slice(0, 22) : STARS).forEach((st) => {
-        ctx.globalAlpha = (space ? 1 : night) * (0.55 + 0.45 * Math.sin(t * 2 + st.p));
+        ctx.globalAlpha = (space ? 1 : night * clear) * (0.55 + 0.45 * Math.sin(t * 2 + st.p));
         ctx.beginPath();
         ctx.arc(st.x * skyW, -st.y * SKY_HEIGHT * 0.95, st.r, 0, Math.PI * 2);
         ctx.fill();
@@ -284,6 +290,7 @@ export function renderScene(g: Game) {
     const body = (angle: number) => ({ x: skyW * (0.5 - 0.42 * Math.cos(angle)), y: 10 - 0.75 * skyH * Math.sin(angle) });
     if (!space && Math.sin(sunAngle) > -0.25) {
       const p = body(sunAngle);
+      ctx.globalAlpha = clear;
       const tint = mixColor('#FFF6D0', '#FFD9A0', warm * 0.5);
       const fade = (a: number) => tint.replace('rgb(', 'rgba(').replace(')', `,${a})`);
       const corona = ctx.createRadialGradient(p.x, p.y, 10, p.x, p.y, 110);
@@ -302,10 +309,11 @@ export function renderScene(g: Game) {
       ctx.beginPath();
       ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
       ctx.fill();
+      ctx.globalAlpha = 1;
     }
     if (!space && night > 0 && Math.sin(sunAngle + Math.PI) > -0.25) {
       const p = body(sunAngle + Math.PI);
-      ctx.globalAlpha = night;
+      ctx.globalAlpha = night * clear;
       const glow = ctx.createRadialGradient(p.x, p.y, 12, p.x, p.y, 70);
       glow.addColorStop(0, 'rgba(220,230,255,0.45)');
       glow.addColorStop(0.4, 'rgba(190,205,245,0.16)');
@@ -324,9 +332,11 @@ export function renderScene(g: Game) {
       ctx.globalAlpha = 1;
     }
 
-    const cloudColor = mixColor('#FFFFFF', '#46567F', night * 0.85);
+    const cloudColor = mixColor(mixColor('#FFFFFF', '#46567F', night * 0.85), mixColor('#7C8795', '#222B40', night), rain * 0.85);
     const span = skyW + 900;
-    for (let i = 0; i < (space ? 0 : 9); i++) {
+    for (let i = 0; i < (space ? 0 : 14); i++) {
+      if (i >= 9 && rain <= 0.02) break;
+      ctx.globalAlpha = i < 9 ? 1 : clamp(rain * 1.5, 0, 1);
       const shape = cloudShape(i);
       const x = -450 + ((((i * 610 - cam.x * 0.3 + t * (5 + (i % 3) * 2)) % span) + span) % span);
       ctx.save();
@@ -880,6 +890,12 @@ export function renderScene(g: Game) {
     ctx.stroke();
   }
 
+  if (rain > 0.01) {
+    drawRainFall(ctx, g.canvas.width, g.canvas.height, oy, t, rain, night, view.dpr);
+    ctx.setTransform(k, 0, 0, k, ox, oy);
+    if (top < 20 && bottom > -20) drawRainRipples(ctx, left, W, t, rain, (x) => waveY(x, t));
+  }
+
   // Darkness and lights
   const startPx = def.darkness[0] * PX_PER_M;
   const lights: Light[] = [];
@@ -959,7 +975,7 @@ export function renderScene(g: Game) {
         x: s.x + s.facing * (COCKPIT.x * cos - COCKPIT.y * sin) * pieceScale('glass', crush),
         y: subY + (COCKPIT.x * sin + COCKPIT.y * cos) * pieceScale('glass', crush),
         r: 48,
-        a: 0.6 * cockpitPower * alive,
+        a: 0.8 * cockpitPower * alive,
         sub: true,
       });
       if (g.save.skin === 'capsule') {
@@ -1065,7 +1081,7 @@ export function renderScene(g: Game) {
     crumplePiece(ctx, 'hull', crush);
     if (g.save.skin !== 'oceangate' && g.save.skin !== 'sm13' && g.save.skin !== 'challenger') runningLights(ctx, t, g.warning, sternStretch(g.up.cargo), g.save.skin === 'standard');
     ctx.restore();
-    if (g.save.skin === 'standard') {
+    if (g.save.skin === 'standard' || g.save.skin === 'capsule') {
       ctx.save();
       crumplePiece(ctx, 'battery', crush);
       ctx.translate(-sternStretch(g.up.cargo), 0);
@@ -1119,6 +1135,12 @@ export function renderScene(g: Game) {
         drawDeco(f, 'lungsub', 1, 0.5, 0);
       });
       g.sonarShape.draw(ctx, k, b.x * k + ox, (b.y - 60) * k + oy, b.sprite, a * open);
+      continue;
+    }
+    if (b.wreck) {
+      const kind = b.wreck;
+      b.sprite ??= g.sonarShape.outline(`wreck|${kind}|${k.toFixed(2)}`, WRECK_EXTENT[kind], k, '150,245,170', (f) => drawWreck(f, kind));
+      g.sonarShape.drawMasked(ctx, { k, ox, oy, left, top, w: W, h: H }, world, b.sprite, b.x, b.y, a, lights);
       continue;
     }
     if (b.bone) {

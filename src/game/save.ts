@@ -21,6 +21,8 @@ export interface SaveData {
   zone: number;
   shipX: number;
   day: number;
+  /** Total game days played, which the weather follows. */
+  days: number;
   cargo: Partial<Record<ItemKind, number>>;
   /** Whether the one-time dive weights have been bought. */
   weights: boolean;
@@ -58,6 +60,7 @@ export function newSave(): SaveData {
     zone: 0,
     shipX: 900,
     day: START_DAY,
+    days: START_DAY,
     cargo: {},
     weights: false,
     lamp: 'auto',
@@ -100,6 +103,7 @@ export function sanitize(raw: any): SaveData | null {
   s.zone = Math.floor(num(raw.zone, 0, ZONES.length - 1, 0));
   s.shipX = num(raw.shipX, 0, ZONES[s.zone].width, s.shipX);
   s.day = num(raw.day, 0, 1, START_DAY) % 1;
+  s.days = num(raw.days, 0, 1e6, s.day);
   for (const k of ITEM_KINDS) {
     const c = Math.floor(num(raw.cargo?.[k], 0, 9999, 0));
     if (c) s.cargo[k] = c;

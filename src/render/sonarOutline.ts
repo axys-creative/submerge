@@ -9,6 +9,37 @@ const EDGE = 7;
 /** The terrain glow is soft, so it is drawn at this fraction of the screen's resolution and scaled up. */
 const RES = 0.5;
 
+/** Erases everything the submarine's own lights shine on. */
+function cutLights(c: CanvasRenderingContext2D, lights: Light[]) {
+  c.globalCompositeOperation = 'destination-out';
+  for (const l of lights) {
+    if (!l.sub) continue;
+    const reach = l.r * 1.1;
+    const strength = Math.min(1, (l.a ?? 1) * 1.6);
+    const glow = c.createRadialGradient(l.x, l.y, 0, l.x, l.y, reach);
+    glow.addColorStop(0, `rgba(0,0,0,${strength})`);
+    glow.addColorStop(0.88, `rgba(0,0,0,${strength})`);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = glow;
+    if (l.angle === undefined) {
+      c.beginPath();
+      c.arc(l.x, l.y, reach, 0, Math.PI * 2);
+      c.fill();
+      continue;
+    }
+    const spread = (l.spread ?? 0.4) * 1.2;
+    for (const [f, a] of [[1, 0.25], [0.93, 0.35], [0.86, 0.5], [0.8, 1]]) {
+      c.beginPath();
+      c.moveTo(l.x, l.y);
+      c.arc(l.x, l.y, reach, l.angle - spread * f, l.angle + spread * f);
+      c.closePath();
+      c.globalAlpha = a;
+      c.fill();
+    }
+    c.globalAlpha = 1;
+  }
+}
+
 /** Lights up the real rock edge (sea floor and cave walls) wherever a sonar ping has reached it. */
 export class SonarOutline {
   private canvas = document.createElement('canvas');
@@ -112,33 +143,7 @@ export class SonarOutline {
     c.fillStyle = fade;
     c.fillRect(left, tf.top - 30, right - left, bottom - tf.top + 30);
 
-    c.globalCompositeOperation = 'destination-out';
-    for (const l of lights) {
-      if (!l.sub) continue;
-      const reach = l.r * 1.1;
-      const strength = Math.min(1, (l.a ?? 1) * 1.6);
-      const glow = c.createRadialGradient(l.x, l.y, 0, l.x, l.y, reach);
-      glow.addColorStop(0, `rgba(0,0,0,${strength})`);
-      glow.addColorStop(0.88, `rgba(0,0,0,${strength})`);
-      glow.addColorStop(1, 'rgba(0,0,0,0)');
-      c.fillStyle = glow;
-      if (l.angle === undefined) {
-        c.beginPath();
-        c.arc(l.x, l.y, reach, 0, Math.PI * 2);
-        c.fill();
-        continue;
-      }
-      const spread = (l.spread ?? 0.4) * 1.2;
-      for (const [f, a] of [[1, 0.25], [0.93, 0.35], [0.86, 0.5], [0.8, 1]]) {
-        c.beginPath();
-        c.moveTo(l.x, l.y);
-        c.arc(l.x, l.y, reach, l.angle - spread * f, l.angle + spread * f);
-        c.closePath();
-        c.globalAlpha = a;
-        c.fill();
-      }
-      c.globalAlpha = 1;
-    }
+    cutLights(c, lights);
 
     main.save();
     main.setTransform(1, 0, 0, 1, 0, 0);
@@ -220,6 +225,44 @@ export class SonarShape {
     const sprite = { canvas, k };
     this.cache.set(key, sprite);
     return sprite;
+  }
+
+  private mask = document.createElement('canvas');
+
+  /** Draws a big outline centred at world (wx, wy), leaving out what is below the sea floor and what the sub's lights shine on. */
+  drawMasked(main: CanvasRenderingContext2D, tf: WorldTransform, world: World, sprite: ShapeSprite, wx: number, wy: number, alpha: number, lights: Light[]) {
+    const w = Math.ceil(main.canvas.width * RES);
+    const h = Math.ceil(main.canvas.height * RES);
+    if (this.mask.width !== w || this.mask.height !== h) {
+      this.mask.width = w;
+      this.mask.height = h;
+    }
+    const c = this.mask.getContext('2d')!;
+    c.globalCompositeOperation = 'source-over';
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, w, h);
+    c.setTransform(tf.k * RES, 0, 0, tf.k * RES, tf.ox * RES, tf.oy * RES);
+    const ww = sprite.canvas.width / sprite.k;
+    const hh = sprite.canvas.height / sprite.k;
+    c.drawImage(sprite.canvas, wx - ww / 2, wy - hh / 2, ww, hh);
+
+    c.globalCompositeOperation = 'destination-in';
+    c.fillStyle = '#000';
+    const left = tf.left - 30;
+    const right = tf.left + tf.w + 30;
+    c.beginPath();
+    c.moveTo(left, tf.top - 30);
+    for (let x = Math.floor(left / 12) * 12; x <= right; x += 12) c.lineTo(x, world.floorAt(x));
+    c.lineTo(right, tf.top - 30);
+    c.closePath();
+    c.fill();
+    cutLights(c, lights);
+
+    main.save();
+    main.setTransform(1, 0, 0, 1, 0, 0);
+    main.globalAlpha = alpha;
+    main.drawImage(this.mask, 0, 0, main.canvas.width, main.canvas.height);
+    main.restore();
   }
 
   draw(main: CanvasRenderingContext2D, k: number, sx: number, sy: number, sprite: ShapeSprite, alpha: number) {

@@ -1,7 +1,9 @@
 import type { CreatureKind } from './creatures';
-import type { UpgradeId } from './upgrades';
+import type { GearId } from './upgrades';
 import type { ItemKind } from './items';
 import { CATALOG } from './catalog';
+
+export type WreckKind = 'sloop' | 'galleon' | 'freighter' | 'containers';
 
 export interface CreatureSpawn {
   kind: CreatureKind;
@@ -66,9 +68,9 @@ export interface ZoneDef {
   /** Junk on the sea floor at fixed spots; clearing all of it earns the zone's clean-up achievement. */
   trash?: number;
   creatures: CreatureSpawn[];
-  /** `sells` limits the island shop to those upgrades; without it the shop sells everything this zone offers. */
-  islands: { x: number; name: string; sells?: UpgradeId[] }[];
-  wrecks: { x: number; kind: 'sloop' | 'galleon' | 'freighter' | 'containers' }[];
+  /** What each shop sells is set by the stock slots in `src/data/upgrades.ts`. `gear` is the air gear sold only at this island, and `weights` means it also sells the dive weights. */
+  islands: { x: number; name: string; weights?: boolean; gear?: Exclude<GearId, 'candles'>[] }[];
+  wrecks: { x: number; kind: WreckKind }[];
   /** Vertical cave shafts cut into the sea floor; width in px, depth in meters. */
   shafts?: { name: string; x: number; width: number; depth: number }[];
   caves?: CaveDef[];
@@ -84,8 +86,6 @@ export interface ZoneDef {
   farIslandsAt?: number[];
   /** World x of a tiny cruise ship on the horizon. */
   farShipAt?: number;
-  /** The island shop here also sells the dive weights. */
-  sellsWeights?: boolean;
   kelp: number;
   /** Coral clusters on the shallow sea floor. */
   coral?: number;
@@ -94,6 +94,10 @@ export interface ZoneDef {
   bones?: number;
   /** Seagrass patches laid out the same every time over stretches of flat sea floor; each keeps at most one tire. */
   meadows?: { x0: number; x1: number; kelp: number }[];
+  /** Kelp forests: `count` kelp plants spread over x0 to x1; `giant` is the share that are tall giant kelp (default 0.7). */
+  forests?: { x0: number; x1: number; count: number; giant?: number }[];
+  /** Extra rocks, coral and kelp placed at random between x0 and x1. */
+  beds?: { x0: number; x1: number; rocks?: number; coral?: number; kelp?: number }[];
 }
 
 const smooth = (x: number, from: number, to: number) => {
@@ -135,8 +139,8 @@ export const ZONES: ZoneDef[] = [
       { kind: 'turtle', count: 3, minDepth: 5, maxDepth: 80 },
     ],
     islands: [
-      { x: 650, name: 'Coral Cove', sells: ['plating', 'oxygen'] },
-      { x: 6100, name: 'Gull Rock', sells: ['battery', 'hull'] },
+      { x: 650, name: 'Coral Cove' },
+      { x: 6100, name: 'Gull Rock' },
     ],
     wrecks: [{ x: 4400, kind: 'sloop' }],
     caves: [{
@@ -306,7 +310,7 @@ export const ZONES: ZoneDef[] = [
     diveZoom: 0.7,
     map: { x: 175, y: 55 },
     width: 11340,
-    floor: [50, 90, 160, 230, 190, 340, 340, 230, 520, 900, 900, 900, 900, 900, 900, 900, 520, 120],
+    floor: [50, 90, 150, 185, 180, 340, 340, 230, 520, 900, 900, 900, 900, 900, 900, 900, 720, 500],
     calm: 0.35,
     sky: ['#79C6E6', '#E2F7EF'],
     water: ['#2FB3A0', '#0F2F5E'],
@@ -324,7 +328,7 @@ export const ZONES: ZoneDef[] = [
       { kind: 'manta', count: 2, minDepth: 60, maxDepth: 300 },
     ],
     islands: [
-      { x: 600, name: 'Driftwood Dock' },
+      { x: 600, name: 'Driftwood Dock', gear: ['scrubbers'] },
       { x: 7900, name: 'Lantern Isle' },
     ],
     caves: [{
@@ -357,6 +361,11 @@ export const ZONES: ZoneDef[] = [
       { x: 2200, kind: 'sloop' },
     ],
     kelp: 140,
+    forests: [
+      { x0: 350, x1: 1250, count: 14 },
+      { x0: 1350, x1: 2650, count: 58 },
+    ],
+    beds: [{ x0: 3050, x1: 4000, rocks: 16, coral: 3, kelp: 4 }],
     coral: 25,
     rocks: 60,
   },
@@ -394,7 +403,6 @@ export const ZONES: ZoneDef[] = [
   {
     name: 'Moana Deep',
     islandWidth: 1,
-    sellsWeights: true,
     diveZoom: 0.5,
     map: { x: 255, y: 110 },
     width: 10500,
@@ -417,8 +425,8 @@ export const ZONES: ZoneDef[] = [
       { kind: 'bigfin', count: 3, minDepth: 1050, maxDepth: 1300 },
     ],
     islands: [
-      { x: 700, name: 'Palm Atoll' },
-      { x: 6200, name: 'Trench Pier', sells: ['battery', 'light', 'sonar'] },
+      { x: 700, name: 'Palm Atoll', gear: ['electrolysis'] },
+      { x: 6200, name: 'Trench Pier', weights: true },
     ],
     wrecks: [],
     portalStone: { x: 9600 },

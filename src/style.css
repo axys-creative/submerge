@@ -1125,13 +1125,24 @@ textarea:focus {
   background: var(--sun);
 }
 
-.upg-now {
+.upg-next {
   font-size: 14px;
 }
 
-.upg-next {
-  font-size: 13px;
+.upg-now {
+  font-size: 12px;
   color: var(--ink-soft);
+}
+
+.drain-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #fff2d6;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--sun-dark);
 }
 
 .upg-buy {
@@ -1276,7 +1287,7 @@ textarea:focus {
   background: rgba(20, 36, 90, 0.85);
   color: #fff;
   font-size: 12px;
-  /* Slides almost off the right edge, leaving the TEST tab showing. */
+  /* Slides almost off the right edge, leaving the DEV PANEL tab showing. */
   transform: translateX(calc(100% + 12px - 30px));
   transition: transform 0.25s ease 0.25s, opacity 0.4s;
 }
@@ -1287,7 +1298,7 @@ textarea:focus {
 }
 
 .debug-upgrades::before {
-  content: 'TEST';
+  content: 'DEV PANEL';
   position: absolute;
   left: 0;
   top: 0;
@@ -1380,7 +1391,7 @@ textarea:focus {
   }
 }
 
-.card.menu {
+.card:is(.menu, .shop) {
   animation: menu-in 0.2s ease-out both;
 }
 
@@ -1388,7 +1399,7 @@ textarea:focus {
   transition: translate 0.4s cubic-bezier(0.3, 0, 0.2, 1), scale 0.4s cubic-bezier(0.3, 0, 0.2, 1);
 }
 
-.overlay:has(> .card.menu) {
+.overlay:has(> .card:is(.menu, .shop)) {
   transition: background-color 0.35s ease;
 }
 
@@ -1401,15 +1412,15 @@ textarea:focus {
   translate: calc((0.85 * 100% - 100vw) / 2 + 16px) 0;
 }
 
-.card.menu.closing {
+.card:is(.menu, .shop).closing {
   animation: menu-out 0.2s ease-in both;
 }
 
-.overlay:has(> .card.menu) {
+.overlay:has(> .card:is(.menu, .shop)) {
   animation: backdrop-in 0.2s ease-out both;
 }
 
-.overlay:has(> .card.menu.closing) {
+.overlay:has(> .card:is(.menu, .shop).closing) {
   animation: backdrop-out 0.2s ease-in both;
 }
 
@@ -1447,8 +1458,8 @@ textarea:focus {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card.menu,
-  .overlay:has(> .card.menu),
+  .card:is(.menu, .shop),
+  .overlay:has(> .card:is(.menu, .shop)),
   .wreck-overlay,
   .wreck-overlay .card,
   .unlock-banner {
@@ -2392,4 +2403,29 @@ body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
 .skin-row:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.upg.shake {
+  animation: shake 0.35s;
+}
+
+@keyframes shake {
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upg.shake {
+    animation: none;
+  }
+}
+
+.upg-buy .btn:disabled {
+  pointer-events: none;
+}
+
+.upg-buy:has(.btn:disabled) {
+  cursor: not-allowed;
 }
