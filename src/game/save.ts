@@ -1,5 +1,5 @@
 import { SAVE_KEY } from '../config';
-import { UPGRADES, UPGRADE_ORDER, type Loadout, type UpgradeId } from '../data/upgrades';
+import { GEAR, UPGRADES, UPGRADE_ORDER, type Loadout, type UpgradeId } from '../data/upgrades';
 import { SKINS, type SkinId } from '../data/skins';
 import { ITEM_KINDS, type ItemKind } from '../data/items';
 import { ZONES } from '../data/zones';
@@ -47,6 +47,22 @@ export interface SaveData {
   /** Earned achievement ids, such as 'trash-0'. */
   achievements: string[];
   stats: { dives: number; earned: number; deepest: number; deaths: number };
+}
+
+/** Whether every achievement (one clean-up per zone with trash, plus Fully Loaded) has been earned. */
+export function allAchievementsEarned(s: SaveData) {
+  return s.achievements.includes('upgraded') && ZONES.every((z, i) => !z.trash || s.achievements.includes(`trash-${i}`));
+}
+
+/** Whether every upgrade is maxed and every piece of gear is owned, including the candles and dive weights. */
+export function fullyUpgraded(s: SaveData) {
+  return (
+    UPGRADE_ORDER.every((id) => s.upgrades[id] >= UPGRADES[id].levels.length - 1) &&
+    s.candles >= GEAR.candles.max &&
+    s.scrubbers &&
+    s.electrolysis &&
+    s.weights
+  );
 }
 
 export function newSave(): SaveData {
@@ -131,7 +147,7 @@ export function sanitize(raw: any): SaveData | null {
   if (!s.visited.includes(s.zone)) s.visited.push(s.zone);
   s.monsterWoke = raw.monsterWoke === true || (!Array.isArray(raw.visited) && PORTALS.some((p) => p.chase && p.zone === s.zone));
   if (Array.isArray(raw.achievements)) {
-    s.achievements = raw.achievements.filter((a: unknown) => typeof a === 'string' && /^trash-\d+$/.test(a) && Number(a.slice(6)) < ZONES.length);
+    s.achievements = raw.achievements.filter((a: unknown) => typeof a === 'string' && (a === 'upgraded' || (/^trash-\d+$/.test(a) && Number(a.slice(6)) < ZONES.length)));
   }
   s.stats.dives = Math.floor(num(raw.stats?.dives, 0, 1e9, 0));
   s.stats.earned = Math.floor(num(raw.stats?.earned, 0, 1e12, 0));

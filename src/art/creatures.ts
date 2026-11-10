@@ -3,11 +3,10 @@ import { MONSTER_SCALE as MS, MONSTER_TRAIL } from '../config';
 import { leviathanSpine } from '../data/leviathan';
 import { mulberry32 } from '../util';
 import { WHALE_REAR_TOP, WHALE_REAR_BOTTOM, WHALE_TAIL } from './whaleShapes';
-import { FISH_FULL_SPEED, BIGFIN_SCALE, SQUID_SCALE, BLUE_WHALE_SCALE, MOBY_DICK_SCALE, COLOSSAL_SCALE, GIANT_SCALE, GIANT_TENTACLE, SHARK_LENGTH, SHARK_SCALE, GREAT_WHITE_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
+import { FISH_FULL_SPEED, BIGFIN_SCALE, SQUID_SCALE, BLUE_WHALE_SCALE, MOBY_DICK_SCALE, COLOSSAL_SCALE, GIANT_SCALE, GIANT_TENTACLE, SHARK_LENGTH, SHARK_SCALE, greatWhiteScale, anglerScale, mantaScale, HAMMERHEAD_SCALE, turtleScale, JELLY_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
 
 const FISH = ['#FFB547', '#FF7A6B', '#7BDFF2', '#B9F18C'];
 
-const ANGLER_SCALE = 0.75 * 0.85;
 /** The lure is a small steady vertical pill, in world px. */
 const LURE_W = 3;
 const LURE_H = 9;
@@ -81,8 +80,9 @@ export function lureGlow(c: Creature) {
 
 export function anglerLure(c: Creature) {
   const a = Math.PI * anglerFlip(c);
-  const lx = 63 * ANGLER_SCALE;
-  const ly = -23 * ANGLER_SCALE;
+  const sc = anglerScale(c.tint);
+  const lx = 63 * sc;
+  const ly = -23 * sc;
   return {
     x: c.x + c.facing * (lx * Math.cos(a) - ly * Math.sin(a)),
     y: c.y + lx * Math.sin(a) + ly * Math.cos(a),
@@ -102,6 +102,7 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
       fish(ctx, c);
       break;
     case 'jelly':
+      ctx.scale(JELLY_SCALE, JELLY_SCALE);
       jelly(ctx, c);
       break;
     case 'shark':
@@ -109,9 +110,14 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
       ctx.scale(c.facing, 1);
       ctx.rotate(Math.max(-0.8, Math.min(0.8, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 40)))));
       ctx.scale(SHARK_LENGTH * SHARK_SCALE, SHARK_SCALE);
-      if (c.kind === 'shark') ctx.scale(GREAT_WHITE_SCALE, GREAT_WHITE_SCALE);
-      if (c.kind === 'hammerhead') hammerhead(ctx, c);
-      else greatWhite(ctx, c);
+      if (c.kind === 'shark') {
+        const gw = greatWhiteScale(c.tint);
+        ctx.scale(gw, gw);
+      }
+      if (c.kind === 'hammerhead') {
+        ctx.scale(HAMMERHEAD_SCALE, HAMMERHEAD_SCALE);
+        hammerhead(ctx, c);
+      } else greatWhite(ctx, c);
       break;
     case 'squid':
       ctx.rotate(c.angle + Math.PI / 2);
@@ -126,8 +132,11 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
     case 'manta':
       ctx.scale(c.facing, 1);
       ctx.rotate(Math.max(-0.3, Math.min(0.3, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 25)))));
-      if (c.kind === 'manta') manta(ctx, c);
-      else stingray(ctx, c);
+      if (c.kind === 'manta') {
+        const ms = mantaScale(c.tint);
+        ctx.scale(ms, ms);
+        manta(ctx, c);
+      } else stingray(ctx, c);
       break;
     case 'bigfin':
       ctx.scale(BIGFIN_SCALE, BIGFIN_SCALE);
@@ -142,11 +151,14 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
       ctx.rotate(Math.max(-0.12, Math.min(0.12, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 30)))));
       blueWhale(ctx, c);
       break;
-    case 'turtle':
+    case 'turtle': {
       ctx.scale(c.facing, 1);
       ctx.rotate(Math.max(-0.3, Math.min(0.3, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 25)))));
+      const ts = turtleScale(c.tint);
+      ctx.scale(ts, ts);
       turtle(ctx, c);
       break;
+    }
     case 'colossal':
       ctx.rotate(c.angle + Math.PI / 2);
       ctx.scale(COLOSSAL_SCALE, COLOSSAL_SCALE);
@@ -416,11 +428,18 @@ function stingray(ctx: CanvasRenderingContext2D, c: Creature) {
 }
 
 /** A cartoon manta ray seen from below, about 150 px long and 195 px across: a pale belly in a dark outline, rounded curled head fins, swept wing tips and a long thin tail with two small bumps at its root. */
+const MANTA_LOOKS = [
+  { dark: '#2F4A5C', tail: '#24404F', belly: '#B9D8DE' },
+  { dark: '#37405F', tail: '#2A3050', belly: '#C0CCE6' },
+  { dark: '#2F3E5C', tail: '#24304A', belly: '#B7D1E8' },
+];
+
 function manta(ctx: CanvasRenderingContext2D, c: Creature) {
   const flap = Math.sin(c.phase * 1.8 + c.tint * 6);
-  const dark = '#2F3E5C';
+  const look = MANTA_LOOKS[Math.floor(c.tint * 3) % 3];
+  const dark = look.dark;
   ctx.lineCap = 'round';
-  ctx.strokeStyle = '#24304A';
+  ctx.strokeStyle = look.tail;
   ctx.lineWidth = 3.5;
   ctx.beginPath();
   ctx.moveTo(-56, 0);
@@ -491,7 +510,7 @@ function manta(ctx: CanvasRenderingContext2D, c: Creature) {
   half(-1);
   half(1);
   ctx.clip();
-  ctx.fillStyle = '#B7D1E8';
+  ctx.fillStyle = look.belly;
   ctx.beginPath();
   ctx.moveTo(58, -22);
   ctx.quadraticCurveTo(53, 0, 58, 22);
@@ -949,66 +968,154 @@ function blueWhale(ctx: CanvasRenderingContext2D, c: Creature) {
   ctx.stroke();
 }
 
-/** A sea turtle about 90 px long, facing right, with a domed shell and flippers that stroke slowly. */
+/** A sea turtle about 90 px long, facing right, seen from above and slightly to the side. Points are traced in px from a reference image. */
 function turtle(ctx: CanvasRenderingContext2D, c: Creature) {
   const stroke = Math.sin(c.phase * 1.6 + c.tint * 6);
-  const skin = '#A5BF6E';
-  const shell = ['#5E8F4E', '#6C8A3F', '#4F8A66'][Math.floor(c.tint * 3) % 3];
-  ctx.fillStyle = skin;
-  ctx.beginPath();
-  ctx.moveTo(-34, 4);
-  ctx.lineTo(-52, 8 + stroke * 2);
-  ctx.lineTo(-34, 11);
-  ctx.closePath();
-  ctx.fill();
-  const flipper = (x: number, y: number, len: number, rot: number) => {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rot);
+  const i = Math.floor(c.tint * 3) % 3;
+  const skin = ['#A8BF9D', '#B3C08F', '#A0C0B0'][i];
+  const skinDark = ['#6A8F6E', '#72905A', '#5E9082'][i];
+  const shell = ['#5E8566', '#6B8A55', '#52877A'][i];
+  const rim = ['#3F5F46', '#475F38', '#38605A'][i];
+  const seam = '#B9CBA0';
+
+  ctx.save();
+  ctx.scale(0.2, 0.2);
+  ctx.translate(-260, -215);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const smooth = (pts: number[][]) => {
+    const mid = (a: number[], b: number[]) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     ctx.beginPath();
-    ctx.ellipse(len / 2, 0, len / 2, 5, 0, 0, Math.PI * 2);
+    ctx.moveTo(...(mid(pts[pts.length - 1], pts[0]) as [number, number]));
+    pts.forEach((q, k) => {
+      const m = mid(q, pts[(k + 1) % pts.length]);
+      ctx.quadraticCurveTo(q[0], q[1], m[0], m[1]);
+    });
+    ctx.closePath();
+  };
+  const part = (pivot: [number, number], rot: number, color: string, pts: number[][], spots: number[][]) => {
+    ctx.save();
+    ctx.translate(pivot[0], pivot[1]);
+    ctx.rotate(rot);
+    ctx.translate(-pivot[0], -pivot[1]);
+    ctx.fillStyle = color;
+    smooth(pts);
     ctx.fill();
+    ctx.fillStyle = 'rgba(70,100,80,0.28)';
+    for (const [x, y, rx, ry, a] of spots) {
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, ry, a, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   };
+
+  ctx.save();
+  ctx.translate(0, 30);
+  part([335, 135], -stroke * 0.18, skin, [[355, 132], [368, 105], [340, 80], [290, 64], [240, 66], [212, 86], [238, 102], [282, 120], [315, 132]], [[270, 78, 18, 7, 0.1], [320, 98, 12, 6, 0.5], [240, 90, 8, 4, 0]]);
+  ctx.restore();
+  part([140, 250], stroke * 0.1, skinDark, [[150, 232], [105, 215], [68, 238], [62, 266], [108, 262], [140, 262]], [[95, 240, 12, 5, 0.3]]);
+  part([150, 290], -stroke * 0.1, skin, [[165, 285], [120, 292], [86, 322], [66, 340], [82, 346], [122, 332], [160, 308]], [[110, 320, 10, 4, -0.6]]);
+  ctx.save();
+  ctx.translate(0, -30);
+  part([375, 280], stroke * 0.18, skin, [[372, 262], [388, 295], [372, 345], [320, 385], [262, 412], [246, 392], [282, 352], [330, 305], [350, 272]], [[330, 360, 14, 6, -0.7], [365, 320, 7, 12, 0.2], [290, 395, 10, 4, -0.5]]);
+  ctx.restore();
+
+  part([135, 278], stroke * 0.15, skin, [[140, 270], [108, 276], [90, 284], [108, 290], [142, 288]], []);
+
   ctx.fillStyle = skin;
-  flipper(-22, 12, 20, 2.3 - stroke * 0.35);
-  flipper(20, 12, 34, 0.9 + stroke * 0.7);
-  ctx.beginPath();
-  ctx.arc(46, -1, 9, 0, Math.PI * 2);
+  smooth([[368, 158], [392, 156], [420, 150], [440, 156], [440, 196], [418, 206], [392, 208], [368, 204]]);
   ctx.fill();
+  ctx.fillStyle = 'rgba(70,100,80,0.22)';
   ctx.beginPath();
-  ctx.ellipse(36, 2, 9, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(410, 196, 28, 8, 0.05, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#D8D6A0';
-  ctx.beginPath();
-  ctx.ellipse(0, 10, 32, 7, 0, 0, Math.PI * 2);
+  ctx.fillStyle = skin;
+  smooth([[392, 168], [412, 150], [442, 142], [480, 146], [506, 168], [512, 190], [494, 205], [450, 208], [410, 196], [392, 186]]);
   ctx.fill();
-  ctx.fillStyle = shell;
+  ctx.fillStyle = 'rgba(70,100,80,0.28)';
   ctx.beginPath();
-  ctx.moveTo(-38, 10);
-  ctx.bezierCurveTo(-38, -26, 34, -26, 36, 10);
-  ctx.closePath();
+  ctx.ellipse(430, 156, 16, 6, 0.1, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(20,40,20,0.35)';
-  ctx.lineWidth = 2;
+  ctx.fillStyle = '#E3DCA8';
+  smooth([[395, 196], [450, 206], [494, 205], [500, 200], [450, 200], [405, 190]]);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(70,100,80,0.3)';
   ctx.beginPath();
-  ctx.moveTo(-18, 8);
-  ctx.quadraticCurveTo(-14, -8, -8, -17);
-  ctx.moveTo(2, 8);
-  ctx.quadraticCurveTo(4, -6, 2, -19);
-  ctx.moveTo(20, 8);
-  ctx.quadraticCurveTo(16, -6, 10, -17);
-  ctx.moveTo(-30, -2);
-  ctx.quadraticCurveTo(0, -10, 30, -2);
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.2)';
-  ctx.beginPath();
-  ctx.ellipse(-4, -14, 14, 3, -0.1, 0, Math.PI * 2);
+  ctx.ellipse(468, 170, 19, 7, -0.1, 0, Math.PI * 2);
+  ctx.ellipse(467, 191, 16, 5, 0.05, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#1B2238';
   ctx.beginPath();
-  ctx.arc(50, -3, 1.8, 0, Math.PI * 2);
+  ctx.moveTo(453, 183);
+  ctx.quadraticCurveTo(468, 167, 484, 179);
+  ctx.quadraticCurveTo(468, 192, 453, 183);
   ctx.fill();
+  ctx.strokeStyle = 'rgba(55,85,65,0.7)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(453, 183);
+  ctx.quadraticCurveTo(468, 167, 484, 179);
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(473, 176, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  const outline = [[120, 268], [150, 215], [195, 160], [250, 133], [310, 125], [388, 150], [403, 160], [394, 176], [388, 196], [388, 218], [380, 245], [350, 280], [300, 303], [240, 312], [180, 303], [140, 288]];
+  ctx.fillStyle = rim;
+  smooth(outline);
+  ctx.fill();
+  ctx.save();
+  ctx.translate(262, 205);
+  ctx.scale(0.93, 0.93);
+  ctx.translate(-262, -205);
+  ctx.fillStyle = shell;
+  smooth(outline);
+  ctx.fill();
+  ctx.clip();
+  ctx.fillStyle = seam;
+  ctx.fillRect(100, 110, 320, 220);
+  ctx.translate(262, 205);
+  ctx.scale(0.9, 0.9);
+  ctx.translate(-262, -205);
+  smooth(outline);
+  ctx.clip();
+  ctx.translate(262, 205);
+  ctx.scale(1 / 0.9, 1 / 0.9);
+  ctx.translate(-262, -205);
+  ctx.strokeStyle = shell;
+  ctx.lineWidth = 6;
+  [
+    [[105, 110], [214, 110], [219, 224], [105, 218]],
+    [[105, 218], [219, 224], [224, 325], [105, 325]],
+    [[214, 110], [310, 110], [306, 188], [218, 192]],
+    [[218, 192], [306, 188], [304, 246], [221, 250]],
+    [[221, 250], [304, 246], [300, 325], [224, 325]],
+    [[310, 110], [420, 110], [420, 222], [305, 210]],
+    [[305, 210], [420, 222], [420, 325], [300, 325]],
+  ].forEach((plate, k) => {
+    const cx = plate.reduce((t, q) => t + q[0], 0) / plate.length;
+    const cy = plate.reduce((t, q) => t + q[1], 0) / plate.length;
+    ctx.beginPath();
+    plate.forEach(([x, y], j) => {
+      const d = Math.hypot(x - cx, y - cy);
+      const px = cx + ((x - cx) * (d - 8)) / d;
+      const py = cy + ((y - cy) * (d - 8)) / d;
+      if (j) ctx.lineTo(px, py);
+      else ctx.moveTo(px, py);
+    });
+    ctx.closePath();
+    ctx.fillStyle = shell;
+    ctx.fill();
+    ctx.stroke();
+    if (k % 2) {
+      ctx.fillStyle = 'rgba(0,0,0,0.08)';
+      ctx.fill();
+    }
+  });
+  ctx.restore();
+  ctx.restore();
 }
 
 function fish(ctx: CanvasRenderingContext2D, c: Creature) {
@@ -1032,7 +1139,52 @@ function fish(ctx: CanvasRenderingContext2D, c: Creature) {
   ctx.fill();
 }
 
+const GLASS_JELLIES = [
+  { outline: 'rgba(255,226,150,0.9)', body: 'rgba(40,40,110,0.22)', glow: 'rgba(255,214,120,0.8)', tentacle: 'rgba(255,214,140,0.55)' },
+  { outline: 'rgba(160,240,255,0.9)', body: 'rgba(20,60,110,0.22)', glow: 'rgba(120,225,255,0.8)', tentacle: 'rgba(150,230,255,0.55)' },
+];
+
+/** A glass jelly: a clear dome with only its outline and a glowing lower rim, trailing many fine tentacles. */
+function glassJelly(ctx: CanvasRenderingContext2D, c: Creature, look: (typeof GLASS_JELLIES)[number]) {
+  const pulse = 1 + Math.sin(c.phase * 2.8) * 0.08;
+  ctx.strokeStyle = look.tentacle;
+  ctx.lineWidth = 1;
+  for (let i = -3; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 4.5, 4);
+    for (let s = 1; s <= 7; s++) ctx.lineTo(i * 4.5 + Math.sin(c.phase * 3 + s * 0.8 + i) * (1 + s * 0.6), 4 + s * 7);
+    ctx.stroke();
+  }
+  ctx.save();
+  ctx.scale(pulse, 1 / pulse);
+  ctx.fillStyle = look.body;
+  ctx.beginPath();
+  ctx.arc(0, 4, 18, Math.PI, 0);
+  ctx.quadraticCurveTo(0, 9, -18, 4);
+  ctx.fill();
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = look.outline;
+  ctx.stroke();
+  const rim = ctx.createLinearGradient(0, -6, 0, 6);
+  rim.addColorStop(0, 'rgba(255,255,255,0)');
+  rim.addColorStop(1, look.glow);
+  ctx.fillStyle = rim;
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 14, 7, 0, 0, Math.PI);
+  ctx.fill();
+  ctx.strokeStyle = look.glow;
+  ctx.lineWidth = 1;
+  for (let i = -5; i <= 5; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 2.6, 0 + Math.abs(i) * 0.4);
+    ctx.lineTo(i * 2.6, 6 - Math.abs(i) * 0.3);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function jelly(ctx: CanvasRenderingContext2D, c: Creature) {
+  if (c.tint >= 1 / 3) return glassJelly(ctx, c, GLASS_JELLIES[c.tint >= 2 / 3 ? 1 : 0]);
   const pulse = 1 + Math.sin(c.phase * 2.8) * 0.08;
   ctx.strokeStyle = 'rgba(214,190,255,0.6)';
   ctx.lineWidth = 2.5;
@@ -1128,10 +1280,17 @@ function sharkRig(ctx: CanvasRenderingContext2D, c: Creature, map: (x: number, y
 }
 
 /** A great white in side view facing right, about 200 px long: a blue back over a pale belly, a tall dorsal fin, long pectoral fins and a crescent tail. Points are traced from a left-facing reference (1720 px long) and mirrored, and drawn at true proportions despite the shark's stretch. */
+const GREAT_WHITE_LOOKS = [
+  { fin: '#506C88', finFar: '#3F566E', shade: ['#5F7C98', '#6E8CA8', '#62819D'], tail: '#6A88A4' },
+  { fin: '#5B6B7C', finFar: '#495664', shade: ['#6B7F92', '#7A8FA4', '#6F8498'], tail: '#78899A' },
+  { fin: '#4E6A78', finFar: '#3C5360', shade: ['#5B7A88', '#6A8896', '#5F7F8D'], tail: '#6A8794' },
+];
+
 function greatWhite(ctx: CanvasRenderingContext2D, c: Creature) {
   const { chasing, m, P, poly, smooth, tail, outline } = sharkRig(ctx, c);
-  const fin = '#506C88';
-  const finFar = '#3F566E';
+  const look = GREAT_WHITE_LOOKS[Math.floor(c.tint * 3) % 3];
+  const fin = look.fin;
+  const finFar = look.finFar;
   const belly = '#D3E3F3';
 
   const finFarShape = () => poly([[575, 580], [612, 596], [632, 680], [648, 746], [598, 722], [578, 650]]);
@@ -1140,95 +1299,123 @@ function greatWhite(ctx: CanvasRenderingContext2D, c: Creature) {
     poly(([[950, 470], [1100, 440], [1090, 505], [1072, 560], [1048, 568], [1000, 545], [965, 520]] as [number, number][]).map(([x, y]) => [1025 + (x - 1025) * 0.67 + 101, 470 + (y - 470) * 0.67 - 19]));
   const body = () =>
     smooth([
-      [28, 418], [90, 385], [180, 350], [320, 315], [460, 292], [600, 277], [720, 272], [860, 292], [1000, 322], [1130, 348], [1205, 337], [1240, 352],
+      [6, 438], [30, 408], [80, 386], [150, 362], [250, 334], [330, 313], [460, 292], [600, 277], [720, 272], [860, 292], [1000, 322], [1130, 348], [1205, 337], [1240, 352],
       [1290, 380], [1390, 398], [1390, 436], [1300, 440], [1150, 462], [1000, 492], [850, 530], [700, 568], [600, 586], [500, 580], [400, 568],
-      [300, 540], [200, 505], [110, 472], [45, 443],
+      [300, 552], [215, 538], [160, 530], [124, 524], [106, 506], [101, 476], [64, 470], [22, 454],
     ]);
   const pectoral = () => poly([[402, 470], [402, 505], [425, 580], [465, 650], [520, 715], [575, 755], [620, 780], [604, 735], [590, 675], [584, 600], [592, 514], [596, 470]]);
-  outline([finFarShape, dorsal, underfin, body, pectoral], '#2C3E52');
+  const open = 0.6 + 0.4 * (c.mouth ?? (chasing ? 1 : 0));
+  const drawBody = () => {
+    outline([finFarShape, dorsal, underfin, body, pectoral], '#2C3E52');
 
-  ctx.fillStyle = finFar;
-  finFarShape();
-  ctx.fill();
-  ctx.fillStyle = fin;
-  dorsal();
-  ctx.fill();
-  ctx.fillStyle = '#B4C6D8';
-  underfin();
-  ctx.fill();
+    ctx.fillStyle = finFar;
+    finFarShape();
+    ctx.fill();
+    ctx.fillStyle = fin;
+    dorsal();
+    ctx.fill();
+    ctx.fillStyle = '#B4C6D8';
+    underfin();
+    ctx.fill();
 
-  const shade = ctx.createLinearGradient(0, P(0, 270)[1], 0, P(0, 590)[1]);
-  shade.addColorStop(0, '#5F7C98');
-  shade.addColorStop(0.35, '#6E8CA8');
-  shade.addColorStop(1, '#62819D');
-  ctx.fillStyle = shade;
-  body();
-  ctx.fill();
-  ctx.save();
-  body();
-  ctx.clip();
-  ctx.fillStyle = belly;
-  poly([[0, 432], [60, 440], [130, 470], [300, 492], [420, 510], [590, 514], [800, 500], [1000, 470], [1200, 442], [1450, 428], [1450, 720], [0, 720]]);
-  ctx.fill();
-  ctx.restore();
+    const shade = ctx.createLinearGradient(0, P(0, 270)[1], 0, P(0, 590)[1]);
+    shade.addColorStop(0, look.shade[0]);
+    shade.addColorStop(0.35, look.shade[1]);
+    shade.addColorStop(1, look.shade[2]);
+    ctx.fillStyle = shade;
+    body();
+    ctx.fill();
+    ctx.save();
+    body();
+    ctx.clip();
+    ctx.fillStyle = belly;
+    poly([[0, 468], [62, 468], [150, 484], [300, 497], [420, 510], [590, 514], [800, 500], [1000, 470], [1200, 442], [1450, 428], [1450, 720], [0, 720]]);
+    ctx.fill();
+    ctx.restore();
 
-  tail('#6A88A4', belly);
+    tail(look.tail, belly);
 
-  ctx.fillStyle = shade;
-  pectoral();
-  ctx.fill();
+    ctx.fillStyle = shade;
+    pectoral();
+    ctx.fill();
 
-  ctx.strokeStyle = 'rgba(20,35,60,0.5)';
-  ctx.lineWidth = 1.5;
-  for (let i = 0; i < 6; i++) {
-    const x = 352 + i * 16;
+    ctx.strokeStyle = 'rgba(20,35,60,0.5)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 6; i++) {
+      const x = 352 + i * 16;
+      ctx.beginPath();
+      ctx.moveTo(...P(x, 388));
+      ctx.quadraticCurveTo(...P(x - 8, 435), ...P(x, 482));
+      ctx.stroke();
+    }
+
+    const [ex, ey] = P(124, 410);
+    const eyeR = (chasing ? 19 : 15) * m;
+    ctx.fillStyle = '#0A0D14';
     ctx.beginPath();
-    ctx.moveTo(...P(x, 388));
-    ctx.quadraticCurveTo(...P(x - 8, 435), ...P(x, 482));
-    ctx.stroke();
-  }
-
-  if (chasing) {
-    ctx.fillStyle = '#7A2E3B';
-    poly([[32, 437], [170, 478], [135, 518], [62, 484]]);
+    ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#FFFFFF';
-    for (let i = 0; i < 6; i++) {
-      const x = 50 + i * 22;
-      const y = 441 + i * 6.2;
-      poly([[x, y], [x + 22, y + 6.2], [x + 8, y + 36]]);
+    ctx.beginPath();
+    ctx.arc(ex - eyeR * 0.35, ey - eyeR * 0.35, eyeR * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  const [hx, hy] = P(210, 489);
+  const ulip: [number, number][] = [[62, 468], [100, 475], [150, 483], [210, 489]];
+  const along = (pts: [number, number][], x: number) => {
+    for (let i = 1; i < pts.length; i++) {
+      if (x <= pts[i][0]) return pts[i - 1][1] + ((pts[i][1] - pts[i - 1][1]) * (x - pts[i - 1][0])) / (pts[i][0] - pts[i - 1][0]);
+    }
+    return pts[pts.length - 1][1];
+  };
+  const edge = (pts: [number, number][]) => {
+    ctx.strokeStyle = '#2C3E52';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(...P(x, y)) : ctx.moveTo(...P(x, y))));
+    ctx.stroke();
+  };
+  const teeth = (lip: [number, number][], dir: 1 | -1, shift: number, len: number, from = 0) => {
+    ctx.fillStyle = '#FFFFFF';
+    for (let i = 0; i < 8; i++) {
+      const x = 68 + shift + i * 17;
+      if (x < from) continue;
+      const y0 = along(lip, x);
+      const y1 = along(lip, x + 13);
+      poly([[x, y0], [x + 13, y1], [x + 6.5, (y0 + y1) / 2 + dir * len]]);
       ctx.fill();
     }
-  } else {
-    ctx.strokeStyle = 'rgba(30,50,90,0.55)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(...P(48, 440));
-    ctx.quadraticCurveTo(...P(110, 482), ...P(180, 474));
-    ctx.stroke();
-  }
+  };
+  const pivot = (angle: number, draw: () => void) => {
+    ctx.save();
+    if (angle < 0) ctx.translate(0, angle * 40 * m);
+    ctx.translate(hx, hy);
+    ctx.rotate(angle);
+    ctx.translate(-hx, -hy);
+    draw();
+    ctx.restore();
+  };
+  const piece = (region: [number, number][]) => {
+    ctx.save();
+    poly(region);
+    ctx.clip();
+    drawBody();
+    ctx.restore();
+  };
 
-  const [ex, ey] = P(153, 412);
-  const eyeR = (chasing ? 24 : 19) * m;
-  ctx.fillStyle = '#0A0D14';
-  ctx.beginPath();
-  ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#FFFFFF';
-  ctx.beginPath();
-  ctx.arc(ex - eyeR * 0.35, ey - eyeR * 0.35, eyeR * 0.3, 0, Math.PI * 2);
-  ctx.fill();
-  if (chasing) {
-    ctx.strokeStyle = '#0A0D14';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(...P(215, 372));
-    ctx.lineTo(...P(105, 395));
-    ctx.stroke();
-  }
+  pivot(-open * 0.2, () => {
+    piece([[-300, -300], [213, -300], [213, 489], ...[...ulip].reverse(), [-300, 468]]);
+    edge(ulip);
+    teeth(ulip, 1, 0, 12);
+  });
+  pivot(open * 0.55, () => {
+    piece([[98, 474], ...ulip.slice(1), [213, 489], [213, 900], [98, 900]]);
+    edge([[101, 476], ...ulip.slice(2)]);
+    teeth(ulip, -1, 8, 10, 106);
+  });
+  piece([[213, -300], [2000, -300], [2000, 900], [213, 900]]);
 }
 
-/** A hammerhead in side view facing right, drawn to the great white's tail: a grey body with a wide cephalofoil, a tall dorsal fin, a second dorsal, and pectoral, pelvic and anal fins. Points are traced from a right-facing reference. */
 function hammerhead(ctx: CanvasRenderingContext2D, c: Creature) {
   const { chasing, m, P, poly, smooth, tail, outline } = sharkRig(ctx, c, (x, y) => [1770 - x, y - 40]);
   const fin = '#6E7388';
@@ -1319,14 +1506,6 @@ function hammerhead(ctx: CanvasRenderingContext2D, c: Creature) {
   ctx.beginPath();
   ctx.arc(ex, ey, eyeR * 0.6, 0, Math.PI * 2);
   ctx.fill();
-  if (chasing) {
-    ctx.strokeStyle = '#0A0D14';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(...P(1625, 575));
-    ctx.lineTo(...P(1700, 590));
-    ctx.stroke();
-  }
 }
 
 interface SquidPalette {
@@ -1490,10 +1669,11 @@ const ANGLER_PALETTES = [
   { skin: '#27506B', belly: '#6F96A8', fin: '#5B8DA6', ray: '#427590' },
 ];
 
-/** An anglerfish about 120 px long before ANGLER_SCALE, facing right: a deep orange body with a big gaping mouth (the sea shows through), a pale lower jaw, a lure on a curved stalk and blue fins. Points are traced from a left-facing side view (1550 px long) and mirrored. */
+/** An anglerfish about 120 px long before its scale, facing right: a deep orange body with a big gaping mouth (the sea shows through), a pale lower jaw, a lure on a curved stalk and blue fins. Points are traced from a left-facing side view (1550 px long) and mirrored. */
 function angler(ctx: CanvasRenderingContext2D, c: Creature) {
   const dead = c.state === 'dead';
-  ctx.scale(ANGLER_SCALE, ANGLER_SCALE);
+  const sc = anglerScale(c.tint);
+  ctx.scale(sc, sc);
   ctx.rotate(Math.PI * anglerFlip(c));
   if (dead) ctx.globalAlpha = Math.max(0, Math.min(1, (6 - c.dying) / 2));
   const k = 0.085;
@@ -1563,7 +1743,7 @@ function angler(ctx: CanvasRenderingContext2D, c: Creature) {
   ctx.fillStyle = '#B9B2A0';
   ctx.beginPath();
   const [lx, ly] = P(115, 228);
-  ctx.roundRect(lx - LURE_W / ANGLER_SCALE / 2, ly - LURE_H / ANGLER_SCALE / 2, LURE_W / ANGLER_SCALE, LURE_H / ANGLER_SCALE, LURE_W / ANGLER_SCALE / 2);
+  ctx.roundRect(lx - LURE_W / sc / 2, ly - LURE_H / sc / 2, LURE_W / sc, LURE_H / sc, LURE_W / sc / 2);
   ctx.fill();
 
   const body = () =>

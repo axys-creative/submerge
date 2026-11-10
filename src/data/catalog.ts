@@ -1,4 +1,4 @@
-import { CREATURES, CREATURE_EXTENT, type CreatureKind } from './creatures';
+import { CREATURES, CREATURE_EXTENT, JELLY_SCALE, TURTLE_SCALES, type CreatureKind } from './creatures';
 import { ITEMS, ITEM_KINDS, type ItemKind } from './items';
 import type { BoneKind } from '../art/bones';
 import { DEPTH_ZONES, zoneIndexAt } from './depthZones';
@@ -68,7 +68,7 @@ const CREATURE_COLUMNS: CreatureKind[][] = [
   ['whale', 'mobydick'], ['bluewhale'], ['leviathan'],
 ];
 /** Half the sideways width a kind actually covers, where that differs from how far it is drawn (upright squid and jellyfish are narrow, a fish school is wide), so every column gets the same gap. */
-const COLUMN_EXTENT: Partial<Record<CreatureKind, number>> = { fish: 110, jelly: 45, turtle: 55, stingray: 110, manta: 130, angler: 55, squid: 26, colossal: 60, giant: 50, bigfin: 35 };
+const COLUMN_EXTENT: Partial<Record<CreatureKind, number>> = { fish: 110, jelly: 45 * JELLY_SCALE, turtle: 55 * TURTLE_SCALES[TURTLE_SCALES.length - 1], stingray: 110, manta: 130, angler: 55, squid: 26, colossal: 60, giant: 50, bigfin: 35 };
 /** Kinds shown once instead of in three tints. */
 const SINGLE_VARIANT: CreatureKind[] = ['colossal', 'giant'];
 /** How far above the highest name tag the column headings sit. */
@@ -125,7 +125,7 @@ function build() {
     let y = COLUMN_TOP;
     for (const kind of column) {
       if (y > COLUMN_TOP) y += ROW_EXTRA[kind] ?? 0;
-      const tints = CREATURE_EXTENT[kind] <= 200 && !SINGLE_VARIANT.includes(kind) ? [0.15, 0.5, 0.85] : [0.5];
+      const tints = (CREATURE_EXTENT[kind] <= 200 || kind === 'shark') && !SINGLE_VARIANT.includes(kind) ? [0.15, 0.5, 0.85] : [0.5];
       tints.forEach((tint, row) => {
         creatures.push({
           kind,

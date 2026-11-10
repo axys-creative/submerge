@@ -9,13 +9,13 @@ import { updateCreature } from "./creatures";
 import { DAY_SECONDS, NOON, START_DAY, daylight } from "../render/daylight";
 import { rainAt } from "../render/weather";
 import { AudioManager } from "./audio";
-import { loadSave, newSave, writeSave, type SaveData, type SwitchMode } from "./save";
+import { allAchievementsEarned, fullyUpgraded, loadSave, newSave, writeSave, type SaveData, type SwitchMode } from "./save";
 import { GEAR, STATS, UPGRADES, WEIGHTS, stockAt, type GearId, type UpgradeId } from "../data/upgrades";
 import { weightMounts, WEIGHT_Y, GATE_THRUSTER_BUBBLES, challengerBase, challengerWeights } from "../art/sub";
 import { ITEMS, ITEM_KINDS } from "../data/items";
 import { ZONES, type WreckKind } from "../data/zones";
 import { SKINS, CAPSULE_DEATHS, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
-import { CREATURES, CREATURE_EXTENT, whalePitch, type CreatureKind } from "../data/creatures";
+import { CREATURES, CREATURE_EXTENT, creatureRadius, whalePitch, type CreatureKind } from "../data/creatures";
 import { leviathanSpine } from "../data/leviathan";
 import { routesFrom, PORTALS, type Portal, type Endpoint, type Side } from "../data/routes";
 import {
@@ -475,6 +475,7 @@ export class Game {
     this.snapCamera();
     this.resize();
     addEventListener("resize", () => this.resize());
+    canvas.addEventListener("pointerdown", (e) => this.freeCatalogCreature(e));
     const flush = () => this.hasSave && this.persist();
     addEventListener("pagehide", flush);
     document.addEventListener("visibilitychange", () => document.hidden && flush());
@@ -606,6 +607,28 @@ export class Game {
     };
   }
 
+  /** Clicking an animal in the catalog zone sets it loose to wander and hunt as it would in the game. */
+  private freeCatalogCreature(e: PointerEvent) {
+    if (!this.world.def.catalog) return;
+    const x = this.cam.x - this.view.w / 2 + e.clientX / this.view.scale;
+    const y = this.cam.y - this.view.h / 2 + e.clientY / this.view.scale;
+    let best: Creature | null = null;
+    let bestD = Infinity;
+    for (const c of this.world.creatures) {
+      if (c.free || c.state === "dead") continue;
+      const d = Math.hypot(c.x - x, c.y - y) / Math.max(creatureRadius(c), CREATURE_EXTENT[c.kind] * 0.4);
+      if (d < 1 && d < bestD) {
+        best = c;
+        bestD = d;
+      }
+    }
+    if (!best) return;
+    best.free = true;
+    best.speed = 45 + Math.random() * 30;
+    best.heading = best.facing;
+    best.nextDive = 15 + Math.random() * 55;
+  }
+
   // ---- Saves -------------------------------------------------------------
 
   private updateExplored() {
@@ -635,6 +658,13 @@ export class Game {
   }
 
   persist() {
+    if (this.hasSave && !this.save.achievements.includes("upgraded") && fullyUpgraded(this.save)) {
+      this.save.achievements.push("upgraded");
+      this.audio.play("chime1");
+      this.say("Achievement: Fully Loaded!", "#FFD95A");
+      this.ui.toast("Achievement unlocked: Fully Loaded · every upgrade owned");
+      if (this.unlockSkin("challenger")) this.ui.toast(`Unlocked: ${SKINS.challenger.name} · equip it in Settings`);
+    }
     this.syncExplored();
     this.save.shipX = this.ship.x;
     this.save.day = this.day;
@@ -1003,7 +1033,7 @@ export class Game {
       : null;
     const creatures = this.world.creatures;
     for (const c of creatures) {
-      if (this.world.def.catalog) c.phase += dt;
+      if (this.world.def.catalog && !c.free) c.phase += dt;
       else updateCreature(c, dt, this.world, c.state === "lurk" ? watch : target);
     }
     for (let i = creatures.length - 1; i >= 0; i--) {
@@ -1333,7 +1363,7 @@ export class Game {
         this.say(
           this.ui.touch
             ? "Tap the depth to lock it"
-            : "Press 'E' or '.', or click the depth, to lock it",
+            : "Press 'E' or '?', or click the depth, to lock it",
           "#9CF2C4",
         );
       }
@@ -1566,7 +1596,7 @@ export class Game {
             ([dx, r]) =>
               [c.x + c.facing * dx * Math.cos(pitch), c.y + dx * Math.sin(pitch), r] as const,
           )
-        : [[c.x, c.y, def.radius] as const];
+        : [[c.x, c.y, creatureRadius(c)] as const];
       if (circles.some(([x, y, r]) => (x - s.x) ** 2 + (y - s.y) ** 2 < (r + SUB_RADIUS) ** 2)) {
         if (this.damage(c)) return;
       }
@@ -1586,7 +1616,7 @@ export class Game {
       if ((it.x - s.x) ** 2 + (it.y - s.y) ** 2 < r * r || (it.x - s.x) ** 2 + (it.y - foot) ** 2 < r * r) this.collect(it);
     }
     const stone = this.world.stone;
-    if (stone && !this.save.portal && Math.hypot(stone.x - s.x, stone.y - s.y) < SUB_RADIUS + 30) this.takeStone(stone);
+    if (stone && !this.save.portal && allAchievementsEarned(this.save) && Math.hypot(stone.x - s.x, stone.y - s.y) < SUB_RADIUS + 30) this.takeStone(stone);
 
     this.updateSonar(dt);
 
@@ -2283,7 +2313,7 @@ export class Game {
     for (const c of this.world.creatures) {
       const harmful = CREATURES[c.kind].harmful;
       if (c.state === "dead" || this.pinged.has(c) || (!harmful && this.up.sonar < 3)) continue;
-      if (hit(c.x, c.y, CREATURES[c.kind].radius)) {
+      if (hit(c.x, c.y, creatureRadius(c))) {
         this.pinged.add(c);
         this.blips.push({
           x: c.x,

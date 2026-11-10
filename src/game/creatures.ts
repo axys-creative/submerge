@@ -1,5 +1,5 @@
 import type { Creature, World } from './world';
-import { CREATURES, FISH_FULL_SPEED } from '../data/creatures';
+import { CREATURES, FISH_FULL_SPEED, creatureRadius } from '../data/creatures';
 import { MONSTER_SPEED, MONSTER_SURGE, MONSTER_TRAIL } from '../config';
 import { clamp, damp } from '../util';
 
@@ -17,6 +17,7 @@ function steer(c: Creature, tvx: number, tvy: number, k: number, dt: number) {
 export function updateCreature(c: Creature, dt: number, world: World, target: Target | null) {
   c.phase += c.kind === 'fish' ? dt * (0.75 + 0.75 * Math.min(1, Math.hypot(c.vx, c.vy) / FISH_FULL_SPEED)) : dt;
   c.timer -= dt;
+  if (c.kind === 'shark') c.mouth = (c.mouth ?? 0) + ((c.state === 'chase' ? 1 : 0) - (c.mouth ?? 0)) * damp(5, dt);
   const dx = target ? target.x - c.x : 0;
   const dy = target ? target.y - c.y : 0;
   const d = target ? Math.hypot(dx, dy) || 1 : Infinity;
@@ -100,6 +101,29 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
       break;
     case 'whale':
     case 'mobydick':
+      if (c.kind === 'mobydick') {
+        if (c.state === 'lunge') {
+          const f = Math.exp(-0.9 * dt);
+          c.vx *= f;
+          c.vy *= f;
+          if (c.timer <= 0) {
+            c.state = 'idle';
+            c.lungeWait = 7;
+          }
+          break;
+        }
+        c.lungeWait = (c.lungeWait ?? 0) - dt;
+        if (c.state === 'rest') c.state = 'idle';
+        if (c.lungeWait <= 0 && d < 650) {
+          c.state = 'lunge';
+          c.timer = 2.6;
+          c.plan = null;
+          c.nextDive = 20;
+          c.vx = (dx / d) * 300;
+          c.vy = (dy / d) * 300;
+          break;
+        }
+      }
       if (!c.plan) {
         cruise(42, 900, 30, 40, 0.1, 6, 0.12, 0.35);
         c.nextDive -= dt;
@@ -218,7 +242,7 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
     return;
   }
 
-  const r = CREATURES[c.kind].radius;
+  const r = creatureRadius(c);
   const nx = clamp(c.x + c.vx * dt, 60, world.width - 60);
   if (world.blocked(c.x, nx, c.y, r * 2, r + 12)) {
     c.vx = 0;

@@ -1,4 +1,5 @@
 import type { Game } from '../game/game';
+import { allAchievementsEarned } from '../game/save';
 import type { WreckKind } from '../data/zones';
 import { SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE, CRACK_TIME, HOOK_DROP } from '../config';
 import { STATS } from '../data/upgrades';
@@ -7,7 +8,7 @@ import { CATALOG } from '../data/catalog';
 import { buoyLabel, routesFrom, PORTALS } from '../data/routes';
 import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, drawGlassCracks, runningLights, sternStretch, anchorFor, lampFor, challengerBoomTips, challengerViewport, CAPSULE_SIDE_VIEWPORT, COCKPIT, REAR_LAMP } from '../art/sub';
 import { drawShip, drawIsland, dockPoles, drawCloud, cloudShape, drawBuoy, drawPortal, drawPortalStone, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
-import { BACKGROUND_KINDS, CREATURE_EXTENT } from '../data/creatures';
+import { BACKGROUND_KINDS, CREATURE_EXTENT, anglerRelSize } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
 import { drawRainFall, drawRainRipples } from './weather';
@@ -627,7 +628,7 @@ export function renderScene(g: Game) {
     }
   }
 
-  if (world.stone && !g.save.portal && inView(world.stone.x, 160)) {
+  if (world.stone && !g.save.portal && allAchievementsEarned(g.save) && inView(world.stone.x, 160)) {
     ctx.save();
     ctx.translate(world.stone.x, world.stone.y);
     drawPortalStone(ctx, t);
@@ -1014,7 +1015,7 @@ export function renderScene(g: Game) {
     if (c.kind === 'angler') {
       const glow = lureGlow(c);
       const l = anglerLure(c);
-      if (glow > 0) lights.push({ x: l.x, y: l.y, r: 70 * (0.4 + 0.6 * glow), a: glow });
+      if (glow > 0) lights.push({ x: l.x, y: l.y, r: 22 * anglerRelSize(c.tint) * (0.4 + 0.6 * glow), a: glow });
     } else if (c.kind === 'jelly') {
       lights.push({ x: c.x, y: c.y, r: 50 });
     } else if (c.kind === 'leviathan') {

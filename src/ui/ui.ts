@@ -133,7 +133,7 @@ export class UI {
         <div class="dm-track" id="dm-track">
           <div class="dm-frame"><div class="dm-scale" id="dm-scale">${this.depthMeterBands()}<div class="dm-warn" id="dm-warn"></div><div class="dm-crush" id="dm-crush"></div><div class="dm-limit" id="dm-limit"></div></div></div>
           <div class="dm-labels" id="dm-labels">${this.depthMeterLabels()}</div>
-          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b><div class="dial-pop" id="pop-hold"><h4>Depth lock</h4><p>Press <kbd>E</kbd> or <kbd>.</kbd>, or click the reading, to hold your depth. It uses battery, and steering up or down lets go.</p></div><div class="panel dm-tag dm-safe" id="dm-limit-tag"></div></div>
+          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b><div class="dial-pop" id="pop-hold"><h4>Depth lock</h4><p>Press <kbd>E</kbd> or <kbd>?</kbd>, or click the reading, to hold your depth. It uses battery, and steering up or down lets go.</p></div><div class="panel dm-tag dm-safe" id="dm-limit-tag"></div></div>
         </div>
         <div class="dm-foot"><div class="panel dm-tag" id="dm-next"></div></div>
       </div>
@@ -570,7 +570,7 @@ export class UI {
     if (g.weightsOn && s.diveTime < 7)
       return this.touch
         ? "Tap Drop to let go of your weights"
-        : "<kbd>Q</kbd> or <kbd>?</kbd> Drop your weights to rise fast";
+        : "<kbd>Q</kbd> or <kbd>.</kbd> Drop your weights to rise fast";
     if (s.diveTime < 4 && g.save.stats.dives <= 2) return "Return to the ship to dock and recharge";
     return "";
   }
@@ -1341,9 +1341,9 @@ export class UI {
           <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>"} to steer. The spotlight follows where you head.</li>
             <li>${this.touch ? "Tap <b>Grab</b>" : "Press <kbd>Space</kbd>"} to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
-            <li>Below about 5 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>.</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
+            <li>Below about 5 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>?</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
             ${g.propellerLevel >= 1 ? `<li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while steering to boost. It drains the battery fast.</li>` : ""}
-            ${g.save.weights ? `<li>${this.touch ? "Tap <b>Drop</b>" : "Press <kbd>Q</kbd> or <kbd>/</kbd>"} to drop the dive weights for a quick ride up.</li>` : ""}
+            ${g.save.weights ? `<li>${this.touch ? "Tap <b>Drop</b>" : "Press <kbd>Q</kbd> or <kbd>.</kbd>"} to drop the dive weights for a quick ride up.</li>` : ""}
             ${this.touch ? "" : "<li>Press <kbd>L</kbd> to cycle the spotlight, and <kbd>O</kbd> to cycle the sonar, between off, on and auto.</li>"}
             <li>Surface anywhere to refill your air.</li>
             <li>When the battery runs out, ${this.touch ? "tap the <b>U</b> and <b>I</b> buttons" : "press <kbd>U</kbd> and <kbd>I</kbd>"} back and forth to hand-crank.</li>
@@ -1362,13 +1362,26 @@ export class UI {
                   : "";
               return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Squeaky Clean</b><span>${esc(z.name)}: clear every piece of trash${done ? "" : here}</span></li>`;
             })
-            .join("")}</ul>
+            .join("")}${(() => {
+            const done = g.save.achievements.includes("upgraded");
+            return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Fully Loaded</b><span>Max out every upgrade and own all the gear, including the oxygen candles and dive weights</span></li>`;
+          })()}</ul>
         </details>
         <details class="acc">
           <summary>Sound</summary>
           <label class="sound-row"><input type="checkbox" id="sound-on" ${g.audio.muted ? "" : "checked"}> Sound on</label>
           <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}" style="--p:${Math.round(g.audio.volume * 100)}%"></label>
           <label class="sound-row">Music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}" style="--p:${Math.round(g.audio.musicVolume * 100)}%"></label>
+        </details>
+        <details class="acc">
+          <summary>Upgrades</summary>
+          <p class="muted">Collect treasure on your dives, then sell it at island shops to earn money. Spend it there on upgrades for your sub. Different shops stock different upgrades, so visit more than one.</p>
+          <ul class="upg-sum">${UPGRADE_ORDER.map((id) => {
+            const def = UPGRADES[id];
+            const lvl = g.up[id];
+            const pips = def.levels.map((_, i) => `<i class="${i <= lvl ? "on" : ""}"></i>`).join("");
+            return `<li><div class="upg-head"><b>${def.title}</b><div class="pips-wrap">${lvl >= def.levels.length - 1 ? `<em class="maxed-pill">Maxed out</em>` : ""}<div class="pips">${pips}</div></div></div><span>${esc(def.levels[lvl].name)} · ${esc(def.levels[lvl].effect)}</span></li>`;
+          }).join("")}</ul>
         </details>
         <details class="acc" id="skins-acc">
           <summary>Skins</summary>
@@ -1648,7 +1661,7 @@ export class UI {
       : `<button class="btn small" data-act="buyWeights" ${g.save.money < WEIGHTS.cost ? "disabled" : ""}>Buy ${money(WEIGHTS.cost)}</button>`;
     return `<div class="upg ${g.save.weights ? "maxed" : ""}" data-id="weights" tabindex="-1">
         <div class="upg-head"><h3>${WEIGHTS.name}</h3></div>
-        <p class="upg-next">${WEIGHTS.blurb} Drop them with ${this.touch ? "the <b>Drop</b> button" : "<kbd>Q</kbd> or <kbd>?</kbd>"}.</p>
+        <p class="upg-next">${WEIGHTS.blurb} Drop them with ${this.touch ? "the <b>Drop</b> button" : "<kbd>Q</kbd> or <kbd>.</kbd>"}.</p>
         <p class="upg-now">${g.save.weights ? "Strapped on every dive" : "One-time purchase"}</p>
         <div class="upg-buy">${action}</div>
       </div>`;

@@ -167,11 +167,17 @@ export interface Creature {
   maxY: number;
   speed: number;
   state: 'idle' | 'chase' | 'rest' | 'lunge' | 'dead' | 'lurk';
+  /** How far a great white's jaws have opened, 0 (shut) to 1, easing toward open while it chases. */
+  mouth?: number;
+  /** In the catalog zone, set once the animal has been clicked: it then behaves as in the game instead of holding still. */
+  free?: boolean;
   /** Seconds since the creature died (anglerfish only). */
   dying: number;
   timer: number;
   phase: number;
   tint: number;
+  /** Seconds before Moby Dick can lunge again. */
+  lungeWait?: number;
   /** Seconds until a sperm whale's next dive. */
   nextDive: number;
   /** A sperm whale's dive in progress: how deep, whether it is going down, holding or coming up, and how long it stays down. */
