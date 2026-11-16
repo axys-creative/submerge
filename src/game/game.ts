@@ -15,7 +15,7 @@ import { weightMounts, WEIGHT_Y, GATE_THRUSTER_BUBBLES, challengerBase, challeng
 import { ITEMS, ITEM_KINDS } from "../data/items";
 import { ZONES, type WreckKind } from "../data/zones";
 import { SKINS, CAPSULE_DEATHS, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
-import { CREATURES, CREATURE_EXTENT, creatureRadius, whalePitch, type CreatureKind } from "../data/creatures";
+import { CREATURES, CREATURE_EXTENT, ORCA_TILT, creatureRadius, whalePitch, type CreatureKind } from "../data/creatures";
 import { leviathanSpine } from "../data/leviathan";
 import { routesFrom, PORTALS, type Portal, type Endpoint, type Side } from "../data/routes";
 import {
@@ -25,7 +25,8 @@ import {
   LAMP_HOLD_TIME,
   DEPTH_HOLD_DRAIN,
   HOLD_MOTOR_VOLUME,
-  TRASH_KEEP,
+  BOOST_ENGINE_VOLUME,
+  BOOST_ENGINE_PITCH,
   SHIP_MARGIN,
   LAMP_PITCH_DOWN,
   LAMP_PITCH_FORWARD,
@@ -206,6 +207,7 @@ const SPOT_NOTES: Partial<Record<CreatureKind, { key: string; text: string; colo
     text: "That white whale... Moby Dick! Steer clear and don't make contact.",
     color: "#E5484D",
   },
+  orca: { key: "orca", text: "An orca! Give the pod some room.", color: "#E5484D" },
   squid: { key: "squid", text: "A squid! Let's keep our distance.", color: "#E5484D" },
   colossal: {
     key: "squid",
@@ -234,6 +236,8 @@ const KELP_DAMPING = 0.6;
 const SHIP_DRAFT = 26;
 const KELP_SHIP_GAP = 10;
 const SHIP_HALF_LENGTH = 150;
+/** How far from an iceberg's edge the ship stops, in px. */
+const ICE_STOP = 175;
 const CLAW_REACH = 50;
 const CLAW_EXTEND = 0.35;
 const CLAW_GRAB = 0.15;
@@ -258,6 +262,8 @@ const SURFACE_Y = 8;
 const SURFACE_RAMP = 12;
 const SURFACE_GRAVITY = 1100;
 const SAIL_ZONE = SHIP_MARGIN + 100;
+/** How quickly the camera eases while zooming for a zone's `shipZoom`, slower than the usual 1.6 so the pull-back is gentle. */
+const SHIP_ZOOM_RATE = 0.7;
 const PORTAL_EARSHOT = 2500;
 const UNLOCK_NOTE_DELAY = 5;
 const POSE_RISE = 0.3;
@@ -435,6 +441,7 @@ export class Game {
   private sinkSpeed: number | null = null;
   private implodeMessage: (() => void) | null = null;
   private deathReason: WreckReason | null = null;
+  private lostCargo: Game["save"]["cargo"] | null = null;
   /** Seconds since a fatal hit cracked the front glass; null otherwise. */
   crack: number | null = null;
   private crackMessage: (() => void) | null = null;
@@ -455,7 +462,6 @@ export class Game {
   depthHeld = false;
   private holdY = 0;
   private holdHinted = false;
-  private caveHinted = false;
   private fullNoticeAt = -99;
   private invalidAt = -99;
   private batteryBeep = false;
@@ -593,6 +599,18 @@ export class Game {
     this.view.dpr = dpr;
     this.applyView();
     this.lighting.resize(this.canvas.width, this.canvas.height);
+  }
+
+  private shipZoomedOut = false;
+  private shelfSky = 0;
+
+  /** Zoom factor for the ship's position in zones that zoom out when something big comes into view: 1 until the ship reaches the zone's trigger spot, then the zone's zoom, with a little give so it does not flicker at the spot. */
+  private shipZoom() {
+    const sz = this.world.def.polar?.shipZoom;
+    if (!sz) return 1;
+    if (this.ship.x >= sz.at) this.shipZoomedOut = true;
+    else if (this.ship.x < sz.at - 200) this.shipZoomedOut = false;
+    return this.shipZoomedOut ? sz.zoom : 1;
   }
 
   /** Sizes the visible world area from the screen, the base scale and the current dive zoom. */
@@ -923,6 +941,8 @@ export class Game {
     this.audio.setScene(this.underwater ? "dive" : "surface");
     this.audio.setSailing(
       this.mode === "docked" && !this.paused && !this.travel && Math.abs(this.input.axis().x) > 0.2,
+      1 + BOOST_ENGINE_VOLUME * this.boost,
+      1 + BOOST_ENGINE_PITCH * this.boost,
     );
     this.audio.setMusicOff(!!this.world.def.space);
     if (this.mode !== "diving") this.audio.zenPause();
@@ -963,7 +983,11 @@ export class Game {
     const deep = this.mode === "diving" && this.depthM > dim + (full - dim) * 0.25;
     const wantDark = this.world.def.space || daylight(this.day).night > 0.5 || deep;
     this.uiDark += ((wantDark ? 1 : 0) - this.uiDark) * damp(2.5, dt);
-    this.audio.setPropeller(this.driving || this.depthHeld, this.driving ? 1 : HOLD_MOTOR_VOLUME);
+    this.audio.setPropeller(
+      this.driving || this.depthHeld,
+      this.driving ? 1 + BOOST_ENGINE_VOLUME * this.subBoost : HOLD_MOTOR_VOLUME,
+      1 + BOOST_ENGINE_PITCH * this.subBoost,
+    );
     this.audio.setHeartbeat(
       this.mode === "diving" &&
         !this.paused &&
@@ -996,7 +1020,7 @@ export class Game {
       this.day = (this.day + dt / DAY_SECONDS) % 1;
       this.days += dt / DAY_SECONDS;
     }
-    const dry = this.world.def.space || this.world.def.catalog;
+    const dry = this.world.def.space || this.world.def.catalog || !!this.world.def.polar;
     const wantRain = dry ? 0 : this.debugRain === null ? rainAt(this.days) : this.debugRain ? 1 : 0;
     this.rain += clamp(wantRain - this.rain, -dt * 0.25, dt * 0.25);
     this.audio.rainTick(dt, this.rain, this.depthM);
@@ -1013,9 +1037,9 @@ export class Game {
           : inAbyss
             ? cavern
             : this.world.def.diveZoom * (1 - (1 - BOOST_ZOOM) * 0.5 * this.subBoost)
-        : 1 - (1 - BOOST_ZOOM) * this.boost;
+        : (1 - (1 - BOOST_ZOOM) * this.boost) * this.shipZoom();
     if (Math.abs(zoomTarget - this.zoom) > 0.001) {
-      this.zoom += (zoomTarget - this.zoom) * damp(1.6, dt);
+      this.zoom += (zoomTarget - this.zoom) * damp(this.mode === "docked" && this.world.def.polar?.shipZoom ? SHIP_ZOOM_RATE : 1.6, dt);
       this.applyView();
     }
 
@@ -1040,7 +1064,6 @@ export class Game {
       if (creatures[i].state === "dead" && creatures[i].dying > DEATH_FADE_END)
         creatures.splice(i, 1);
     }
-    this.world.update(this.t, { x: this.cam.x, y: this.cam.y, hw: this.view.w / 2, hh: this.view.h / 2 });
     this.world.trackReveal(this.sub.x, this.sub.y, dt);
     this.updateExplored();
     this.updateEffects(dt);
@@ -1051,11 +1074,12 @@ export class Game {
     const ax = this.input.axis().x;
     if (Math.abs(ax) > 0.2) this.ship.facing = ax > 0 ? 1 : -1;
     const prevVx = this.ship.vx;
-    const boosting = this.input.isDown("boost") && Math.abs(ax) > 0.2;
+    const boosting = this.input.isDown("boost") && this.propellerLevel >= 1 && Math.abs(ax) > 0.2;
     this.boost += ((boosting ? 1 : 0) - this.boost) * damp(2.5, dt);
     if (boosting) this.boostUsed = true;
     if (
       Math.abs(ax) > 0.2 &&
+      this.propellerLevel >= 1 &&
       !this.boostUsed &&
       !this.speech.length &&
       (this.boostTipWait -= dt) <= 0
@@ -1071,8 +1095,17 @@ export class Game {
     this.ship.vx +=
       (ax * 280 * (1 + (BOOST_SPEED - 1) * this.boost) - this.ship.vx) * damp(2.5 + this.boost, dt);
     const x = this.ship.x + this.ship.vx * dt;
-    this.ship.x = clamp(x, SHIP_MARGIN, this.world.width - SHIP_MARGIN);
-    if (this.ship.x !== x) this.ship.vx = 0;
+    const shelf = this.world.def.polar?.shelf;
+    const lo = shelf && this.ship.x > shelf.x1 ? shelf.x1 + ICE_STOP : SHIP_MARGIN;
+    const hi = shelf && this.ship.x < shelf.x0 ? shelf.x0 - ICE_STOP : this.world.width - SHIP_MARGIN;
+    this.ship.x = clamp(x, lo, hi);
+    if (this.ship.x !== x) {
+      this.ship.vx = 0;
+      if (shelf && this.ship.x !== SHIP_MARGIN && this.ship.x !== this.world.width - SHIP_MARGIN && !this.said.has("ice")) {
+        this.said.add("ice");
+        this.say("An ice shelf blocks the way. Take the sub and dive underneath it!", "#6CC5F0");
+      }
+    }
     const accel = (this.ship.vx - prevVx) / dt;
     this.updateSwing(dt, accel);
     const pitchTo = clamp(
@@ -1165,7 +1198,6 @@ export class Game {
     this.batteryWarned = false;
     this.depthHeld = false;
     this.holdHinted = false;
-    this.caveHinted = false;
     this.sonar = { timer: 0.6, ring: -1 };
     this.sonarPings = [];
     this.airLow = false;
@@ -1179,6 +1211,39 @@ export class Game {
     if (this.save.skin === "oceangate") this.say("I love carbon fiber.", "#FFFFFF");
     this.save.stats.dives++;
     this.emitBubbles(s.x, s.y + 10, 14, 40);
+    this.emitSplash(s.x);
+  }
+
+  private emitSplash(x: number) {
+    const surface = (px: number) => waveY(px, this.t) + 4;
+    for (let i = 0; i < 38; i++) {
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      const out = Math.random();
+      this.foam.push({
+        x: x + (Math.random() - 0.5) * 70,
+        y: surface(x) - 2,
+        vx: dir * (30 + out * 150),
+        vy: -(140 + Math.random() * 260) * (1 - out * 0.4),
+        r: 1.8 + Math.random() * 2.6,
+        life: 0.9 + Math.random() * 0.5,
+        max: 1.4,
+        spray: true,
+      });
+    }
+    for (let i = 0; i < 14; i++) {
+      const px = x + (Math.random() - 0.5) * 90;
+      const life = 1.4 + Math.random() * 1.2;
+      this.foam.push({
+        x: px,
+        y: surface(px),
+        vx: (px < x ? -1 : 1) * (40 + Math.random() * 90),
+        vy: 0,
+        r: 8 + Math.random() * 10,
+        life,
+        max: life,
+        spray: false,
+      });
+    }
   }
 
   /** True when the sub has settled in at the ship's mounting spot at the surface, ready for the hook to come down. */
@@ -1438,6 +1503,8 @@ export class Game {
       }
     }
 
+    if (!this.debugFast) this.collideIce(px, py);
+
     if (this.depthHeld && Math.abs(s.y - this.holdY) > 40) this.releaseDepth();
     if (Math.abs(a.x) > 0.2) s.facing = a.x > 0 ? 1 : -1;
     const lean =
@@ -1453,13 +1520,6 @@ export class Game {
 
     this.driving = moving && s.battery > 0;
     const wasSurfaced = this.atSurface;
-    if (!this.caveHinted && this.save.zone === 0 && this.world.inCave(s.x) && s.y > this.world.floorAt(s.x) + 40) {
-      this.caveHinted = true;
-      this.say(
-        "These caves weren't always underwater, so treasure may be hidden inside",
-        "#F6C445",
-      );
-    }
     this.atSurface = s.y < (this.atSurface ? SURFACE_STAY : SURFACE_ENTER);
     this.shipHint = s.y < (this.shipHint ? SHIP_HINT_STAY : SHIP_HINT_ENTER);
     const surfaced = this.atSurface;
@@ -1590,7 +1650,12 @@ export class Game {
       }
       if (s.invuln > 0) continue;
       const def = CREATURES[c.kind];
-      const pitch = c.kind === "whale" || c.kind === "mobydick" ? whalePitch(c) : 0;
+      const pitch =
+        c.kind === "whale" || c.kind === "mobydick"
+          ? whalePitch(c)
+          : c.kind === "orca"
+            ? whalePitch(c) + ORCA_TILT
+            : 0;
       const circles = def.body
         ? def.body.map(
             ([dx, r]) =>
@@ -1609,6 +1674,7 @@ export class Game {
     this.updateClaw(dt);
 
     this.world.sinkTrash(dt);
+    this.world.driftTrash(this.t, dt);
     for (const it of this.world.items) {
       if (!it.alive) continue;
       const r = SUB_RADIUS + ITEMS[it.kind].size * 0.5;
@@ -1756,6 +1822,35 @@ export class Game {
     this.audio.hit(clamp(speed / 200, 0.4, 1));
   }
 
+  /** Keeps the sub out of the ice shelf: a blocked axis is undone, and a sub already inside is pushed out sideways. */
+  private collideIce(px: number, py: number) {
+    const s = this.sub;
+    const w = this.world;
+    const hit = (x: number, y: number) => w.iceHit(x, y, this.subHalf, this.subAbove, this.subBelow);
+    if (!hit(s.x, s.y)) return;
+    if (hit(px, py)) {
+      const shelf = w.def.polar!.shelf!;
+      const dir = s.x < (shelf.x0 + shelf.x1) / 2 ? -1 : 1;
+      for (let i = 0; i < 700 && hit(s.x, s.y); i++) s.x += dir * 8;
+      s.vx = 0;
+      return;
+    }
+    if (!hit(px, s.y)) {
+      this.bump(Math.abs(s.vx));
+      s.x = px;
+      s.vx = 0;
+    } else if (!hit(s.x, py)) {
+      this.bump(Math.abs(s.vy));
+      s.y = py;
+      s.vy *= -0.2;
+    } else {
+      s.x = px;
+      s.y = py;
+      s.vx = 0;
+      s.vy = 0;
+    }
+  }
+
   /** Slides the sub along tunnel walls: each axis is tried alone, and a blocked one is undone. */
   private collideCave(px: number, py: number) {
     const s = this.sub;
@@ -1807,6 +1902,7 @@ export class Game {
       } else {
         c.state = "rest";
         c.timer = 2.5;
+        if (c.kind === "orca") c.hunt = true;
       }
     }
     if (sunk) {
@@ -1987,6 +2083,7 @@ export class Game {
     }
     const lostValue = this.cargoValue();
     const lostCount = this.cargoCount();
+    this.lostCargo = lostCount && reason !== "leviathan" ? { ...this.save.cargo } : null;
     this.save.cargo = {};
     this.persist();
     const titles: Record<WreckReason, string> = {
@@ -1996,6 +2093,8 @@ export class Game {
       angler: "Anglerfish ambush!",
       whale: "Hit by a whale!",
       mobydick: "Hit by Moby Dick!",
+      orca: "Hit by an orca!",
+      orcacalf: "",
       stingray: "",
       manta: "",
       turtle: "",
@@ -2027,6 +2126,8 @@ export class Game {
       giant: "Giant squid ambush from the dark and lunge from far away. Sonar spots them early; give them a wide berth.",
       whale: "Sperm whales ignore you, but they are enormous and slow to turn. Keep clear of them.",
       mobydick: "Call him what you like, he is still a sperm whale: enormous and slow to turn. Keep clear of him.",
+      orca: "Orcas cruise in a pod, but bump one and it will chase you until you dock or outrun it. Give them room.",
+      orcacalf: "",
       fish: "",
       jelly: "",
       pressure: `Your plating is only safe to ${this.depthRating} m. Upgrade it to go deeper.`,
@@ -2034,7 +2135,7 @@ export class Game {
         "A sealed sub has no endless air. Once the oxygen runs out, carbon dioxide (CO₂) builds up to toxic levels and the cabin becomes unbreathable. Head back up to refill your air.",
     };
     const lost = lostCount
-      ? `You lost ${lostCount} ${lostCount === 1 ? "item" : "items"} worth ${money(lostValue)}.`
+      ? `You lost ${lostCount} ${lostCount === 1 ? "item" : "items"} worth ${money(lostValue)}.${reason === "leviathan" ? "" : " You can salvage them from the wreck."}`
       : "Luckily your hold was empty.";
     this.save.stats.deaths++;
     this.persist();
@@ -2084,6 +2185,9 @@ export class Game {
       w.inCave(s.x) ? w.caveHit(s.x, yy, this.subHalf, this.subAbove, this.subBelow) : yy > w.clearFloorAt(s.x, this.subHalf) - this.subBelow;
     while (y < w.maxFloor + 200 && !landed(y + 4)) y += 4;
     const at = this.implode ?? { x: s.x, y };
+    if (this.lostCargo) this.save.salvage = { zone: this.save.zone, x: s.x, y, cargo: this.lostCargo };
+    this.lostCargo = null;
+    if (this.save.salvage) w.placeSalvage(this.save.salvage);
     if (reason === "pressure" || this.implode || y / PX_PER_M > this.depthRating)
       w.scatterScraps(at.x, at.y, debrisColors(this.up.plating));
     else w.addHulk({ x: s.x, y, facing: s.facing, tilt: 0.35, up: { ...this.up }, skin: this.save.skin });
@@ -2104,11 +2208,11 @@ export class Game {
     this.persist();
   }
 
-  /** Builds a zone, with some of the trash cleared last time washing back in. */
+  /** Builds a zone with the same loot and trash as last time, minus what was taken. */
   private enterZone(zone: number) {
-    const kept = (this.save.trash[zone] ?? []).filter(() => Math.random() < TRASH_KEEP);
-    this.save.trash[zone] = kept;
-    return new World(zone, kept, this.save.caveLoot[zone] ?? []);
+    const kept = (this.save.trash[zone] ??= []);
+    const seed = (this.save.lootSeed[zone] ??= (Math.random() * 0x100000000) >>> 0);
+    return new World(zone, kept, this.save.caveLoot[zone] ?? [], seed, this.save.salvage);
   }
 
   /** The zone's clean-up progress, or null when it has no trash. */
@@ -2155,8 +2259,11 @@ export class Game {
     const def = ITEMS[it.kind];
     it.alive = false;
     this.audio.play(def.trash ? "chime4" : def.value <= LOW_VALUE ? "chime3" : "chime2");
-    it.respawnAt =
-      it.trash !== undefined || it.cave !== undefined ? Infinity : this.t + (it.wreck >= 0 ? 240 : 60 + Math.random() * 60);
+    if (it.salvage && this.save.salvage) {
+      const left = this.save.salvage.cargo;
+      if (!--left[it.kind]!) delete left[it.kind];
+      if (!Object.keys(left).length) this.save.salvage = null;
+    }
     if (it.trash !== undefined) this.noteTrash(it.trash);
     if (it.cave !== undefined) (this.save.caveLoot[this.save.zone] ??= []).push(it.cave);
     this.save.cargo[it.kind] = (this.save.cargo[it.kind] ?? 0) + 1;
@@ -2615,6 +2722,7 @@ export class Game {
     const tx = (docked ? this.ship.x - 60 : this.sub.x) - this.view.w * 0.15 * this.previewShift;
     const ty = docked ? -80 : this.sub.y;
     const f = damp(docked ? 4 : 6, dt);
+    this.shelfSky += ((docked && this.shipZoomedOut ? 1 : 0) - this.shelfSky) * damp(1.5, dt);
     this.cam.x += (tx - this.cam.x) * f;
     this.cam.y += (ty - this.cam.y) * f;
     this.clampCamera();
@@ -2631,7 +2739,8 @@ export class Game {
     const hw = this.view.w / 2;
     const hh = this.view.h / 2;
     this.cam.x = clamp(this.cam.x, hw - 400, this.world.width - hw + 400);
-    const minY = hh - 400;
+    const shelf = this.world.def.polar?.shelf;
+    const minY = hh - (400 + (shelf ? shelf.height * 0.6 * this.shelfSky : 0));
     this.cam.y = clamp(this.cam.y, minY, Math.max(minY, this.world.maxFloor + 160 - hh));
   }
 

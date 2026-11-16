@@ -6,6 +6,7 @@ import { BONE_KINDS, BONE_WEIGHTS, type BoneKind } from '../art/bones';
 import { clamp, mulberry32, rand, type Rng } from '../util';
 import { CATALOG } from '../data/catalog';
 import { createWreckFx } from './wreckfx';
+import { shelfContains } from '../art/polar';
 import type { WreckFx } from '../art/scenery';
 import type { Loadout } from '../data/upgrades';
 import type { SkinId } from '../data/skins';
@@ -18,21 +19,20 @@ const FLOOR_SOFTNESS = 25;
 /** Closest two surface items may spawn to each other, in px. */
 const CORAL_SPACING = 150;
 const ITEM_SPACING = 160;
-const RESPAWN_HIDE_MARGIN = 80;
+/** Loot slot numbers: cave loot takes 0 and up, then floor items and wreck chests start here. */
+export const FLOOR_SLOT = 100;
+export const CHEST_SLOT = 500;
 
-/** The camera's rectangle around (x, y) with half sizes hw and hh. */
-export interface View {
+export interface Salvage {
+  zone: number;
   x: number;
   y: number;
-  hw: number;
-  hh: number;
+  cargo: Partial<Record<ItemKind, number>>;
 }
-
-/** Whether a spot is on screen or just outside it, so nothing pops in where the player can see. */
-const inView = (v: View, x: number, y: number) => Math.abs(x - v.x) < v.hw + RESPAWN_HIDE_MARGIN && Math.abs(y - v.y) < v.hh + RESPAWN_HIDE_MARGIN;
 const TRASH_SPACING = 140;
-const FLOATING_TRASH: ItemKind[] = ['bottle', 'boot', 'can'];
+const FLOATING_TRASH: ItemKind[] = ['bottle', 'boot', 'can', 'jug', 'canister'];
 const TRASH_SINK_SPEED = 6;
+const TRASH_SPIN = (Math.PI * 2) / 60;
 const WRECK_TRASH_SPACING = 70;
 const FREIGHTER_TRASH = 9;
 const NAV_CELL = 120;
@@ -79,18 +79,21 @@ export interface ItemInst {
   x: number;
   y: number;
   alive: boolean;
-  respawnAt: number;
   phase: number;
   /** Index of the wreck this item belongs to, or -1. */
   wreck: number;
-  /** Where cave loot sits, and returns to when it respawns. */
-  spot?: { x: number; y: number };
+  /** Cargo lost in a wreck, which can be taken back from where the sub sank. */
+  salvage?: boolean;
   /** Which of the zone's fixed trash spots this is, for junk that never respawns. */
   trash?: number;
-  /** Which of the zone's cave loot slots this is; once taken it never comes back. */
+  /** Which of the zone's loot slots this is; once taken it never comes back. */
   cave?: number;
   /** Junk drifting down through open water until it lands on the floor. */
   sinking?: boolean;
+  /** How far floating junk has turned, in radians; it stops turning once it touches the floor. */
+  spin?: number;
+  /** Junk that never lands: it wanders around this spot, up to ax and ay px away, at this speed. */
+  drift?: { x: number; y: number; ax: number; ay: number; speed: number };
 }
 
 /** One round piece of tunnel; a cave is the union of many overlapping blobs. */
@@ -171,6 +174,8 @@ export interface Creature {
   mouth?: number;
   /** In the catalog zone, set once the animal has been clicked: it then behaves as in the game instead of holding still. */
   free?: boolean;
+  /** An orca that was bumped and is hunting the sub. */
+  hunt?: boolean;
   /** Seconds since the creature died (anglerfish only). */
   dying: number;
   timer: number;
@@ -223,6 +228,7 @@ export class World {
   private readonly shape: number[];
   readonly caveBlobs: CaveBlob[] = [];
   private readonly rng: Rng;
+  private readonly lootRng: Rng;
   /** The zone's passages with this visit's random shifts applied. */
   private passages: CavePassage[] = [];
 
@@ -253,13 +259,14 @@ export class World {
   /** How many fixed trash spots this zone ended up with. */
   trashTotal = 0;
 
-  constructor(readonly index: number, cleared: number[] = [], caveTaken: number[] = []) {
+  constructor(readonly index: number, cleared: number[] = [], taken: number[] = [], lootSeed = 1, salvage: Salvage | null = null) {
     this.def = ZONES[index];
     this.width = this.def.width;
     // Terrain and scenery use a fixed seed so a zone always looks the same; loot and creatures vary.
     const layout = mulberry32(index * 9973 + 17);
     this.shape = [layout(), layout(), layout(), layout()].map((v) => v * 100);
     this.rng = mulberry32((Date.now() ^ (index * 7919)) >>> 0);
+    this.lootRng = mulberry32((lootSeed ^ (index * 7919)) >>> 0);
 
     this.buildCave();
     const cave = this.def.caves?.find((c) => c.abyss);
@@ -279,21 +286,61 @@ export class World {
     this.placeTrash(cleared);
     for (let i = 0; i < this.def.items; i++) {
       const it = this.blankItem();
+      it.cave = FLOOR_SLOT + i;
       this.placeItem(it);
       this.items.push(it);
     }
-    this.placeCaveLoot(caveTaken);
+    for (const it of this.items) if (it.cave !== undefined && it.cave >= FLOOR_SLOT && taken.includes(it.cave)) it.alive = false;
+    this.placeCaveLoot(taken);
     this.def.wrecks.forEach((w, i) => {
       this.wreckFx.push(createWreckFx(w.kind));
-      const it = this.blankItem();
-      it.kind = w.kind === 'sloop' ? 'coin' : 'chest';
-      it.wreck = i;
-      this.placeChest(it);
-      this.items.push(it);
+      const kinds: ItemKind[] =
+        w.kind === 'sloop' ? [this.lootRng() < 0.5 ? 'wheel' : 'anchor', 'coin']
+        : w.kind === 'galleon' ? ['wheel', 'anchor', 'chest']
+        : ['chest'];
+      const reach = w.kind === 'galleon' ? 280 : w.kind === 'sloop' ? 120 : 0;
+      const stern = w.kind === 'galleon' ? -250 : -110;
+      const rest: ItemKind[] = kinds.filter((k) => k !== 'wheel');
+      const order = rest.map((_, j) => j).sort(() => this.lootRng() - 0.5);
+      kinds.forEach((kind, j) => {
+        const n = rest.indexOf(kind);
+        const cell = (reach * 2) / rest.length;
+        const base = w.kind === 'galleon' ? 340 : w.kind === 'sloop' ? 138 : 0;
+        const dx =
+          kind === 'wheel' ? stern - base + rand(this.lootRng, -25, 25)
+          : rest.length > 1 ? -reach + (order[n] + 0.15 + this.lootRng() * 0.7) * cell
+          : 0;
+        const it = this.blankItem();
+        it.kind = kind;
+        it.wreck = i;
+        it.cave = CHEST_SLOT + i * 8 + j;
+        this.placeChest(it, dx);
+        it.alive = !taken.includes(it.cave);
+        this.items.push(it);
+      });
     });
     for (const spec of this.def.creatures) for (let i = 0; i < spec.count; i++) this.spawn(spec);
     this.spawnLeviathan();
+    if (salvage?.zone === index) this.placeSalvage(salvage);
     if (this.def.catalog) this.buildCatalog();
+  }
+
+  /** Lays a wreck's lost cargo out on the floor, replacing any earlier pile. */
+  placeSalvage(s: Salvage) {
+    for (let i = this.items.length - 1; i >= 0; i--) if (this.items[i].salvage) this.items.splice(i, 1);
+    let n = 0;
+    for (const k of ITEM_KINDS) n += s.cargo[k] ?? 0;
+    let i = 0;
+    for (const k of ITEM_KINDS) {
+      for (let c = s.cargo[k] ?? 0; c > 0; c--, i++) {
+        const it = this.blankItem();
+        it.kind = k;
+        it.salvage = true;
+        it.x = s.x + (i - (n - 1) / 2) * Math.min(40, 240 / n);
+        it.y = s.y - ITEMS[k].size * 0.45;
+        this.items.push(it);
+      }
+    }
   }
 
   /** Puts the sleeping leviathan in its lair, fully formed with its body stretched out to the west and its lights off, if the zone has one. */
@@ -501,6 +548,7 @@ export class World {
 
   /** Rock: below the sea floor and outside every tunnel. */
   caveSolid(x: number, y: number): boolean {
+    if (this.iceSolid(x, y)) return true;
     if (y <= this.floorAt(x)) return false;
     if (!this.inCave(x)) return true;
     if (this.abyss && y > this.abyssTop(x) && y <= this.abyssBottom(x)) return false;
@@ -510,6 +558,30 @@ export class World {
       if (dx * dx + dy * dy < b.r * b.r) return false;
     }
     return true;
+  }
+
+  /** Ice shelf: solid inside its rounded outline below the waterline, except in its tunnels. */
+  iceSolid(x: number, y: number): boolean {
+    const shelf = this.def.polar?.shelf;
+    if (y < 0 || !shelf || !shelfContains(shelf, x, y)) return false;
+    for (const b of this.caveBlobs) {
+      const dx = x - b.x;
+      const dy = y - b.y;
+      if (dx * dx + dy * dy < b.r * b.r) return false;
+    }
+    return true;
+  }
+
+  /** True when a body centered at (x, y), halfWidth wide, overlaps the ice shelf. */
+  iceHit(x: number, y: number, halfWidth: number, above = 24, below = 24): boolean {
+    if (!this.def.polar?.shelf) return false;
+    for (const dx of [-0.85, -0.45, 0, 0.45, 0.85]) {
+      for (const dy of [-above, 0, below]) {
+        if (Math.abs(dx) > 0.7 && dy !== 0) continue;
+        if (this.iceSolid(x + dx * halfWidth, y + dy)) return true;
+      }
+    }
+    return false;
   }
 
   /** True when a body centered at (x, y), halfWidth wide, overlaps rock. */
@@ -579,7 +651,7 @@ export class World {
   }
 
   private placeCaveLoot(taken: number[]) {
-    const r = this.rng;
+    const r = this.lootRng;
     let slot = 0;
     for (const p of this.passages) {
       if (!p.loot) continue;
@@ -587,7 +659,6 @@ export class World {
       for (let i = 0; i < p.loot; i++) {
         const it = this.blankItem();
         it.cave = slot++;
-        if (taken.includes(it.cave)) continue;
         const kind = p.kinds?.[i] ?? this.pickKind(Math.min(low[1], 890), true, true);
         if (!kind) continue;
         const width = p.pts.length === 1 ? p.r : p.r * TUNNEL_WIDEN;
@@ -606,7 +677,7 @@ export class World {
         it.kind = kind;
         it.x = x;
         it.y = y - ITEMS[kind].size * 0.45;
-        it.spot = { x, y: it.y };
+        it.alive = !taken.includes(it.cave);
         this.items.push(it);
       }
     }
@@ -659,26 +730,6 @@ export class World {
   layerFloorAt(c: number, layer: number): number {
     const l = BACK_LAYERS[layer];
     return this.terrainAt(c + l.offset) - l.lift + Math.sin(c * 0.002 * (1 + layer * 0.4) + this.shape[3] + layer * 2) * l.amp;
-  }
-
-  update(t: number, view?: View) {
-    for (const it of this.items) {
-      if (it.alive || t < it.respawnAt) continue;
-      if (it.spot) {
-        if (view && inView(view, it.spot.x, it.spot.y)) continue;
-        it.x = it.spot.x;
-        it.y = it.spot.y;
-        it.alive = true;
-      } else if (it.wreck >= 0) {
-        const w = this.def.wrecks[it.wreck];
-        const x = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 138);
-        if (view && inView(view, x, this.floorAt(x))) continue;
-        this.placeChest(it);
-      } else {
-        this.placeItem(it, view);
-        if (!it.alive) it.respawnAt = t + 1;
-      }
-    }
   }
 
   private coralNear(x: number, gap: number) {
@@ -832,7 +883,6 @@ export class World {
         this.dropTrash(it, floor, r);
         it.trash = this.trashTotal++;
         it.alive = !cleared.includes(it.trash);
-        it.respawnAt = Infinity;
         this.items.push(it);
         xs.push(x);
         break;
@@ -851,7 +901,6 @@ export class World {
         this.dropTrash(it, floor, r);
         it.trash = this.trashTotal++;
         it.alive = !cleared.includes(it.trash);
-        it.respawnAt = Infinity;
         this.items.push(it);
         xs.push(x);
         placed++;
@@ -861,16 +910,34 @@ export class World {
 
   private dropTrash(it: ItemInst, floor: number, r: () => number) {
     const rest = floor - ITEMS[it.kind].size * 0.45;
+    if (it.kind === 'sack') {
+      const lo = 60;
+      it.y = rand(r, lo, Math.max(lo + 20, floor - 110));
+      it.drift = { x: it.x, y: it.y, ax: rand(r, 45, 80), ay: rand(r, 25, 45), speed: rand(r, 0.3, 0.5) };
+      return;
+    }
     if (FLOATING_TRASH.includes(it.kind) && r() < 0.25) {
       it.y = rand(r, 120, floor - 80);
       it.sinking = true;
     } else it.y = rest;
   }
 
+  /** Moves the plastic bags around their spots, never far and never into the floor. */
+  driftTrash(t: number, dt: number) {
+    for (const it of this.items) {
+      const d = it.drift;
+      if (!d || !it.alive) continue;
+      it.spin = (it.spin ?? it.phase) + TRASH_SPIN * dt;
+      it.x = d.x + Math.sin(t * d.speed + it.phase) * d.ax;
+      it.y = Math.min(d.y + Math.sin(t * d.speed * 1.3 + it.phase * 1.7 + 1) * d.ay, this.floorAt(it.x) - 50);
+    }
+  }
+
   /** Lets floating junk drift down, landing on the floor. */
   sinkTrash(dt: number) {
     for (const it of this.items) {
       if (!it.sinking || !it.alive) continue;
+      it.spin = (it.spin ?? it.phase) + TRASH_SPIN * dt;
       const rest = this.floorAt(it.x) - ITEMS[it.kind].size * 0.45;
       it.y = Math.min(rest, it.y + TRASH_SINK_SPEED * dt);
       if (it.y >= rest) it.sinking = false;
@@ -883,17 +950,16 @@ export class World {
   }
 
   private blankItem(): ItemInst {
-    return { kind: 'seaweed', x: 0, y: 0, alive: true, respawnAt: 0, phase: this.rng() * 10, wreck: -1 };
+    return { kind: 'seaweed', x: 0, y: 0, alive: true, phase: this.rng() * 10, wreck: -1 };
   }
 
-  private placeItem(it: ItemInst, view?: View) {
-    const r = this.rng;
+  private placeItem(it: ItemInst) {
+    const r = this.lootRng;
     for (let tries = 0; tries < 25; tries++) {
       const x = rand(r, 250, this.width - 250);
       const floor = this.floorAt(x);
       if (Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 20) continue;
       if (this.atMouth(x, floor)) continue;
-      if (view && inView(view, x, floor)) continue;
       if (this.items.some((o) => o !== it && o.alive && Math.abs(o.x - x) < ITEM_SPACING)) continue;
             const kind = this.pickKind(floor / PX_PER_M);
       if (!kind) continue;
@@ -904,14 +970,13 @@ export class World {
       return;
     }
     it.alive = false;
-    it.respawnAt = Infinity;
   }
 
-  /** Puts a wreck's loot back at its spot: a chest, or a sloop's coins at its bow. */
-  private placeChest(it: ItemInst) {
+  /** Puts a piece of a wreck's loot on the floor around the wreck's loot spot, dx px to the side of it. */
+  private placeChest(it: ItemInst, dx = 0) {
     const w = this.def.wrecks[it.wreck];
-    it.x = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 138);
-    it.y = this.floorAt(it.x) - (it.kind === 'coin' ? ITEMS.coin.size * 0.45 : 16);
+    it.x = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 138) + dx;
+    it.y = this.floorAt(it.x) - ITEMS[it.kind].size * 0.45;
     it.alive = true;
   }
 
@@ -928,7 +993,7 @@ export class World {
       }
     }
     if (!total) return null;
-    let roll = this.rng() * total;
+    let roll = this.lootRng() * total;
     for (const [k, w] of pool) {
       roll -= w;
       if (roll <= 0) return k;
@@ -946,7 +1011,14 @@ export class World {
         it.kind = e.item;
         it.x = e.x;
         it.y = y - ITEMS[e.item].size * 0.45;
-        it.spot = { x: it.x, y: it.y };
+        this.items.push(it);
+      }
+      for (const kind of e.floating ?? []) {
+        const it = this.blankItem();
+        it.kind = kind;
+        it.x = e.x;
+        it.y = y - 90;
+        it.drift = { x: it.x, y: it.y, ax: 14, ay: 9, speed: 0.4 };
         this.items.push(it);
       }
       this.labels.push({ x: e.x, y: y + 34, text: e.label });
@@ -996,6 +1068,7 @@ export class World {
       const maxY = Math.min(spec.maxDepth * PX_PER_M, this.floorAt(x) - 60);
       if (maxY < minY + 10) continue;
       const y = spec.kind === 'stingray' ? this.floorAt(x) - 50 : rand(r, minY, maxY);
+      if (this.iceHit(x, y, 300, 160, 160)) continue;
       const n = spec.kind === 'fish' ? 4 + Math.floor(r() * 4) : 1;
       const tint = r();
       const facing = r() < 0.5 ? 1 : -1;

@@ -3,7 +3,7 @@ import { MONSTER_SCALE as MS, MONSTER_TRAIL } from '../config';
 import { leviathanSpine } from '../data/leviathan';
 import { mulberry32 } from '../util';
 import { WHALE_REAR_TOP, WHALE_REAR_BOTTOM, WHALE_TAIL } from './whaleShapes';
-import { FISH_FULL_SPEED, BIGFIN_SCALE, SQUID_SCALE, BLUE_WHALE_SCALE, MOBY_DICK_SCALE, COLOSSAL_SCALE, GIANT_SCALE, GIANT_TENTACLE, SHARK_LENGTH, SHARK_SCALE, greatWhiteScale, anglerScale, mantaScale, HAMMERHEAD_SCALE, turtleScale, JELLY_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
+import { FISH_FULL_SPEED, BIGFIN_SCALE, SQUID_SCALE, BLUE_WHALE_SCALE, MOBY_DICK_SCALE, COLOSSAL_SCALE, GIANT_SCALE, GIANT_TENTACLE, SHARK_LENGTH, SHARK_SCALE, greatWhiteScale, anglerScale, mantaScale, ORCA_SCALE, ORCA_CALF_SCALE, ORCA_TILT, STINGRAY_SCALE, HAMMERHEAD_SCALE, turtleScale, JELLY_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
 
 const FISH = ['#FFB547', '#FF7A6B', '#7BDFF2', '#B9F18C'];
 
@@ -136,7 +136,10 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
         const ms = mantaScale(c.tint);
         ctx.scale(ms, ms);
         manta(ctx, c);
-      } else stingray(ctx, c);
+      } else {
+        ctx.scale(STINGRAY_SCALE, STINGRAY_SCALE);
+        stingray(ctx, c);
+      }
       break;
     case 'bigfin':
       ctx.scale(BIGFIN_SCALE, BIGFIN_SCALE);
@@ -169,6 +172,14 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
       ctx.scale(GIANT_SCALE, GIANT_SCALE);
       squid(ctx, c, c.tint > SPOTTED_TINT ? GIANT_SPOTTED : GIANT_PALETTE, GIANT_TENTACLE, 26, 0.88);
       break;
+    case 'orca':
+    case 'orcacalf': {
+      const size = c.kind === 'orca' ? ORCA_SCALE : ORCA_CALF_SCALE;
+      ctx.scale(c.facing * size, size);
+      ctx.rotate(whalePitch(c) + ORCA_TILT);
+      orca(ctx, c);
+      break;
+    }
     case 'whale':
     case 'mobydick':
       {
@@ -1208,6 +1219,153 @@ function jelly(ctx: CanvasRenderingContext2D, c: Creature) {
   ctx.restore();
 }
 
+/** An orca about 330 px long, facing right, its body arched down toward a thick tail stock and broad flukes that swing up and down like the other whales'. Black with a white chin, eye patch, belly patch and a pale saddle behind the tall dorsal fin. */
+function orca(ctx: CanvasRenderingContext2D, c: Creature) {
+  const swing = Math.sin(c.phase * 1.7 + c.tint * 4);
+  const bend = (x: number) => swing * 16 * Math.pow(Math.max(0, (-40 - x) / 110), 2);
+  const white = '#F4F7FA';
+  const spine: [number, number, number, number][] = [
+    [176, -4, 13, 21], [148, -8, 27, 34], [108, -10, 35, 45], [52, -6, 38, 51], [-10, 6, 37, 48], [-70, 26, 29, 33], [-118, 47, 22, 22], [-150, 64, 17, 15],
+  ];
+  const top: [number, number][] = [];
+  const bottom: [number, number][] = [];
+  spine.forEach(([x, y, wt, wb], i) => {
+    const p = spine[Math.max(0, i - 1)];
+    const n = spine[Math.min(spine.length - 1, i + 1)];
+    const tx = n[0] - p[0];
+    const ty = n[1] - p[1];
+    const l = Math.hypot(tx, ty) || 1;
+    const nx = -ty / l;
+    const ny = tx / l;
+    top.push([x + nx * wt, y + ny * wt + bend(x)]);
+    bottom.push([x - nx * wb, y - ny * wb + bend(x)]);
+  });
+  const outline: [number, number][] = [...top, ...[...bottom].reverse(), [191, 10], [198, 1], [195, -8], [184, -15]];
+  const lineAt = (pts: [number, number][], x: number) => {
+    for (let i = 1; i < pts.length; i++) {
+      if (x >= pts[i][0]) return pts[i - 1][1] + ((pts[i][1] - pts[i - 1][1]) * (x - pts[i - 1][0])) / (pts[i][0] - pts[i - 1][0]);
+    }
+    return pts[pts.length - 1][1];
+  };
+  const topAt = (x: number) => lineAt(top, x);
+  const botAt = (x: number) => lineAt(bottom, x);
+  const trace = (pts: [number, number][]) => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+  };
+  const smooth = (pts: [number, number][]) => {
+    const mid = (a: [number, number], b: [number, number]): [number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    ctx.beginPath();
+    ctx.moveTo(...mid(pts[pts.length - 1], pts[0]));
+    pts.forEach((q, i) => ctx.quadraticCurveTo(q[0], q[1], ...mid(q, pts[(i + 1) % pts.length])));
+    ctx.closePath();
+  };
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = '#0A0B0E';
+  const shade = ctx.createLinearGradient(0, -60, 0, 80);
+  shade.addColorStop(0, '#303237');
+  shade.addColorStop(0.5, '#232529');
+  shade.addColorStop(1, '#1A1B1F');
+  const whiteShade = ctx.createLinearGradient(0, -10, 0, 80);
+  whiteShade.addColorStop(0, '#FFFFFF');
+  whiteShade.addColorStop(0.6, '#EEF0F2');
+  whiteShade.addColorStop(1, '#D3D6DA');
+  const solid = (draw: () => void, fill: string | CanvasGradient = '#232529') => {
+    draw();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.stroke();
+  };
+
+  const [tx0, ty0] = bottom[bottom.length - 1];
+  const [tx1, ty1] = top[top.length - 1];
+  const tailX = (tx0 + tx1) / 2;
+  const tailY = (ty0 + ty1) / 2;
+  const prev = spine[spine.length - 2];
+  const heading = Math.atan2(spine[spine.length - 1][1] - prev[1], spine[spine.length - 1][0] - prev[0]);
+  const flat = heading + (Math.PI - heading) * 0.55 - swing * 0.3;
+  const half = Math.hypot(tx1 - tx0, ty1 - ty0) / 2;
+  const k = half / 13;
+  const flukePath = () => {
+    ctx.beginPath();
+    ctx.moveTo(-24, -9 * k);
+    ctx.bezierCurveTo(8, -11 * k, 20, -23, 30, -33);
+    ctx.bezierCurveTo(36, -39, 46, -42, 53, -40);
+    ctx.quadraticCurveTo(51, -32, 43, -22);
+    ctx.quadraticCurveTo(37, -12, 36, -2);
+    ctx.quadraticCurveTo(34, 0, 36, 2);
+    ctx.quadraticCurveTo(37, 12, 43, 22);
+    ctx.quadraticCurveTo(51, 32, 53, 40);
+    ctx.bezierCurveTo(46, 42, 36, 39, 30, 33);
+    ctx.bezierCurveTo(20, 23, 8, 11 * k, -24, 9 * k);
+    ctx.closePath();
+  };
+  const atTail = (draw: () => void) => {
+    ctx.save();
+    ctx.translate(tailX, tailY);
+    ctx.rotate(flat);
+    draw();
+    ctx.restore();
+  };
+  smooth(outline);
+  ctx.stroke();
+  atTail(() => {
+    flukePath();
+    ctx.stroke();
+  });
+
+  const fin = () => {
+    const f = topAt(54) + 10;
+    const r = topAt(-14) + 10;
+    const tip = topAt(8) - 66;
+    smooth([[56, f], [40, f - 32], [22, tip + 18], [6, tip], [3, tip + 30], [-4, r - 22], [-14, r]]);
+  };
+  solid(fin, '#2C2E33');
+  const hex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const mix = (a: string, b: string, t: number) => `rgb(${hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * t)).join(',')})`;
+  const tt = Math.min(1, Math.max(0, (tailY + 60) / 140));
+  const tailColor = tt < 0.5 ? mix('#303237', '#232529', tt * 2) : mix('#232529', '#1A1B1F', (tt - 0.5) * 2);
+  atTail(() => {
+    flukePath();
+    ctx.fillStyle = tailColor;
+    ctx.fill();
+  });
+  smooth(outline);
+  ctx.fillStyle = shade;
+  ctx.fill();
+
+  ctx.save();
+  smooth(outline);
+  ctx.clip();
+  ctx.fillStyle = whiteShade;
+  smooth([[204, 2], [178, 3], [160, 6], [150, 11], [126, 12], [100, 15], [90, 26], [86, 60], [84, 100], [204, 100]]);
+  ctx.fill();
+  smooth([[-110, botAt(-110) + 6], [-96, botAt(-96) - 2], [-70, botAt(-70) - 7], [-30, botAt(-30) - 9], [10, botAt(10) - 10], [44, botAt(44) - 8], [60, botAt(60)], [60, 200], [-110, 200]]);
+  ctx.fill();
+  ctx.fillStyle = white;
+  ctx.beginPath();
+  ctx.ellipse(126, -16, 21, 7.5, 0.108, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#E3E9EF';
+  smooth([[-2, topAt(-2) + 2], [-18, topAt(-18) + 2], [-34, topAt(-34) + 8], [-46, topAt(-46) + 18], [-34, topAt(-34) + 17], [-18, topAt(-18) + 12], [-4, topAt(-4) + 11]]);
+  ctx.fill();
+  ctx.restore();
+
+  const fb = botAt(70);
+  solid(() => smooth([[88, fb - 46], [90, fb - 8], [78, fb + 20], [60, fb + 40], [48, fb + 36], [52, fb + 6], [52, fb - 36]]), '#26282C');
+
+  ctx.fillStyle = white;
+  ctx.beginPath();
+  ctx.arc(161, -3, 2.9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#0A0D14';
+  ctx.beginPath();
+  ctx.arc(161.3, -3, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 /** A shark's tail beats at this speed (slower than other fish) and its body sways this many reference px at the tail. */
 const SHARK_TAIL_SPEED = 3.5;
 const SHARK_BODY_SWAY = 75;
@@ -1297,12 +1455,16 @@ function greatWhite(ctx: CanvasRenderingContext2D, c: Creature) {
   const dorsal = () => poly([[595, 282], [640, 245], [690, 186], [740, 132], [780, 110], [797, 108], [788, 150], [790, 205], [815, 252], [850, 285], [900, 305], [700, 310], [600, 295]]);
   const underfin = () =>
     poly(([[950, 470], [1100, 440], [1090, 505], [1072, 560], [1048, 568], [1000, 545], [965, 520]] as [number, number][]).map(([x, y]) => [1025 + (x - 1025) * 0.67 + 101, 470 + (y - 470) * 0.67 - 19]));
+  const ty = (y: number) => 430 + (y - 430) * 1.1;
+  const th = (pts: [number, number][]): [number, number][] => pts.map(([x, y]) => [x, ty(y)]);
   const body = () =>
-    smooth([
-      [6, 438], [30, 408], [80, 386], [150, 362], [250, 334], [330, 313], [460, 292], [600, 277], [720, 272], [860, 292], [1000, 322], [1130, 348], [1205, 337], [1240, 352],
-      [1290, 380], [1390, 398], [1390, 436], [1300, 440], [1150, 462], [1000, 492], [850, 530], [700, 568], [600, 586], [500, 580], [400, 568],
-      [300, 552], [215, 538], [160, 530], [124, 524], [106, 506], [101, 476], [64, 470], [22, 454],
-    ]);
+    smooth(
+      th([
+        [-14, 444], [0, 432], [26, 412], [62, 392], [150, 362], [250, 334], [330, 313], [460, 292], [600, 277], [720, 272], [860, 292], [1000, 322], [1130, 348],
+        [1205, 337], [1240, 352], [1290, 380], [1390, 398], [1390, 436], [1300, 440], [1150, 462], [1000, 492], [850, 530], [700, 568], [600, 586], [500, 580],
+        [400, 568], [300, 556], [215, 550], [172, 543], [148, 529], [130, 512], [116, 498], [112, 484], [104, 479], [64, 474], [26, 464], [-2, 455],
+      ]),
+    );
   const pectoral = () => poly([[402, 470], [402, 505], [425, 580], [465, 650], [520, 715], [575, 755], [620, 780], [604, 735], [590, 675], [584, 600], [592, 514], [596, 470]]);
   const open = 0.6 + 0.4 * (c.mouth ?? (chasing ? 1 : 0));
   const drawBody = () => {
@@ -1318,7 +1480,7 @@ function greatWhite(ctx: CanvasRenderingContext2D, c: Creature) {
     underfin();
     ctx.fill();
 
-    const shade = ctx.createLinearGradient(0, P(0, 270)[1], 0, P(0, 590)[1]);
+    const shade = ctx.createLinearGradient(0, P(0, ty(270))[1], 0, P(0, ty(590))[1]);
     shade.addColorStop(0, look.shade[0]);
     shade.addColorStop(0.35, look.shade[1]);
     shade.addColorStop(1, look.shade[2]);
@@ -1329,7 +1491,7 @@ function greatWhite(ctx: CanvasRenderingContext2D, c: Creature) {
     body();
     ctx.clip();
     ctx.fillStyle = belly;
-    poly([[0, 468], [62, 468], [150, 484], [300, 497], [420, 510], [590, 514], [800, 500], [1000, 470], [1200, 442], [1450, 428], [1450, 720], [0, 720]]);
+    poly(th([[112, 484], [210, 490], [300, 497], [420, 510], [590, 514], [800, 500], [1000, 470], [1200, 442], [1450, 428], [1450, 720], [112, 720]]));
     ctx.fill();
     ctx.restore();
 
@@ -1344,12 +1506,12 @@ function greatWhite(ctx: CanvasRenderingContext2D, c: Creature) {
     for (let i = 0; i < 6; i++) {
       const x = 352 + i * 16;
       ctx.beginPath();
-      ctx.moveTo(...P(x, 388));
-      ctx.quadraticCurveTo(...P(x - 8, 435), ...P(x, 482));
+      ctx.moveTo(...P(x, ty(388)));
+      ctx.quadraticCurveTo(...P(x - 8, ty(435)), ...P(x, ty(482)));
       ctx.stroke();
     }
 
-    const [ex, ey] = P(124, 410);
+    const [ex, ey] = P(106, ty(409));
     const eyeR = (chasing ? 19 : 15) * m;
     ctx.fillStyle = '#0A0D14';
     ctx.beginPath();
@@ -1360,8 +1522,9 @@ function greatWhite(ctx: CanvasRenderingContext2D, c: Creature) {
     ctx.arc(ex - eyeR * 0.35, ey - eyeR * 0.35, eyeR * 0.3, 0, Math.PI * 2);
     ctx.fill();
   };
-  const [hx, hy] = P(210, 489);
-  const ulip: [number, number][] = [[62, 468], [100, 475], [150, 483], [210, 489]];
+  const [hx, hy] = P(210, 498);
+  const ulip: [number, number][] = [[104, 484], [125, 479], [150, 478], [180, 484], [210, 498]];
+  const jtop: [number, number][] = [[114, 490], [130, 496], [155, 502], [182, 506], [210, 498]];
   const along = (pts: [number, number][], x: number) => {
     for (let i = 1; i < pts.length; i++) {
       if (x <= pts[i][0]) return pts[i - 1][1] + ((pts[i][1] - pts[i - 1][1]) * (x - pts[i - 1][0])) / (pts[i][0] - pts[i - 1][0]);
@@ -1377,12 +1540,12 @@ function greatWhite(ctx: CanvasRenderingContext2D, c: Creature) {
   };
   const teeth = (lip: [number, number][], dir: 1 | -1, shift: number, len: number, from = 0) => {
     ctx.fillStyle = '#FFFFFF';
-    for (let i = 0; i < 8; i++) {
-      const x = 68 + shift + i * 17;
+    for (let i = 0; i < 7; i++) {
+      const x = 106 + shift + i * 14;
       if (x < from) continue;
       const y0 = along(lip, x);
-      const y1 = along(lip, x + 13);
-      poly([[x, y0], [x + 13, y1], [x + 6.5, (y0 + y1) / 2 + dir * len]]);
+      const y1 = along(lip, x + 11);
+      poly([[x, y0], [x + 11, y1], [x + 5.5, (y0 + y1) / 2 + dir * len]]);
       ctx.fill();
     }
   };
@@ -1403,15 +1566,15 @@ function greatWhite(ctx: CanvasRenderingContext2D, c: Creature) {
     ctx.restore();
   };
 
-  pivot(-open * 0.2, () => {
-    piece([[-300, -300], [213, -300], [213, 489], ...[...ulip].reverse(), [-300, 468]]);
+  pivot(-open * 0.15, () => {
+    piece([[-300, -300], [213, -300], [213, 498], ...[...ulip].reverse(), [104, 482], [-300, 482]]);
     edge(ulip);
-    teeth(ulip, 1, 0, 12);
+    teeth(ulip, 1, 0, 12, 106);
   });
-  pivot(open * 0.55, () => {
-    piece([[98, 474], ...ulip.slice(1), [213, 489], [213, 900], [98, 900]]);
-    edge([[101, 476], ...ulip.slice(2)]);
-    teeth(ulip, -1, 8, 10, 106);
+  pivot(open * 0.35, () => {
+    piece([...jtop, [213, 498], [213, 900], [114, 900]]);
+    edge(jtop);
+    teeth(jtop, -1, 7, 10, 116);
   });
   piece([[213, -300], [2000, -300], [2000, 900], [213, 900]]);
 }

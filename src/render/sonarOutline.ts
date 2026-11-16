@@ -2,6 +2,7 @@ import type { Creature, World } from '../game/world';
 import { drawCreature } from '../art/creatures';
 import { CREATURE_EXTENT } from '../data/creatures';
 import type { Light, WorldTransform } from './lighting';
+import { shelfPolygon } from '../art/polar';
 
 /** Width in px of the glowing edge along rock. */
 const EDGE = 7;
@@ -110,6 +111,31 @@ export class SonarOutline {
     c.beginPath();
     floor();
     c.stroke();
+
+    const shelf = world.def.polar?.shelf;
+    if (shelf && shelf.x1 > left && shelf.x0 < right) {
+      const poly = shelfPolygon(shelf);
+      const outline = () => {
+        c.beginPath();
+        poly.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+        c.closePath();
+      };
+      c.save();
+      c.beginPath();
+      c.rect(left, 0, right - left, bottom);
+      c.clip();
+      outline();
+      c.stroke();
+      outline();
+      c.clip();
+      c.beginPath();
+      for (const b of blobs) {
+        c.moveTo(b.x + b.r + EDGE, b.y);
+        c.arc(b.x, b.y, b.r + EDGE, 0, Math.PI * 2);
+      }
+      c.fill();
+      c.restore();
+    }
 
     c.globalCompositeOperation = 'destination-out';
     c.beginPath();

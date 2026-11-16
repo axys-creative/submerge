@@ -56,6 +56,9 @@ export const IMPLODE_MESSAGE = 1;
 /** Minimap px below the surface over which the unexplored shadow fades in from clear. */
 export const MAP_SURFACE_FADE = 70;
 
+/** Widest stretch of world the minimap squeezes into its frame; a longer zone keeps this scale and the map scrolls sideways. */
+export const MAP_MAX_WIDTH = 11340;
+
 /** A suffocated sub sinks at SINK_SLOW px/s near the surface and speeds up to SINK_FAST by SINK_RAMP_M meters down. */
 export const SINK_SLOW = 25;
 export const SINK_FAST = 100;
@@ -131,6 +134,10 @@ export const LAMP_AIM_RATE = 0.7;
 export const DEPTH_HOLD_DRAIN = 5;
 /** Propeller sound level while the sub holds its depth, as a fraction of its driving volume. */
 export const HOLD_MOTOR_VOLUME = 0.5;
+/** Extra engine volume at full boost, as a fraction of the normal level (ship and sub). */
+export const BOOST_ENGINE_VOLUME = 0.8;
+/** Extra engine pitch at full boost, as a fraction of normal playback speed (ship and sub). */
+export const BOOST_ENGINE_PITCH = 0.15;
 
 /** How many times wider than the original design the islands are, above and below the waterline. */
 export const ISLAND_WIDTH = 2;
@@ -142,5 +149,7 @@ export const SCENERY_DENSITY = 0.3;
 export const SHIP_MARGIN = 300;
 
 
-/** Chance that each piece of cleared trash is still gone when the zone is entered again; the rest washes back in. */
-export const TRASH_KEEP = 0.5;
+
+/** A provoked orca chases at this speed (px/s) until the sub is this far away (about five screens) or docks. */
+export const ORCA_CHASE_SPEED = 250;
+export const ORCA_LOSE_RANGE = 3500;

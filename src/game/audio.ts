@@ -58,10 +58,10 @@ const VOLUME: Record<Sound, number> = {
   sonar: 0.35,
   surface: 0.7,
   depths: 0.7,
-  propeller: 0.6,
+  propeller: 1.2,
   sailing: 0.25,
-  tetherReel: 0.2,
-  tetherHydraulic: 0.5,
+  tetherReel: 0.15,
+  tetherHydraulic: 0.375,
   implosion: 0.5,
   horn: 0.8,
   clank1: 0.8,
@@ -93,7 +93,7 @@ const VOLUME: Record<Sound, number> = {
   alertBeep: 0.6,
   portal1: 0.8,
   portal2: 1,
-  portal3: 0.75,
+  portal3: 0.5,
   shopDoor: 0.25,
 };
 
@@ -127,6 +127,7 @@ const WHALE_FAR_FROM_PX = 1500;
 
 /** Depth in meters at which the music is fully muffled, and the cutoff range it sweeps through. */
 const MUFFLE_DEPTH = 220;
+const UNDERWATER_LOWPASS: Partial<Record<Sound, number>> = { tetherReel: 2500, tetherHydraulic: 2500 };
 const OPEN_HZ = 18000;
 const MUFFLED_HZ = 250;
 const MUFFLED_GAIN = 0.2;
@@ -145,6 +146,7 @@ export class AudioManager {
   private ctx: AudioContext | null = null;
   private buffers = new Map<Sound, AudioBuffer>();
   private beds = new Map<Sound, GainNode>();
+  private bedRates = new Map<Sound, AudioParam>();
   private portalPan: StereoPannerNode | null = null;
   private master: GainNode | null = null;
   private out: GainNode | null = null;
@@ -171,6 +173,8 @@ export class AudioManager {
   private gullFilter: BiquadFilterNode | null = null;
   private gullBus: GainNode | null = null;
   private gullMuffled = 0;
+  private gullInRange = false;
+  private gullEndsAt = 0;
   private rainGain: GainNode | null = null;
   private rainFilter: BiquadFilterNode | null = null;
   private depthTravel = 0;
@@ -204,6 +208,9 @@ export class AudioManager {
     if (scene === this.scene) return;
     this.scene = scene;
     this.applyBeds();
+    if (this.ctx)
+      for (const [name, filters] of this.underwaterFilters)
+        for (const f of filters) f.frequency.setTargetAtTime(this.lowpassFor(name), this.ctx.currentTime, 0.05);
   }
 
   /** Fades the music out (or back in) without touching the volume setting, for zones that should only have ambient sound. */
@@ -290,7 +297,8 @@ export class AudioManager {
     this.applyZen();
   }
 
-  setPropeller(on: boolean, level = 1) {
+  setPropeller(on: boolean, level = 1, pitch = 1) {
+    this.setPitch("propeller", pitch);
     if (on === this.propeller && level === this.propellerLevel) return;
     this.propeller = on;
     this.propellerLevel = level;
@@ -332,10 +340,15 @@ export class AudioManager {
   }
 
   /** Fades the ship's engine loop up quickly while it is being driven and down slowly once it stops. */
-  setSailing(on: boolean) {
+  setSailing(on: boolean, boost = 1, pitch = 1) {
+    this.setPitch("sailing", pitch);
     const gain = this.beds.get("sailing");
     if (!this.ctx || !gain) return;
-    gain.gain.setTargetAtTime(on ? VOLUME.sailing : 0, this.ctx.currentTime, on ? 0.5 : 1.8);
+    gain.gain.setTargetAtTime(on ? VOLUME.sailing * boost : 0, this.ctx.currentTime, on ? 0.5 : 1.8);
+  }
+
+  private setPitch(name: Sound, rate: number) {
+    if (this.ctx) this.bedRates.get(name)?.setTargetAtTime(rate, this.ctx.currentTime, 0.1);
   }
 
   /** Repeats the single-blast horn while a warning is active. */
@@ -411,11 +424,20 @@ export class AudioManager {
 
   /** Plays the seagull clip every so often at the surface, by day, when within earshot of an island (nearness 0..1). */
   gulls(dt: number, nearness: number) {
-    if (this.scene !== "surface" || !this.ctx || !this.master || nearness <= 0) return;
+    if (this.scene !== "surface" || !this.ctx || !this.master || nearness <= 0) {
+      this.gullInRange = false;
+      return;
+    }
     this.gullTimer -= dt;
     const clip = this.buffers.get("seagulls");
-    if (this.gullTimer > 0 || !clip) return;
+    if (!clip) return;
+    const arrived = !this.gullInRange;
+    this.gullInRange = true;
+    const playing = this.ctx.currentTime < this.gullEndsAt;
+    if (this.gullTimer > 0 && !(arrived && !playing)) return;
+    if (playing) return;
     this.playGull((0.4 + 0.6 * nearness) * (0.8 + Math.random() * 0.2), clip);
+    this.gullEndsAt = this.ctx.currentTime + clip.duration;
     this.gullTimer = clip.duration + 8 + Math.random() * 17;
   }
 
@@ -510,6 +532,11 @@ export class AudioManager {
   }
 
   private voices = new Map<Sound, Set<AudioBufferSourceNode>>();
+  private underwaterFilters = new Map<Sound, Set<BiquadFilterNode>>();
+
+  private lowpassFor(name: Sound) {
+    return this.scene === "dive" ? (UNDERWATER_LOWPASS[name] ?? OPEN_HZ) : OPEN_HZ;
+  }
 
   play(name: Sound, volume = 1, pan = 0, rate = 1, delay = 0) {
     const buf = this.buffers.get(name);
@@ -519,11 +546,23 @@ export class AudioManager {
     gain.gain.value = VOLUME[name] * volume;
     src.buffer = buf;
     src.playbackRate.value = rate * (RATE[name] ?? 1);
+    let tail: AudioNode = src.connect(gain);
+    if (UNDERWATER_LOWPASS[name]) {
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = this.lowpassFor(name);
+      tail = tail.connect(filter);
+      const filters = this.underwaterFilters.get(name) ?? new Set<BiquadFilterNode>();
+      this.underwaterFilters.set(name, filters);
+      filters.add(filter);
+      src.addEventListener("ended", () => filters.delete(filter));
+    }
     if (pan) {
       const panner = this.ctx.createStereoPanner();
       panner.pan.value = pan;
-      src.connect(gain).connect(panner).connect(this.master);
-    } else src.connect(gain).connect(this.master);
+      tail = tail.connect(panner);
+    }
+    tail.connect(this.master);
     const voices = this.voices.get(name) ?? new Set<AudioBufferSourceNode>();
     this.voices.set(name, voices);
     voices.add(src);
@@ -579,6 +618,7 @@ export class AudioManager {
         } else src.connect(gain).connect(this.master);
         src.start();
         this.beds.set(name, gain);
+        this.bedRates.set(name, src.playbackRate);
       }
       this.startMusic();
       this.startZen();

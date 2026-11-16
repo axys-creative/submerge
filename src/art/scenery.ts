@@ -27,10 +27,38 @@ export { CRANE_TIP, SHIP_LAMPS };
 
 /** Ship paint by tier, which follows the sub's lowest of plating and oxygen tank level. */
 const SHIP_TIERS = [
-  { hull: '#C9D1DA', shade: '#AEB8C4', deck: '#8F9AA8', dark: '#3E4552', accent: '#2AA6C9', text: '#3E4552' },
-  { hull: '#7C8594', shade: '#656D7B', deck: '#4F5764', dark: '#2C323C', accent: '#2AA6C9', text: '#EEF2F6' },
-  { hull: '#F39A3D', shade: '#DC7F25', deck: '#C96A1B', dark: '#3A3F4B', accent: '#7A4A1E', text: '#4A2A0A' },
-  { hull: '#2A2D35', shade: '#1D2026', deck: '#14161B', dark: '#0E1013', accent: '#F28C28', text: '#F0F3F8' },
+  {
+    hull: '#C9D1DA',
+    shade: '#AEB8C4',
+    deck: '#8F9AA8',
+    dark: '#3E4552',
+    accent: '#2AA6C9',
+    text: '#3E4552',
+  },
+  {
+    hull: '#7C8594',
+    shade: '#656D7B',
+    deck: '#4F5764',
+    dark: '#2C323C',
+    accent: '#2AA6C9',
+    text: '#EEF2F6',
+  },
+  {
+    hull: '#F39A3D',
+    shade: '#DC7F25',
+    deck: '#C96A1B',
+    dark: '#3A3F4B',
+    accent: '#7A4A1E',
+    text: '#4A2A0A',
+  },
+  {
+    hull: '#2A2D35',
+    shade: '#1D2026',
+    deck: '#14161B',
+    dark: '#0E1013',
+    accent: '#F28C28',
+    text: '#F0F3F8',
+  },
 ];
 
 const GLASS = '#A8E1F2';
@@ -333,6 +361,25 @@ export function drawShip(ctx: CanvasRenderingContext2D, t: number, facing: 1 | -
 /** Where the dock's slanted poles meet the water, as offsets from the island center; they run on down into the underwater mountain. */
 export const dockPoles = (w: number) => [0.5, 0.7, 0.9].map((f) => 250 * w - 100 + 250 * f + 5);
 
+const SAND_CURVE: [number, number][][] = [
+  [[-250, 6], [-160, -62], [0, -66]],
+  [[0, -66], [170, -62], [250, 6]],
+];
+
+/** The sand's top edge (y) at x in the island's original, unstretched width. */
+function sandY(x: number) {
+  const [p0, p1, p2] = SAND_CURVE[x < 0 ? 0 : 1];
+  const at = (t: number, k: 0 | 1) => (1 - t) * (1 - t) * p0[k] + 2 * (1 - t) * t * p1[k] + t * t * p2[k];
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (at(mid, 0) < x) lo = mid;
+    else hi = mid;
+  }
+  return at((lo + hi) / 2, 1);
+}
+
 export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: string, night = 0, width = ISLAND_WIDTH) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -361,10 +408,11 @@ export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: strin
   ctx.fill();
   ctx.fillStyle = d('#6CC57A');
   ctx.beginPath();
-  ctx.moveTo(-170, -40);
+  ctx.moveTo(-170, sandY(-170));
   ctx.quadraticCurveTo(-60, -96, 40, -70);
-  ctx.quadraticCurveTo(110, -60, 150, -38);
-  ctx.quadraticCurveTo(0, -56, -170, -40);
+  ctx.quadraticCurveTo(110, -60, 150, sandY(150));
+  for (let x = 145; x > -170; x -= 5) ctx.lineTo(x, sandY(x));
+  ctx.closePath();
   ctx.fill();
   ctx.restore();
 
@@ -407,143 +455,491 @@ export function drawIsland(ctx: CanvasRenderingContext2D, t: number, name: strin
   ctx.fill();
 
   const spread = 170 * (width - 1);
-  palm(ctx, -120 - spread, -44, 1, t, d);
-  palm(ctx, 150 + spread, -34, -0.8, t + 1, d);
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  const gy = (x: number) => sandY(x / width) + 3;
   if (spread) {
-    palm(ctx, -120, -44, 1, t + 2, d);
-    palm(ctx, 150, -34, -0.8, t + 3, d);
+    palm(ctx, -150 - spread - 20, gy(-150 - spread - 20), -0.7, t, d, h % 3);
+    palm(ctx, -150 - spread + 20, gy(-150 - spread + 20), 1, t + 2, d, (h + 2) % 3);
+    palm(ctx, 180 + spread - 20, gy(180 + spread - 20), -0.8, t + 1, d, (h + 1 + ((h >>> 3) % 2)) % 3);
+    palm(ctx, 180 + spread + 18, gy(180 + spread + 18), 0.9, t + 3, d, (h >>> 2) % 3);
+  } else {
+    palm(ctx, -120, gy(-120), 1, t, d, h % 3);
+    palm(ctx, 150, gy(150), -0.8, t + 1, d, (h + 1 + ((h >>> 3) % 2)) % 3);
   }
 
-  // A smaller second hut beside the shop
-  ctx.fillStyle = d('#B9784A');
-  rrect(ctx, -78, -84, 40, 30, 4);
-  ctx.fill();
-  ctx.fillStyle = d('#7A4B2E');
-  rrect(ctx, -62, -70, 10, 16, [3, 3, 0, 0]);
-  ctx.fill();
-  glass(-75, -78, 9, 9);
-  ctx.fillStyle = d('#8A3B2E');
-  ctx.beginPath();
-  ctx.moveTo(-84, -84);
-  ctx.lineTo(-58, -102);
-  ctx.lineTo(-32, -84);
-  ctx.closePath();
-  ctx.fill();
-
-  // A third hut on the other side of the shop
-  ctx.fillStyle = d('#A9C0C9');
-  rrect(ctx, 96, -84, 40, 30, 4);
-  ctx.fill();
-  ctx.fillStyle = d('#5C7A86');
-  rrect(ctx, 106, -70, 10, 16, [3, 3, 0, 0]);
-  ctx.fill();
-  glass(122, -78, 9, 9);
-  ctx.fillStyle = d('#2F7C86');
-  ctx.beginPath();
-  ctx.moveTo(90, -84);
-  ctx.lineTo(116, -102);
-  ctx.lineTo(142, -84);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = d('#C98B52');
-  rrect(ctx, -10, -108, 84, 52, 6);
-  ctx.fill();
-  ctx.fillStyle = d('#8A5A3B');
-  rrect(ctx, 22, -88, 20, 32, [4, 4, 0, 0]);
-  ctx.fill();
-  glass(-1, -84, 14, 14);
-  glass(52, -84, 14, 14);
-  for (let i = 0; i < 6; i++) {
-    ctx.fillStyle = d(i % 2 ? '#FFFFFF' : '#EC5B7F');
-    ctx.beginPath();
-    ctx.moveTo(-18 + i * 17, -108);
-    ctx.lineTo(-1 + i * 17, -108);
-    ctx.lineTo(-1 + i * 17, -96);
-    ctx.quadraticCurveTo(-9.5 + i * 17, -90, -18 + i * 17, -96);
-    ctx.closePath();
-    ctx.fill();
+  const small = width < ISLAND_WIDTH;
+  const only = small ? h % 3 : -1;
+  if (!small || only === 1) {
+    ctx.save();
+    ctx.translate(small ? 30 : -170, small ? -58 : -60);
+    ctx.scale(0.78, 0.78);
+    drawBungalow(ctx, d, glass);
+    ctx.restore();
   }
-  ctx.fillStyle = d('#2B4C8C');
-  ctx.beginPath();
-  ctx.moveTo(-22, -108);
-  ctx.lineTo(32, -136);
-  ctx.lineTo(86, -108);
-  ctx.closePath();
-  ctx.fill();
+  if (!small || only === 2) {
+    ctx.save();
+    ctx.translate(small ? 20 : 235, small ? -54 : -52);
+    ctx.scale(0.85, 0.85);
+    drawStiltCabin(ctx, d, glass);
+    ctx.restore();
+  }
+  if (!small || only === 0) drawShopHut(ctx, d, glass);
 
   ctx.font = '700 22px Fredoka, Nunito, sans-serif';
   ctx.textAlign = 'center';
   ctx.lineWidth = 6;
   ctx.strokeStyle = 'rgba(20,36,90,0.85)';
-  ctx.strokeText(name, 30, -150);
+  ctx.strokeText(name, 30, small && only ? -162 : -166);
   ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(name, 30, -150);
-  ctx.font = '700 12px Nunito, sans-serif';
-  ctx.fillStyle = '#FFF6EC';
-  ctx.fillText('SHOP', 32, -66);
+  ctx.fillText(name, 30, small && only ? -162 : -166);
   ctx.textAlign = 'left';
 }
 
-function palm(ctx: CanvasRenderingContext2D, x: number, y: number, lean: number, t: number, d: (c: string) => string = (c) => c) {
-  const topX = x + lean * 26;
-  const topY = y - 92;
-  const cx = x + lean * 4;
-  const cy = y - 50;
-  ctx.strokeStyle = d('#9C6B3F');
-  ctx.lineWidth = 9;
+function drawShopHut(ctx: CanvasRenderingContext2D, d: (c: string) => string, glass: (x: number, y: number, w: number, h: number) => void) {
+  const fill = (c: string, pts: [number, number][]) => {
+    ctx.fillStyle = d(c);
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fill();
+  };
+  const bar = (c: string, x: number, y: number, w: number, h: number, r = 1) => {
+    ctx.fillStyle = d(c);
+    rrect(ctx, x, y, w, h, r);
+    ctx.fill();
+  };
+  const line = (c: string, lw: number, x1: number, y1: number, x2: number, y2: number) => {
+    ctx.strokeStyle = d(c);
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  };
+  const window = (x: number, y: number, w: number, h: number) => {
+    bar('#5A2C20', x - 2, y - 2, w + 4, h + 4, 2);
+    glass(x, y, w, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.55, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w * 0.2, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.closePath();
+    ctx.fill();
+    line('#5A2C20', 1.5, x + w / 2, y, x + w / 2, y + h);
+  };
+
+  ctx.fillStyle = 'rgba(90,60,20,0.25)';
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.quadraticCurveTo(cx, cy, topX, topY);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(70,40,15,0.45)';
+  ctx.ellipse(33, -55, 62, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  bar('#E3BE84', -22, -69, 62, 14, 0);
+  bar('#6A3426', 40, -69, 46, 14, 0);
+  for (let x = -16; x < 40; x += 9) line('#C49A62', 1.5, x, -69, x, -55);
+  for (const x of [-20, -2, 16, 44, 62, 82]) bar('#5A2C20', x - 3, -70, 6, 15, 1);
+  ctx.fillStyle = d('#F5D58A');
+  for (let x = -22; x <= 86; x += 12) {
+    ctx.beginPath();
+    ctx.ellipse(x, -54, 9, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  bar('#F2D9A6', -20, -114, 104, 40, 0);
+  for (let x = -12; x < 84; x += 8) line('#E2C48C', 1, x, -114, x, -74);
+  ctx.fillStyle = 'rgba(60,30,10,0.18)';
+  ctx.fillRect(-20, -114, 104, 5);
+
+  window(-10, -110, 22, 20);
+  window(45, -108, 10, 20);
+  window(64, -108, 10, 20);
+  bar('#7A4B2E', 22, -104, 16, 30, 3);
+  bar('#8F5E3C', 25, -101, 10, 11, 2);
+  bar('#8F5E3C', 25, -87, 10, 11, 2);
+  ctx.fillStyle = d('#F2C35B');
+  ctx.beginPath();
+  ctx.arc(35, -85, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  bar('#6B3A2A', -24, -75, 114, 7, 2);
+  line('#8A5238', 1.5, -23, -74, 89, -74);
+  bar('#9A6A44', 21, -68, 18, 4, 1);
+  bar('#8A5C3A', 23, -64, 14, 4, 1);
+  for (const [x0, w] of [[-22, 42], [40, 46]]) {
+    for (let x = x0 + 3; x < x0 + w; x += 5) line('#8A5238', 2, x, -84, x, -76);
+    bar('#5A2C20', x0, -87, w, 3, 1);
+    bar('#5A2C20', x0, -78, w, 2.5, 1);
+    bar('#5A2C20', x0 - 1, -89, 4, 15, 1);
+    bar('#5A2C20', x0 + w - 3, -89, 4, 15, 1);
+  }
+
+  const edgeL: [number, number][] = [[-32, -112], [8, -150]];
+  const edgeR: [number, number][] = [[25, -114], [53, -150]];
+  const mix = (f: number): [[number, number], [number, number]] => [
+    [edgeL[0][0] + (edgeL[1][0] - edgeL[0][0]) * f, edgeL[0][1] + (edgeL[1][1] - edgeL[0][1]) * f],
+    [edgeR[0][0] + (edgeR[1][0] - edgeR[0][0]) * f, edgeR[0][1] + (edgeR[1][1] - edgeR[0][1]) * f],
+  ];
+  fill('#D9772E', [edgeL[0], edgeL[1], edgeR[1], edgeR[0]]);
+  for (const [f0, f1] of [[0.12, 0.3], [0.5, 0.68]]) {
+    const [a0, b0] = mix(f0);
+    const [a1, b1] = mix(f1);
+    fill('#E88B3A', [a0, a1, b1, b0]);
+  }
+  for (const f of [0.3, 0.5, 0.68, 0.86]) {
+    const [a, b] = mix(f);
+    line('#B9622A', 1.5, a[0], a[1], b[0], b[1]);
+  }
+  fill('#A94F1F', [[-32, -112], [25, -114], [25, -109], [-32, -106]]);
+
+  fill('#F6DDA8', [[14, -113], [53, -153], [92, -113]]);
+  fill('#8B4A24', [[24, -114], [53, -146], [82, -114]]);
+  line('#C98B52', 2.5, 53, -146, 53, -114);
+  line('#C98B52', 2, 38, -130, 38, -114);
+  line('#C98B52', 2, 68, -130, 68, -114);
+  bar('#A94F1F', 14, -115, 78, 4, 1);
+  bar('#C98B52', 39, -132, 28, 13, 3);
+  ctx.fillStyle = d('#4A2A18');
+  ctx.font = '700 10px Nunito, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SHOP', 53, -122);
+}
+
+function drawBungalow(ctx: CanvasRenderingContext2D, d: (c: string) => string, glass: (x: number, y: number, w: number, h: number) => void) {
+  const fill = (c: string, pts: [number, number][]) => {
+    ctx.fillStyle = d(c);
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fill();
+  };
+  const bar = (c: string, x: number, y: number, w: number, h: number, r = 1) => {
+    ctx.fillStyle = d(c);
+    rrect(ctx, x, y, w, h, r);
+    ctx.fill();
+  };
+  const wood = '#8A5232';
+  const gold = '#E8A93A';
+
+  ctx.fillStyle = 'rgba(90,60,20,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(2, 1, 62, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  for (const x of [-50, -30, 4, 30, 52]) bar('#6A3A22', x - 3, -18, 6, 18, 1);
+  bar('#7A4B2E', -30, -20, 62, 18, 0);
+
+  bar(wood, -36, -64, 72, 42, 0);
+  bar('#6A3A22', -36, -64, 72, 4, 0);
+  const pane = (x: number, y: number, w: number, h: number) => {
+    bar('#5A2C20', x - 2, y - 2, w + 4, h + 4, 1);
+    glass(x, y, w, h);
+  };
+  pane(-28.25, -53, 16.5, 24);
+  pane(8.625, -53, 21.75, 24);
+  ctx.strokeStyle = d('#5A2C20');
   ctx.lineWidth = 2;
-  for (let k = 0.1; k < 0.95; k += 0.12) {
+  ctx.beginPath();
+  ctx.moveTo(-20, -53);
+  ctx.lineTo(-20, -29);
+  ctx.moveTo(-28.25, -41);
+  ctx.lineTo(-11.75, -41);
+  ctx.moveTo(15.9, -53);
+  ctx.lineTo(15.9, -29);
+  ctx.moveTo(23.1, -53);
+  ctx.lineTo(23.1, -29);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath();
+  ctx.moveTo(25, -35);
+  ctx.lineTo(30.4, -42);
+  ctx.lineTo(30.4, -35);
+  ctx.closePath();
+  ctx.fill();
+
+  bar(gold, -56, -24, 28, 5, 1);
+  bar(gold, -6, -24, 66, 5, 1);
+  bar('#B9782A', -6, -19, 66, 3, 0);
+  for (let i = 0; i < 3; i++) {
+    bar(gold, -26 - i * 4 + 6, -19 + i * 5, 24, 5, 1);
+    bar('#B9782A', -26 - i * 4 + 6, -14 + i * 5, 24, 1.5, 0);
+  }
+  for (const [x0, x1] of [[-56, -36], [36, 58]]) {
+    bar(wood, x0, -36, x1 - x0, 3, 1);
+    bar(wood, x0, -28, x1 - x0, 2.5, 1);
+    ctx.strokeStyle = d(wood);
+    ctx.lineWidth = 2;
+    for (let x = x0 + 3; x < x1; x += 5) {
+      ctx.beginPath();
+      ctx.moveTo(x, -36);
+      ctx.lineTo(x, -25);
+      ctx.stroke();
+    }
+  }
+  for (const x of [-52, 40, 54]) bar(wood, x - 2, -66, 4, 44, 1);
+
+  fill('#F2C84E', [[-70, -62], [-13, -87], [23, -87], [32, -62]]);
+  fill('#C9902E', [[23, -87], [70, -62], [32, -62]]);
+  fill('#D9A63A', [[-70, -62], [70, -62], [70, -59], [-70, -59]]);
+  bar(wood, -19, -93, 38, 7, 0);
+  bar('#6A3A22', -19, -88, 38, 2, 0);
+  fill('#F5CF55', [[0, -114], [-22, -93], [22, -93]]);
+  fill('#C9902E', [[0, -114], [22, -93], [4, -93]]);
+}
+
+function drawStiltCabin(ctx: CanvasRenderingContext2D, d: (c: string) => string, glass: (x: number, y: number, w: number, h: number) => void) {
+  const fill = (c: string, pts: [number, number][]) => {
+    ctx.fillStyle = d(c);
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fill();
+  };
+  const bar = (c: string, x: number, y: number, w: number, h: number, r = 1) => {
+    ctx.fillStyle = d(c);
+    rrect(ctx, x, y, w, h, r);
+    ctx.fill();
+  };
+  const line = (c: string, lw: number, x1: number, y1: number, x2: number, y2: number) => {
+    ctx.strokeStyle = d(c);
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  };
+  const wood = '#6A3A22';
+
+  ctx.fillStyle = 'rgba(90,60,20,0.22)';
+  ctx.beginPath();
+  ctx.ellipse(10, 12, 62, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  bar(wood, 15, -14, 4, 16, 1);
+  bar(wood, -39, -12, 5, 26, 1);
+  bar(wood, -6, -10, 6, 24, 1);
+  bar(wood, 56, -10, 4, 18, 1);
+
+  fill('#D9A869', [[-44, -25], [64, -23], [57, -14], [-35, -12]]);
+  fill('#8A5232', [[-35, -12], [57, -14], [57, -10], [-35, -8]]);
+
+  fill('#A8502E', [[-41, -58], [-20, -60], [-20, -25], [-41, -27]]);
+  for (const x of [-35, -29, -24]) line('#8A3E22', 1, x, -58, x, -27);
+  bar('#E49A58', -37, -53, 6, 17, 1);
+  glass(-36, -52, 4, 15);
+  bar('#D9923E', -20, -60, 59, 35, 0);
+  for (const x of [-12, 24, 32, 36]) line('#B9742E', 1, x, -60, x, -25);
+  bar('#E49A58', -16, -58, 13, 21, 1);
+  glass(-15, -57, 11, 19);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath();
+  ctx.moveTo(-9, -57);
+  ctx.lineTo(-4, -57);
+  ctx.lineTo(-13, -38);
+  ctx.lineTo(-15, -38);
+  ctx.closePath();
+  ctx.fill();
+  bar('#E49A58', 30, -54, 7, 18, 1);
+  glass(31, -53, 5, 16);
+
+  bar('#5A2530', 4, -58, 16, 33, 0);
+  for (const [x, w] of [[-4, 8], [21, 8]]) {
+    bar('#F7D246', x, -58, w, 33, 1);
+    line('#E0782A', 1.2, x + 1, -53, x + w - 1, -35);
+    line('#E0782A', 1.2, x + w - 1, -53, x + 1, -35);
+  }
+
+  for (const [x0, x1] of [[-17, 17], [37, 58]]) {
+    bar(wood, x0, -40, x1 - x0, 2.5, 1);
+    bar(wood, x0, -32, x1 - x0, 2, 1);
+    bar(wood, x0 - 1, -42, 3, 18, 1);
+    bar(wood, x1 - 2, -42, 3, 18, 1);
+  }
+  bar(wood, 2, -42, 3, 18, 1);
+
+  for (let i = 0; i < 5; i++) {
+    bar(wood, 20 + i * 5.5, -18 + i * 6, 24, 3, 1);
+    bar('#4A2A18', 20 + i * 5.5, -15 + i * 6, 24, 1.5, 0);
+  }
+  line(wood, 2.5, 17, -38, 69, 6);
+  line(wood, 2.5, 37, -36, 69, 8);
+  bar(wood, 67, -2, 4, 16, 1);
+
+  const fringe: [number, number][] = [[-54, -62]];
+  for (let x = -54; x <= 54; x += 6) fringe.push([x + 3, -50 + (x % 12 ? 0 : 3)], [x + 6, -54]);
+  fringe.push([54, -62]);
+  fill('#F2D04A', [[-53, -56], [-12, -98], [20, -102], [10, -62]]);
+  fill('#E8BE3A', [[-30, -80], [-12, -98], [20, -102], [14, -84]]);
+  fill('#F2D04A', [[2, -62], [21, -105], [55, -58]]);
+  fill('#C9822E', [[12, -64], [21, -94], [44, -60]]);
+  line('#A8662A', 1, 21, -94, 21, -64);
+  line('#A8662A', 1, 32, -80, 32, -62);
+  fill('#F2D04A', fringe);
+  fill('#C9A12E', [[-52, -60], [54, -60], [54, -57], [-52, -57]]);
+}
+
+interface PalmStyle {
+  height: number;
+  topDx: number;
+  bendDx: number;
+  base: number;
+  tip: number;
+  fronds: number;
+  len: number;
+  spread: number;
+  droop: number;
+  coconuts: boolean;
+}
+
+const PALMS: PalmStyle[] = [
+  {
+    height: 96,
+    topDx: 14,
+    bendDx: -4,
+    base: 13,
+    tip: 7,
+    fronds: 7,
+    len: 50,
+    spread: 1.9,
+    droop: 0.35,
+    coconuts: false,
+  },
+  {
+    height: 84,
+    topDx: 52,
+    bendDx: 6,
+    base: 12,
+    tip: 6.5,
+    fronds: 6,
+    len: 46,
+    spread: 1.7,
+    droop: 0.2,
+    coconuts: true,
+  },
+  {
+    height: 64,
+    topDx: 5,
+    bendDx: 3,
+    base: 10,
+    tip: 6,
+    fronds: 8,
+    len: 38,
+    spread: 2.1,
+    droop: 0.5,
+    coconuts: false,
+  },
+];
+
+function palmFrond(ctx: CanvasRenderingContext2D, angle: number, len: number, droop: number, dark: string, light: string, vein: string) {
+  const N = 14;
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const bend = droop * len * (0.4 + Math.abs(dx) * 0.6);
+  const mid: [number, number][] = [];
+  const up: [number, number][] = [];
+  const lo: [number, number][] = [];
+  for (let i = 0; i <= N; i++) {
+    const u = i / N;
+    const px = dx * len * u;
+    const py = dy * len * u + bend * u * u;
+    const tx = dx * len;
+    const ty = dy * len + 2 * bend * u;
+    const m = Math.hypot(tx, ty) || 1;
+    const nx = -ty / m;
+    const ny = tx / m;
+    let w = 9 * Math.sin(Math.PI * Math.pow(u, 0.75)) * (1 - 0.25 * u);
+    if (u > 0.4 && i < N) w *= i % 2 ? 1.18 : 0.78;
+    mid.push([px, py]);
+    up.push([px + nx * w, py + ny * w]);
+    lo.push([px - nx * w, py - ny * w]);
+  }
+  const poly = (pts: [number, number][]) => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+  };
+  const upperIsTop = up[N >> 1][1] < lo[N >> 1][1];
+  const top = upperIsTop ? up : lo;
+  const bottom = upperIsTop ? lo : up;
+  ctx.fillStyle = dark;
+  poly([...top, ...bottom.slice().reverse()]);
+  ctx.fill();
+  ctx.fillStyle = light;
+  poly([...top, ...mid.slice().reverse()]);
+  ctx.fill();
+  ctx.strokeStyle = vein;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  mid.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.stroke();
+}
+
+function palm(ctx: CanvasRenderingContext2D, x: number, y: number, lean: number, t: number, d: (c: string) => string = (c) => c, variant = 0) {
+  const st = PALMS[variant % PALMS.length];
+  const topX = x + lean * st.topDx;
+  const topY = y - st.height;
+  const cx = x + lean * st.bendDx;
+  const cy = y - st.height * 0.55;
+  const at = (k: number): [number, number, number, number] => {
     const px = (1 - k) * (1 - k) * x + 2 * (1 - k) * k * cx + k * k * topX;
     const py = (1 - k) * (1 - k) * y + 2 * (1 - k) * k * cy + k * k * topY;
     const tx = 2 * (1 - k) * (cx - x) + 2 * k * (topX - cx);
     const ty = 2 * (1 - k) * (cy - y) + 2 * k * (topY - cy);
     const m = Math.hypot(tx, ty) || 1;
-    ctx.beginPath();
-    ctx.moveTo(px - (ty / m) * 4.5, py + (tx / m) * 4.5);
-    ctx.lineTo(px + (ty / m) * 4.5, py - (tx / m) * 4.5);
-    ctx.stroke();
+    return [px, py, -ty / m, tx / m];
+  };
+  const STEPS = 16;
+  const half = (k: number) => (st.base + (st.tip - st.base) * k) / 2;
+  const left: [number, number][] = [];
+  const right: [number, number][] = [];
+  for (let i = 0; i <= STEPS; i++) {
+    const k = i / STEPS;
+    const [px, py, nx, ny] = at(k);
+    left.push([px + nx * half(k), py + ny * half(k)]);
+    right.push([px - nx * half(k), py - ny * half(k)]);
   }
-  const sway = Math.sin(t * 1.4) * 0.08;
-  for (let i = 0; i < 6; i++) {
-    const a = -Math.PI / 2 + (i - 2.5) * 0.62 + sway;
-    ctx.save();
-    ctx.translate(topX, topY);
-    ctx.rotate(a);
-    ctx.translate(26, 0);
-    ctx.rotate(0.25);
-    ctx.fillStyle = d('#3FA86B');
+  ctx.fillStyle = d('#8F5B2C');
+  ctx.beginPath();
+  [...left, ...right.slice().reverse()].forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+  ctx.closePath();
+  ctx.fill();
+  const rings = 9;
+  for (let r = 0; r < rings; r++) {
+    const k = 0.04 + (r / rings) * 0.92;
+    const [px, py, nx, ny] = at(k);
+    const h = half(k);
+    ctx.strokeStyle = d('#6E4220');
+    ctx.lineWidth = 2.6;
     ctx.beginPath();
-    ctx.ellipse(0, 0, 30, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = d('#2E8553');
+    ctx.moveTo(px + nx * h, py + ny * h);
+    ctx.quadraticCurveTo(px + ny * h * 0.5, py - nx * h * 0.5, px - nx * h, py - ny * h);
+    ctx.stroke();
+    ctx.strokeStyle = d('#B07A44');
     ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(-26, 0);
-    ctx.lineTo(26, 0);
+    ctx.moveTo(px + nx * h * 0.8, py + ny * h * 0.8 - 4);
+    ctx.lineTo(px + nx * h * 0.2, py + ny * h * 0.2 - 4);
     ctx.stroke();
-    ctx.fillStyle = d('#5CC285');
-    for (const px of [-14, 0, 14]) {
+  }
+
+  const n = st.fronds;
+  const sway = Math.sin(t * 1.4) * 0.06;
+  const order = Array.from({ length: n }, (_, i) => i).sort((p, q) => Math.abs(q - (n - 1) / 2) - Math.abs(p - (n - 1) / 2));
+  ctx.save();
+  ctx.translate(topX, topY);
+  if (st.coconuts) {
+    ctx.fillStyle = d('#5A3820');
+    for (const [dx, dy] of [[-5, 4], [4, 6], [0, 9]]) {
       ctx.beginPath();
-      ctx.moveTo(px - 4, -5);
-      ctx.lineTo(px, -10);
-      ctx.lineTo(px + 4, -5);
-      ctx.closePath();
+      ctx.arc(dx, dy, 4, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.restore();
   }
-  ctx.fillStyle = d('#6B4423');
-  for (const [dx, dy] of [[-5, 4], [4, 6], [0, 9]]) {
-    ctx.beginPath();
-    ctx.arc(topX + dx, topY + dy, 4, 0, Math.PI * 2);
-    ctx.fill();
+  for (const i of order) {
+    const f = n > 1 ? i / (n - 1) - 0.5 : 0;
+    const a = -Math.PI / 2 + f * 2 * st.spread + sway * (1 + Math.abs(f));
+    const len = st.len * (1 - 0.18 * (1 - Math.abs(f) * 2) + (i % 2 ? 0.06 : -0.04));
+    palmFrond(ctx, a, len, st.droop, d(i % 2 ? '#4E9E4A' : '#5BAE4C'), d(i % 2 ? '#8FC63F' : '#A4D548'), d('#3E7F34'));
   }
+  ctx.restore();
 }
 
 interface CloudShape {
@@ -551,6 +947,8 @@ interface CloudShape {
   puffs: { x: number; y: number; r: number }[];
   /** Baseline height in the sky, 0..1. */
   height: number;
+  /** Underside bumps (flat-bottomed clouds only): y of each point along the bottom, evenly spaced. */
+  bottom?: number[];
 }
 
 const clouds = new Map<number, CloudShape>();
@@ -562,28 +960,47 @@ export function cloudShape(seed: number): CloudShape {
   const rnd = mulberry32(seed * 7919 + 13);
   const width = 90 + Math.pow(rnd(), 1.4) * 330;
   const n = Math.max(4, Math.round(width / 34));
+  const flat = seed % 2 === 1;
   const puffs: CloudShape['puffs'] = [{ x: 12, y: -12, r: 12 }, { x: width - 12, y: -12, r: 12 }];
   for (let j = 0; j < n; j++) {
     const u = (j + 0.5) / n;
     const envelope = Math.pow(Math.sin(Math.PI * u), 0.7);
     const r = (15 + rnd() * 15) * (0.55 + 0.9 * envelope);
-    puffs.push({ x: u * width + (rnd() - 0.5) * 10, y: -r * 0.55 - rnd() * 6, r });
+    puffs.push({
+      x: u * width + (rnd() - 0.5) * 10,
+      y: flat ? -r * 0.85 - rnd() * 4 : -r * 0.55 - rnd() * 6,
+      r,
+    });
   }
   const crown = 12 + rnd() * 14;
-  puffs.push({ x: width * (0.35 + rnd() * 0.3), y: -crown * 1.5 - 6, r: crown * 1.2 });
-  shape = { width, puffs, height: rnd() };
+  puffs.push({
+    x: width * (0.35 + rnd() * 0.3),
+    y: -crown * 1.5 - 6,
+    r: crown * 1.2,
+  });
+  const bottom = flat ? Array.from({ length: Math.max(3, Math.round(width / 40)) + 1 }, () => 3 + rnd() * 4) : undefined;
+  shape = { width, puffs, height: rnd(), bottom };
   clouds.set(seed, shape);
   return shape;
 }
 
 export function drawCloud(ctx: CanvasRenderingContext2D, seed: number, color = '#FFFFFF') {
-  const { width, puffs } = cloudShape(seed);
+  const { width, puffs, bottom } = cloudShape(seed);
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(12, -14);
   ctx.lineTo(width - 12, -14);
-  ctx.lineTo(width - 12, -2);
-  ctx.quadraticCurveTo(width / 2, 5, 12, -2);
+  if (bottom) {
+    const span = (width - 24) / (bottom.length - 1);
+    ctx.lineTo(width - 12, bottom[bottom.length - 1] - 3);
+    for (let k = bottom.length - 2; k >= 0; k--) {
+      const x = 12 + k * span;
+      ctx.quadraticCurveTo(x + span / 2, Math.max(bottom[k], bottom[k + 1]) + 3, x, bottom[k] - 3);
+    }
+  } else {
+    ctx.lineTo(width - 12, -2);
+    ctx.quadraticCurveTo(width / 2, 5, 12, -2);
+  }
   ctx.closePath();
   ctx.fill();
   for (const p of puffs) {
@@ -644,7 +1061,14 @@ const RIFT = (() => {
     }
     branches.push(pts);
   }
-  const wisps = Array.from({ length: 30 }, () => ({ at: r() * N, side: r() < 0.5 ? -1 : 1, phase: r(), speed: 0.15 + r() * 0.25, size: 3 + r() * 7, sway: r() * 6 }));
+  const wisps = Array.from({ length: 30 }, () => ({
+    at: r() * N,
+    side: r() < 0.5 ? -1 : 1,
+    phase: r(),
+    speed: 0.15 + r() * 0.25,
+    size: 3 + r() * 7,
+    sway: r() * 6,
+  }));
   return { main, branches, wisps };
 })();
 
@@ -988,7 +1412,11 @@ export interface GlassShard {
   pts: [number, number][];
 }
 
-let glassPlanCache: { windows: [number, number, number, number][]; damage: number[]; shards: GlassShard[] } | null = null;
+let glassPlanCache: {
+  windows: [number, number, number, number][];
+  damage: number[];
+  shards: GlassShard[];
+} | null = null;
 
 /** The tower's windows, how broken each is (0 intact, 1 cracked, 2 shattered, 3 knocked out) and the glass still hanging in the knocked-out ones. */
 export function glassPlan() {
@@ -1023,7 +1451,12 @@ export function glassPlan() {
       ];
       const cx = (pts[0][0] + pts[1][0] + pts[2][0]) / 3;
       const cy = (pts[0][1] + pts[1][1] + pts[2][1]) / 3;
-      shards.push({ win: i, x: cx, y: cy, pts: pts.map(([px, py]) => [px - cx, py - cy] as [number, number]) });
+      shards.push({
+        win: i,
+        x: cx,
+        y: cy,
+        pts: pts.map(([px, py]) => [px - cx, py - cy] as [number, number]),
+      });
     });
   });
   return (glassPlanCache = { windows, damage, shards });
@@ -1624,14 +2057,23 @@ function kelpBlade(ctx: CanvasRenderingContext2D, len: number, width: number, sw
   const N = 22;
   const mid = (k: number) => sway * k * k + Math.sin(t * 1.3 + seed + k * 3) * 5 * k;
   const half = (k: number) => width * Math.pow(Math.sin(Math.PI * Math.min(1, 0.12 + k * 0.88)), 0.7) * (1 + 0.35 * Math.sin(k * 12 + seed * 2.3)) * (1 - 0.5 * k * k);
+  const edge = (k: number, side: number): [number, number] => {
+    const dk = 0.02;
+    const k0 = Math.max(0, k - dk);
+    const k1 = Math.min(1, k + dk);
+    const tx = mid(k1) - mid(k0);
+    const ty = -len * (k1 - k0);
+    const l = Math.hypot(tx, ty) || 1;
+    return [mid(k) + (-ty / l) * side, -len * k + (tx / l) * side];
+  };
   ctx.beginPath();
   for (let i = 0; i <= N; i++) {
     const k = i / N;
-    ctx.lineTo(mid(k) - half(k), -len * k);
+    ctx.lineTo(...edge(k, -half(k)));
   }
   for (let i = N; i >= 0; i--) {
     const k = i / N;
-    ctx.lineTo(mid(k) + half(k) * 0.85, -len * k);
+    ctx.lineTo(...edge(k, half(k) * 0.85));
   }
   ctx.closePath();
   ctx.fillStyle = fill;
@@ -1669,6 +2111,11 @@ function drawGiantKelp(ctx: CanvasRenderingContext2D, size: number, tint: number
   const sc = Math.min(1, Math.max(0.5, h / 420));
   const lean = Math.sin(t * 0.6 + tint * 9) * 26 + Math.sin(t * 1.1 + tint * 4) * 8 + push;
   const at = (k: number): [number, number] => [lean * k * k + Math.sin(t * 0.9 + tint * 7 + k * 5) * 6 * k, -h * k];
+  const tang = (k: number) => {
+    const [x0, y0] = at(Math.max(0, k - 0.02));
+    const [x1, y1] = at(Math.min(1, k + 0.02));
+    return Math.atan2(x1 - x0, -(y1 - y0));
+  };
   ctx.strokeStyle = '#3F8F4A';
   ctx.lineWidth = 7;
   ctx.beginPath();
@@ -1685,7 +2132,7 @@ function drawGiantKelp(ctx: CanvasRenderingContext2D, size: number, tint: number
     const flap = Math.sin(t * 1.5 + i * 1.1 + tint * 8) * 0.18;
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(side * (0.75 + flap));
+    ctx.rotate(tang(k) + side * (0.75 + flap));
     ctx.fillStyle = '#B7C95A';
     ctx.beginPath();
     ctx.ellipse(0, -5, 3.5, 6, 0, 0, Math.PI * 2);
@@ -1696,6 +2143,7 @@ function drawGiantKelp(ctx: CanvasRenderingContext2D, size: number, tint: number
   const [x, y] = at(1);
   ctx.save();
   ctx.translate(x, y);
+  ctx.rotate(tang(1));
   kelpBlade(ctx, 70 * sc, 12 * sc, lean * 0.15, t, tint * 5, '#8FC447', 'rgba(40,110,40,0.45)');
   ctx.restore();
 }

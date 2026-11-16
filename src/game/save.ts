@@ -5,6 +5,7 @@ import { ITEM_KINDS, type ItemKind } from '../data/items';
 import { ZONES } from '../data/zones';
 import { PORTALS } from '../data/routes';
 import { START_DAY } from '../render/daylight';
+import type { Salvage } from './world';
 
 export type SwitchMode = 'off' | 'on' | 'auto';
 
@@ -36,8 +37,12 @@ export interface SaveData {
   explored: Record<number, string>;
   /** Trash spots already collected per zone index. */
   trash: Record<number, number[]>;
-  /** Cave loot slots already taken per zone index; caves never restock. */
+  /** Loot slots already taken per zone index (cave loot, floor items and chests); nothing restocks. */
   caveLoot: Record<number, number[]>;
+  /** Per-zone seed that lays out the same loot every visit. */
+  lootSeed: Record<number, number>;
+  /** Cargo lost in the last wreck, waiting where the sub sank. */
+  salvage: Salvage | null;
   /** Whether the portal stone has been taken, opening the portals between Moana Deep and Crimson Sea. */
   portal: boolean;
   /** Whether the Crimson Sea monster has started chasing, which brings back that zone's portal. */
@@ -87,6 +92,8 @@ export function newSave(): SaveData {
     explored: {},
     trash: {},
     caveLoot: {},
+    lootSeed: {},
+    salvage: null,
     portal: false,
     visited: [0],
     monsterWoke: false,
@@ -140,7 +147,20 @@ export function sanitize(raw: any): SaveData | null {
   }
   for (let z = 0; z < ZONES.length; z++) {
     const t = raw.caveLoot?.[z];
-    if (Array.isArray(t)) s.caveLoot[z] = [...new Set(t.map((n: unknown) => Math.floor(num(n, 0, 99, -1))).filter((n: number) => n >= 0))].slice(0, 100);
+    if (Array.isArray(t)) s.caveLoot[z] = [...new Set(t.map((n: unknown) => Math.floor(num(n, 0, 99, -1))).filter((n: number) => n >= 0))].slice(0, 1000);
+  }
+  for (let z = 0; z < ZONES.length; z++) {
+    const n = raw.lootSeed?.[z];
+    if (typeof n === 'number' && Number.isFinite(n)) s.lootSeed[z] = Math.floor(n) >>> 0;
+  }
+  const sv = raw.salvage;
+  if (sv && typeof sv === 'object' && Number.isInteger(sv.zone) && sv.zone >= 0 && sv.zone < ZONES.length) {
+    const cargo: Salvage['cargo'] = {};
+    for (const k of ITEM_KINDS) {
+      const c = Math.floor(num(sv.cargo?.[k], 0, 9999, 0));
+      if (c) cargo[k] = c;
+    }
+    if (Object.keys(cargo).length) s.salvage = { zone: sv.zone, x: num(sv.x, 0, ZONES[sv.zone].width, 0), y: num(sv.y, 0, 1e6, 0), cargo };
   }
   s.portal = raw.portal === true;
   if (Array.isArray(raw.visited)) s.visited = [...new Set<number>([0, ...raw.visited.map((n: unknown) => Math.floor(num(n, 0, ZONES.length - 1, 0)))])];

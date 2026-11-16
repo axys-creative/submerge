@@ -1,6 +1,6 @@
 import type { Creature, World } from './world';
 import { CREATURES, FISH_FULL_SPEED, creatureRadius } from '../data/creatures';
-import { MONSTER_SPEED, MONSTER_SURGE, MONSTER_TRAIL } from '../config';
+import { MONSTER_SPEED, MONSTER_SURGE, MONSTER_TRAIL, ORCA_CHASE_SPEED, ORCA_LOSE_RANGE } from '../config';
 import { clamp, damp } from '../util';
 
 export interface Target {
@@ -184,6 +184,38 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
     case 'bluewhale':
       cruise(30, 900, 40, 50, 0.12, 8, 0.1, 0.35);
       break;
+    case 'orca':
+      if (c.hunt && (!target || d > ORCA_LOSE_RANGE)) {
+        c.hunt = false;
+        c.state = 'idle';
+      }
+      if (!c.hunt) cruise(70, 700, 14, 26, 0.12, 16, 0.2, 0.5);
+      else if (c.state === 'rest' && c.timer > 0) steer(c, 0, 0, 1.5, dt);
+      else {
+        c.state = 'chase';
+        steer(c, (dx / d) * ORCA_CHASE_SPEED, (dy / d) * ORCA_CHASE_SPEED, 1.8, dt);
+      }
+      break;
+    case 'orcacalf': {
+      let mom: Creature | null = null;
+      let best = Infinity;
+      for (const o of world.creatures) {
+        if (o.kind !== 'orca' || o.state === 'dead') continue;
+        const od = Math.hypot(o.x - c.x, o.y - c.y);
+        if (od < best) {
+          best = od;
+          mom = o;
+        }
+      }
+      if (mom) {
+        const gx = mom.x - mom.facing * 90 - c.x;
+        const gy = mom.y + 60 - c.y;
+        const gd = Math.hypot(gx, gy);
+        const follow = Math.min(130, 30 + gd * 0.6);
+        steer(c, (gx / (gd || 1)) * follow, (gy / (gd || 1)) * follow, 1.4, dt);
+      } else cruise(60, 700, 14, 26, 0.12, 16, 0.2, 0.5);
+      break;
+    }
     case 'turtle':
       if (d < 180) {
         c.heading = dx > 0 ? -1 : 1;
@@ -247,8 +279,15 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
   if (world.blocked(c.x, nx, c.y, r * 2, r + 12)) {
     c.vx = 0;
     c.facing = c.facing === 1 ? -1 : 1;
+  } else if (world.iceHit(nx, c.y, r * 1.6, r + 20, r + 20)) {
+    c.heading = c.vx > 0 ? -1 : 1;
+    c.facing = c.heading;
+    c.vx = 0;
+    c.timer = Math.max(c.timer, 8);
   } else c.x = nx;
-  c.y += c.vy * dt;
+  const ny = c.y + c.vy * dt;
+  if (world.iceHit(c.x, ny, r * 1.6, r + 20, r + 20)) c.vy = -c.vy * 0.5;
+  else c.y = ny;
   const top = c.kind === 'fish' ? 30 : Math.max(40, c.minY * 0.5);
   const bottom = Math.min(world.clearFloorAt(c.x, r * 2) - r - 12, c.maxY * 1.15);
   if (c.y < top) {

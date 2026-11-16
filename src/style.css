@@ -370,7 +370,7 @@ kbd {
 .dial .arc {
   stroke: var(--dial-color);
   stroke-dasharray: 100;
-  stroke-dashoffset: 100;
+  stroke-dashoffset: 0;
   transition: stroke-dashoffset 0.2s linear;
 }
 
@@ -1574,6 +1574,12 @@ textarea:focus {
   cursor: pointer;
 }
 
+.route-svg .node.target rect {
+  fill: color-mix(in srgb, var(--sun) 35%, var(--panel));
+  stroke: var(--sun);
+  stroke-width: 4;
+}
+
 .route-svg text {
   text-anchor: middle;
   fill: var(--ink);
@@ -1752,7 +1758,7 @@ textarea:focus {
 }
 
 .dm-warn {
-  background: rgba(255, 211, 77, 0.5);
+  background: rgba(255, 224, 0, 0.9);
 }
 
 .dm-crush {
@@ -2447,6 +2453,11 @@ body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.upg-sum .pips {
+  justify-content: flex-start;
+  width: calc(var(--pips) * 12px + (var(--pips) - 1) * 4px);
 }
 
 .maxed-pill {

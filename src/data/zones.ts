@@ -82,6 +82,8 @@ export interface ZoneDef {
   islandWidth?: number;
   /** Tiny hazy islands on the horizon, purely decorative. */
   farScenery?: boolean;
+  /** A frozen sea: icy mountains on the horizon, floating icebergs, and snow instead of rain. `bergs` are the iceberg positions (world x when the camera is there). */
+  polar?: { /** Horizon icebergs as [camera x when centered, size]; none stand before the first one. */ bergs: [number, number][]; /** World x before which there are no floating floes either, so the zone opens on open water and snow. */ iceFrom?: number; /** A large decorative iceberg at the waterline that the ship and sub pass behind. */ giant?: { x: number; half: number }; /** An ice shelf: a rounded slab of ice from x0 to x1 that stands above the water and hangs below it. The ship stops at its west face; the sub gets past by diving under it. */ shelf?: { x0: number; x1: number; height: number }; /** The camera keeps its normal zoom on the ship until the ship reaches x `at`, where the shelf's far wall comes into view; it then eases out to `zoom` the way it does when the sub launches, and eases back if the ship sails back west. */ shipZoom?: { at: number; zoom: number }; /** Camera x where the horizon mountain range's first slope reaches the right edge of the screen; the range continues east, so it slides into view from the right. */ peaks?: number; /** Camera x range over which the underwater background ridges fade in; before it they are hidden. */ ridges?: [number, number] };
   /** Where the far islands sit (world x when the camera is there); without it they repeat across the zone. */
   farIslandsAt?: number[];
   /** World x of a tiny cruise ship on the horizon. */
@@ -112,6 +114,21 @@ const MOANA_FLOOR = Array.from({ length: 36 }, (_, i) => {
   const left = 1 - smooth(x, 1500, 2400);
   const right = smooth(x, 7800, 8700);
   return Math.round(hills + left * (3300 + 90 * Math.sin(i * 2.3) - 1500) + right * (4700 + 25 * Math.sin(i * 1.9 + 2) - 1500));
+});
+
+/** The sea floor of Frozen Expanse at x px in the zone's original 20000 px layout: 5000 m deep at the west end, rising in a bumpy slope to an average of about 2000 m in the east, with ridges and dips along the way. */
+const frozenFloorAt = (x: number) => {
+  const u = x / 20000;
+  const i = u * 32;
+  const base = 1850 + 3150 * (1 - u) ** 1.6;
+  const amp = 0.08 * base + 120 + 350 * Math.exp(-(((u - 0.55) / 0.18) ** 2));
+  return Math.min(5000, Math.max(1500, Math.round(base + amp * (0.7 * Math.sin(i * 1.9) + 0.5 * Math.sin(i * 0.73 + 1)))));
+};
+
+/** The zone is 29000 px wide: the ice shelf (11000 to 24500) is three times its original 4500 px, and the sea floor is the original one with that stretch spread over the longer span, so everything on either side of the shelf stays as it was. */
+const FROZEN_FLOOR = Array.from({ length: 59 }, (_, k) => {
+  const x = k * 500;
+  return frozenFloorAt(x <= 11000 ? x : x >= 24500 ? x - 9000 : 11000 + (x - 11000) / 3);
 });
 
 // How the zones connect is in routes.ts.
@@ -419,6 +436,8 @@ export const ZONES: ZoneDef[] = [
       { kind: 'angler', count: 8, minDepth: 1000, maxDepth: 2500 },
       { kind: 'whale', count: 2, minDepth: 400, maxDepth: 1100 },
       { kind: 'mobydick', count: 1, minDepth: 400, maxDepth: 1100 },
+      { kind: 'orca', count: 3, minDepth: 60, maxDepth: 450 },
+      { kind: 'orcacalf', count: 2, minDepth: 60, maxDepth: 450 },
       { kind: 'manta', count: 2, minDepth: 100, maxDepth: 800 },
       { kind: 'bluewhale', count: 2, minDepth: 25, maxDepth: 160 },
       { kind: 'colossal', count: 2, minDepth: 1000, maxDepth: 1450 },
@@ -449,6 +468,28 @@ export const ZONES: ZoneDef[] = [
     }],
     kelp: 0,
     rocks: 60,
+  },
+  {
+    name: 'Frozen Expanse',
+    islandWidth: 1,
+    diveZoom: 0.6,
+    map: { x: 255, y: 165 },
+    width: 29000,
+    floor: FROZEN_FLOOR,
+    sky: ['#9FD6F2', '#EAF8FF'],
+    water: ['#6FDCEC', '#0C3F86'],
+    ground: ['#DCEFF9', '#3E5A8C'],
+    darkness: [25, 420],
+    polar: { bergs: [[6000, 0.35], [7100, 0.5], [8000, 0.7], [26800, 1], [28000, 1.1]], iceFrom: 5700, giant: { x: 9000, half: 340 }, shelf: { x0: 11000, x1: 24500, height: 624 }, shipZoom: { at: 10350, zoom: 0.5 }, peaks: 26200, ridges: [10000, 14000] },
+    items: 85,
+    creatures: [
+      { kind: 'orca', count: 4, minDepth: 90, maxDepth: 400 },
+      { kind: 'orcacalf', count: 2, minDepth: 90, maxDepth: 400 },
+    ],
+    islands: [],
+    wrecks: [],
+    kelp: 0,
+    rocks: 170,
   },
   {
     name: 'Crimson Sea',

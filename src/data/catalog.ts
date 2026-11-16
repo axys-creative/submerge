@@ -10,6 +10,8 @@ export interface CatalogTerrain {
   label: string;
   deco?: { kind: DecoKind; size: number; tint: number };
   item?: ItemKind;
+  /** Items hovering above this spot, floating and turning, instead of resting on the floor. */
+  floating?: ItemKind[];
   /** A portal standing on the water's surface above this spot. */
   portal?: boolean;
 }
@@ -39,6 +41,8 @@ const KIND_DEPTH: Record<CreatureKind, [number, number]> = {
   giant: [1000, 1450],
   bigfin: [1050, 1300],
   whale: [400, 1100],
+  orca: [60, 450],
+  orcacalf: [60, 450],
   mobydick: [400, 1100],
   bluewhale: [25, 160],
   leviathan: [250, 400],
@@ -65,18 +69,18 @@ const WRECKS = [
 const CREATURE_COLUMNS: CreatureKind[][] = [
   ['fish'], ['jelly'], ['turtle'], ['shark'], ['hammerhead'], ['angler'], ['stingray'], ['manta'],
   ['squid'], ['colossal'], ['giant'], ['bigfin'],
-  ['whale', 'mobydick'], ['bluewhale'], ['leviathan'],
+  ['orca', 'orcacalf'], ['whale', 'mobydick'], ['bluewhale'], ['leviathan'],
 ];
 /** Half the sideways width a kind actually covers, where that differs from how far it is drawn (upright squid and jellyfish are narrow, a fish school is wide), so every column gets the same gap. */
-const COLUMN_EXTENT: Partial<Record<CreatureKind, number>> = { fish: 110, jelly: 45 * JELLY_SCALE, turtle: 55 * TURTLE_SCALES[TURTLE_SCALES.length - 1], stingray: 110, manta: 130, angler: 55, squid: 26, colossal: 60, giant: 50, bigfin: 35 };
+const COLUMN_EXTENT: Partial<Record<CreatureKind, number>> = { fish: 110, jelly: 45 * JELLY_SCALE, turtle: 55 * TURTLE_SCALES[TURTLE_SCALES.length - 1], stingray: 55, manta: 98, angler: 55, squid: 26, colossal: 60, giant: 50, bigfin: 35 };
 /** Kinds shown once instead of in three tints. */
-const SINGLE_VARIANT: CreatureKind[] = ['colossal', 'giant'];
+const SINGLE_VARIANT: CreatureKind[] = ['colossal', 'giant', 'orcacalf'];
 /** How far above the highest name tag the column headings sit. */
 const HEADER_ABOVE = -34;
 /** Space between the edges of neighboring columns. */
 const COLUMN_GAP = 180;
 /** How far above a tall kind its name tag floats. */
-const TAG_ABOVE: Partial<Record<CreatureKind, number>> = { colossal: 138, giant: 110, bigfin: 55, mobydick: 160 };
+const TAG_ABOVE: Partial<Record<CreatureKind, number>> = { colossal: 138, giant: 110, bigfin: 55, mobydick: 160, orca: 135 };
 /** Extra space above a kind stacked under another in its column. */
 const ROW_EXTRA: Partial<Record<CreatureKind, number>> = { mobydick: 60 };
 
@@ -88,11 +92,11 @@ function build() {
     x += TERRAIN_GAP;
   };
   ([[0.7, 0.2, 'small'], [1.1, 0.8, 'medium'], [1.5, 0.2, 'large']] as const).forEach(([size, tint, name]) => add({ label: `Rock (${name})`, deco: { kind: 'rock', size, tint } }));
-  ([[0.8, 'short'], [1.1, 'medium'], [1.5, 'tall']] as const).forEach(([size, name]) => add({ label: `Kelp stalk (${name})`, deco: { kind: 'kelp', size, tint: 0.2 } }));
+  ([[0.45, 'short'], [0.61875, 'medium'], [0.84375, 'tall']] as const).forEach(([size, name]) => add({ label: `Kelp stalk (${name})`, deco: { kind: 'kelp', size, tint: 0.2 } }));
   ([[1.1, 'bunch'], [1.5, 'tall bunch']] as const).forEach(([size, name]) => add({ label: `Kelp ${name}`, deco: { kind: 'kelp', size, tint: 0.5 } }));
   add({ label: 'Kelp ribbon', deco: { kind: 'kelp', size: 1.2, tint: 0.85 } });
-  ([[0.7, 'medium'], [1.3, 'tall']] as const).forEach(([size, name]) => add({ label: `Giant kelp (${name})`, deco: { kind: 'giantkelp', size, tint: 0.4 } }));
-  [0.1, 0.35, 0.6, 0.85].forEach((tint, i) => add({ label: `Coral ${i + 1}`, deco: { kind: 'coral', size: 1.2, tint } }));
+  ([[0.39375, 'medium'], [0.73125, 'tall']] as const).forEach(([size, name]) => add({ label: `Giant kelp (${name})`, deco: { kind: 'giantkelp', size, tint: 0.4 } }));
+  [0.1, 0.35, 0.6, 0.85].forEach((tint, i) => add({ label: `Coral ${i + 1}`, deco: { kind: 'coral', size: 0.6, tint } }));
   [0.1, 0.5, 0.9].forEach((tint, i) => add({ label: `Starfish ${i + 1}`, deco: { kind: 'starfish', size: 1, tint } }));
   [0.2, 0.8].forEach((tint, i) => add({ label: `Wood plank ${i + 1}`, deco: { kind: 'plank', size: 1.2, tint } }));
   ([[0.9, 0.2, 'single'], [1.2, 0.8, 'double']] as const).forEach(([size, tint, name]) => add({ label: `Hydrothermal vent (${name})`, deco: { kind: 'vent', size, tint } }));
@@ -100,7 +104,11 @@ function build() {
   add({ label: 'Lost submarine', deco: { kind: 'lungsub', size: 1, tint: 0.5 } });
   add({ label: 'Ruby gem', deco: { kind: 'gem', size: 1, tint: 0.5 } });
   add({ label: 'Portal (on the surface)', portal: true });
-  for (const item of [...ITEM_KINDS].sort((a, b) => ITEMS[a].value - ITEMS[b].value)) add({ label: ITEMS[item].name, item });
+  for (const item of [...ITEM_KINDS].sort((a, b) => ITEMS[a].value - ITEMS[b].value)) {
+    if (item === 'sack') add({ label: ITEMS[item].name, floating: [item] });
+    else if (item === 'bottle') add({ label: ITEMS[item].name, item, floating: [item] });
+    else add({ label: ITEMS[item].name, item });
+  }
 
   const wrecks: { x: number; kind: (typeof WRECKS)[number]['kind'] }[] = [];
   x += 400;

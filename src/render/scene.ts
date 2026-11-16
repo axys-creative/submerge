@@ -7,11 +7,13 @@ import { ITEMS } from '../data/items';
 import { CATALOG } from '../data/catalog';
 import { buoyLabel, routesFrom, PORTALS } from '../data/routes';
 import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, drawGlassCracks, runningLights, sternStretch, anchorFor, lampFor, challengerBoomTips, challengerViewport, CAPSULE_SIDE_VIEWPORT, COCKPIT, REAR_LAMP } from '../art/sub';
+import { drawIslandGulls } from '../art/gulls';
 import { drawShip, drawIsland, dockPoles, drawCloud, cloudShape, drawBuoy, drawPortal, drawPortalStone, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
 import { BACKGROUND_KINDS, CREATURE_EXTENT, anglerRelSize } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
-import { drawRainFall, drawRainRipples } from './weather';
+import { drawRainFall, drawRainRipples, drawSnowFall } from './weather';
+import { drawPolarSky, drawPolarUnder, drawPolarFloes, drawPolarGiant, clipToGiant, drawShelf, drawShelfFar, clipOutsideShelf, drawShelfSplash } from '../art/polar';
 import { waveY, mixColor, lerp, clamp } from '../util';
 import { BACK_LAYERS } from '../game/world';
 import { daylight, STARS } from './daylight';
@@ -110,6 +112,13 @@ function crater(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, 
   ctx.lineWidth = 1;
   ctx.stroke();
 }
+
+/** 0 before `range[0]`, 1 after `range[1]`, easing between; always 1 without a range. */
+const fadeIn = (range: [number, number] | undefined, x: number) => {
+  if (!range) return 1;
+  const u = clamp((x - range[0]) / (range[1] - range[0]), 0, 1);
+  return u * u * (3 - 2 * u);
+};
 
 /** Height of the sky above the waterline, in world px; matches the view at the surface. */
 const SKY_HEIGHT = 400;
@@ -363,11 +372,16 @@ export function renderScene(g: Game) {
     }
   }
 
+  if (def.polar && top < 20) {
+    drawPolarSky(ctx, left, right, cam.x, t, mixColor(def.sky[1], '#7C9CB8', 0.25), night, def.polar.bergs, def.polar.peaks);
+  }
+
   for (const isl of def.islands) {
     if (!inView(isl.x, 250 * (def.islandWidth ?? ISLAND_WIDTH) + 250)) continue;
     ctx.save();
     ctx.translate(isl.x, 0);
     drawIsland(ctx, t, isl.name, lampNight, def.islandWidth ?? ISLAND_WIDTH);
+    if (!space) drawIslandGulls(ctx, t, isl.name, def.islandWidth ?? ISLAND_WIDTH, night);
     ctx.restore();
   }
 
@@ -388,8 +402,8 @@ export function renderScene(g: Game) {
     const step = 260;
     const moonUp = Math.max(0, Math.min(1, (-Math.sin(sunAngle) + 0.25) / 0.5));
     const sources = [
-      { shaft: 0.05 * (1 - night), tint: '255,255,255', angle: sunAngle, phase: 0 },
-      { shaft: 0.035 * night * moonUp, tint: '200,215,255', angle: sunAngle + Math.PI, phase: 2 },
+      { shaft: 0.0625 * (1 - night), tint: '255,255,255', angle: sunAngle, phase: 0 },
+      { shaft: 0.044 * night * moonUp, tint: '200,215,255', angle: sunAngle + Math.PI, phase: 2 },
     ];
     for (const src of sources) {
       if (src.shaft <= 0.001) continue;
@@ -414,15 +428,19 @@ export function renderScene(g: Game) {
     }
   }
 
+  if (def.polar && top < 900) drawPolarUnder(ctx, left, right, cam.x, t, water1, night, def.polar.bergs);
+
   // Parallax mountains sit behind everything else, including the islands' underwater peaks.
   if (bottom > 200) {
+    const ridgeFade = fadeIn(def.polar?.ridges, cam.x);
     BACK_LAYERS.forEach((layer, i) => {
+      if (ridgeFade <= 0.01) return;
       const shift = cam.x * (1 - layer.p);
       const fill = ctx.createLinearGradient(0, 0, 0, deepPx);
       fill.addColorStop(0, mixColor(water0, abyss, layer.dark));
       fill.addColorStop(1, mixColor(water1, abyss, layer.dark));
       ctx.fillStyle = fill;
-      ctx.globalAlpha = layer.alpha;
+      ctx.globalAlpha = layer.alpha * ridgeFade;
       ctx.beginPath();
       ctx.moveTo(left - 30, bottom + 30);
       for (let c = Math.floor((left - 30 - shift) / 24) * 24; c + shift <= right + 30; c += 24) {
@@ -491,6 +509,11 @@ export function renderScene(g: Game) {
   // Background creatures drift behind the sea floor and scenery.
   for (const c of world.creatures) if (inView(c.x, CREATURE_EXTENT[c.kind]) && BACKGROUND_KINDS.includes(c.kind)) drawCreature(ctx, c);
 
+  if (def.polar?.shelf) {
+    drawShelfFar(ctx, { left, right }, cam.x, def.polar.shelf, night, def.sky[1], water1);
+    drawShelf(ctx, { left, right, top, bottom }, def.polar.shelf, world.caveBlobs, night, water1, def.ground[1]);
+  }
+
   // Sea floor
   if (bottom > 200) {
     def.wrecks.forEach((w, wi) => {
@@ -506,7 +529,7 @@ export function renderScene(g: Game) {
       ctx.save();
       ctx.translate(it.x, it.y + (it.y < world.floorAt(it.x) - 60 ? Math.sin(t * 1.5 + it.phase) * 4 : 0));
       drawDimmed(ctx, world.atMouth(it.x, it.y), (c) => {
-        drawItem(c, it.kind, t + it.phase);
+        drawItem(c, it.kind, t + it.phase, it.spin ?? 0);
         if (ITEMS[it.kind].treasure || it.kind === 'shell') {
           const u = (t + it.phase * 1.4) % SPARKLE_CYCLE;
           if (u < 1) drawSparkle(c, -10, -6, 6 * Math.sin(Math.PI * u), Math.sin(Math.PI * u));
@@ -745,7 +768,7 @@ export function renderScene(g: Game) {
     crumple(ctx);
     if (blink) ctx.globalAlpha = 0.4;
     if (g.swallow) ctx.globalAlpha *= 1 - clamp((g.swallow.t - SWALLOW_CLOSE + 0.6) / 0.5, 0, 1);
-    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, scrubbers: g.save.scrubbers, electrolysis: g.save.electrolysis }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut);
+    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, rack: g.save.candles > 0, scrubbers: g.save.scrubbers, electrolysis: g.save.electrolysis }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut);
     if (g.crack !== null) drawGlassCracks(ctx, Math.min(1, g.crack / CRACK_TIME), g.save.skin);
     ctx.restore();
   }
@@ -870,8 +893,10 @@ export function renderScene(g: Game) {
     ctx.fillRect(left - 20, top - 20, W + 40, 50 - top);
   }
 
+  if (def.polar && top < 900) drawPolarFloes(ctx, left, right, t, water1, night, def.polar.giant, def.polar.iceFrom, def.polar.shelf);
+
   // Front wave band: water washes over everything, strongest at the surface and thinning out all the way to the sea floor
-  {
+  const waveHaze = () => {
     const wash = world.floorMax;
     const [wr, wg, wb] = water0.match(/\d+/g)!.map(Number);
     const haze = ctx.createLinearGradient(0, 0, 0, wash);
@@ -884,17 +909,34 @@ export function renderScene(g: Game) {
     ctx.lineTo(right + 20, bottom + 30);
     ctx.closePath();
     ctx.fill();
+  };
+  const waveLine = () => {
     ctx.strokeStyle = 'rgba(255,255,255,0.55)';
     ctx.lineWidth = 3;
     ctx.beginPath();
     for (let x = left - 20; x <= right + 20; x += 16) ctx.lineTo(x, waveY(x, t + 0.7) + 5);
     ctx.stroke();
-  }
+  };
+  const behindShelf = (draw: () => void) => {
+    const shelf = def.polar?.shelf;
+    if (!shelf) return draw();
+    ctx.save();
+    clipOutsideShelf(ctx, shelf);
+    draw();
+    ctx.restore();
+  };
+  behindShelf(waveHaze);
+  behindShelf(waveLine);
 
   if (rain > 0.01) {
-    drawRainFall(ctx, g.canvas.width, g.canvas.height, oy, t, rain, night, view.dpr);
+    drawRainFall(ctx, g.canvas.width, g.canvas.height, oy, t, rain, night, view.dpr, cam.x, k);
     ctx.setTransform(k, 0, 0, k, ox, oy);
     if (top < 20 && bottom > -20) drawRainRipples(ctx, left, W, t, rain, (x) => waveY(x, t));
+  }
+
+  if (def.polar && top < 20) {
+    drawSnowFall(ctx, g.canvas.width, g.canvas.height, oy, t, night, view.dpr, cam.x, k);
+    ctx.setTransform(k, 0, 0, k, ox, oy);
   }
 
   // Darkness and lights
@@ -1097,6 +1139,13 @@ export function renderScene(g: Game) {
     ctx.restore();
   }
   drawLeviathanGlows(ctx, beastGlows, t);
+  if (def.polar?.giant) {
+    drawPolarGiant(ctx, left, right, t, night, def.polar.giant, { startPx, fullPx: deepPx, rgb: '3,7,24' });
+    ctx.save();
+    clipToGiant(ctx, def.polar.giant, t);
+    waveHaze();
+    ctx.restore();
+  }
 
   // Sonar
   if (diving && g.sonar.ring >= 0) {
@@ -1174,6 +1223,9 @@ export function renderScene(g: Game) {
     ctx.arc(b.x, b.y, 7, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  behindShelf(waveLine);
+  if (def.polar?.shelf) drawShelfSplash(ctx, { left, right }, def.polar.shelf, t, night);
 
   ctx.font = `700 ${18 / view.zoom}px Fredoka, Nunito, sans-serif`;
   ctx.textAlign = 'center';

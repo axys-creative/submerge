@@ -4,10 +4,11 @@ import { rrect } from '../util';
 const GOLD = '#F6C445';
 const GOLD_DARK = '#D99A1E';
 
-/** Draws an item centered on the origin, about 30 px across. */
-export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: number) {
+/** Draws an item centered on the origin, about 30 px across, turned by `spin` radians (junk turns only while it floats). */
+export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: number, spin = 0) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  ctx.rotate(spin);
   switch (kind) {
     case 'seaweed':
       for (let i = -1; i <= 1; i++) {
@@ -21,6 +22,7 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       }
       break;
     case 'shell':
+      ctx.scale(0.5, 0.5);
       ctx.fillStyle = '#FFB59E';
       ctx.beginPath();
       ctx.moveTo(0, 10);
@@ -41,6 +43,8 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       ctx.fill();
       break;
     case 'boot':
+      ctx.save();
+      ctx.scale(0.75, 0.75);
       ctx.fillStyle = '#8A5A3B';
       ctx.beginPath();
       ctx.moveTo(-10, -14);
@@ -62,9 +66,11 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
         ctx.lineTo(1, y);
         ctx.stroke();
       }
+      ctx.restore();
       break;
     case 'bottle':
       ctx.save();
+      ctx.scale(0.75, 0.75);
       ctx.rotate(-0.6);
       ctx.fillStyle = 'rgba(108,203,142,0.92)';
       rrect(ctx, -8, -8, 16, 24, 6);
@@ -87,6 +93,7 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       break;
     case 'can':
       ctx.save();
+      ctx.scale(0.75, 0.75);
       ctx.rotate(0.55);
       ctx.fillStyle = '#B7BEC9';
       rrect(ctx, -9, -11, 18, 24, 3);
@@ -112,6 +119,140 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       ctx.stroke();
       ctx.restore();
       break;
+    case 'sack': {
+      const color = '#A8DAE8';
+      const sway = Math.sin(t * 1.8 + 1.4) * 0.5;
+      ctx.save();
+      ctx.rotate(Math.sin(t * 0.9) * 0.07);
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-7.5, -14.5);
+      ctx.quadraticCurveTo(-5, -17.5, -1.5, -16);
+      ctx.quadraticCurveTo(4, -14.5, 9.5, -12.5);
+      ctx.quadraticCurveTo(13, -11.5, 13.8, -8.5);
+      ctx.bezierCurveTo(13.8, -6, 10.2, -3, 9.2, 3);
+      ctx.lineTo(8.8 + sway, 14.4);
+      ctx.quadraticCurveTo(8.7 + sway, 17.6, 5.4 + sway, 17.6);
+      ctx.quadraticCurveTo(2.2 + sway, 17.6, 2 + sway, 14.4);
+      ctx.lineTo(1.8, 4.4);
+      ctx.quadraticCurveTo(1.6, 1.8, -3, 2.2);
+      ctx.quadraticCurveTo(-6, 2.5, -8, 3);
+      ctx.quadraticCurveTo(-10.5, -4, -9.5, -8);
+      ctx.quadraticCurveTo(-9, -12, -7.5, -14.5);
+      ctx.closePath();
+      ctx.roundRect(4 + sway, 7, 3, 6.4, 1.3);
+      ctx.fill('evenodd');
+      const leg = (x: number, y: number, rot: number) => {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rot);
+        ctx.beginPath();
+        ctx.roundRect(-3.4, -6.5, 6.8, 13, 2.8);
+        ctx.roundRect(-1.3, -1.2, 2.6, 6, 1.2);
+        ctx.fill('evenodd');
+        ctx.restore();
+      };
+      leg(-9.6, 7, 0.42 + Math.sin(t * 1.8) * 0.06);
+      ctx.restore();
+      break;
+    }
+    case 'jug': {
+      ctx.save();
+      ctx.scale(0.75, 0.75);
+      ctx.rotate(-0.25);
+      ctx.fillStyle = '#4A90C8';
+      ctx.beginPath();
+      ctx.moveTo(-4.4, -8.6);
+      ctx.quadraticCurveTo(-8.8, -3, -8.7, 6);
+      ctx.quadraticCurveTo(-8.8, 12, -6, 14.6);
+      ctx.quadraticCurveTo(0, 16.2, 6, 14.6);
+      ctx.quadraticCurveTo(8.8, 12, 8.7, 4);
+      ctx.quadraticCurveTo(8.2, -3, 4.4, -8.6);
+      ctx.closePath();
+      const hole = { x: -2.6, y: -2.4, rx: 4.2, ry: 2.6, rot: -0.6 };
+      ctx.moveTo(hole.x + hole.rx * Math.cos(hole.rot), hole.y + hole.rx * Math.sin(hole.rot));
+      ctx.ellipse(hole.x, hole.y, hole.rx, hole.ry, hole.rot, 0, Math.PI * 2);
+      ctx.fill('evenodd');
+      ctx.save();
+      ctx.clip('evenodd');
+      ctx.fillStyle = '#86B9DE';
+      ctx.fillRect(5.2, -9, 4, 26);
+      ctx.fillStyle = '#3B73A8';
+      ctx.beginPath();
+      ctx.moveTo(-9, 2);
+      ctx.quadraticCurveTo(-7.4, 12, 5, 15.4);
+      ctx.lineTo(-9, 16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = '#3B73A8';
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.ellipse(hole.x, hole.y, hole.rx, hole.ry, hole.rot, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#707074';
+      rrect(ctx, -4.8, -12.2, 9.6, 3.8, 0.8);
+      ctx.fill();
+      ctx.fillStyle = '#B9BCC1';
+      rrect(ctx, -4.3, -15.2, 8.6, 3.6, 1.6);
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+    case 'canister': {
+      ctx.save();
+      ctx.rotate(0.22);
+      ctx.fillStyle = '#D8473E';
+      ctx.beginPath();
+      ctx.moveTo(-12, -12);
+      ctx.quadraticCurveTo(-12, -13.7, -10.3, -13.7);
+      ctx.lineTo(0.9, -13.7);
+      ctx.lineTo(7.2, -8.2);
+      ctx.quadraticCurveTo(12.3, -4, 12.2, 6);
+      ctx.lineTo(12.2, 10);
+      ctx.quadraticCurveTo(12.2, 14.3, 7, 14.3);
+      ctx.lineTo(-6.5, 14.3);
+      ctx.quadraticCurveTo(-12, 14.3, -12, 9);
+      ctx.closePath();
+      ctx.moveTo(-5.3, -12.5);
+      ctx.lineTo(-0.3, -12.5);
+      ctx.lineTo(4, -10);
+      ctx.lineTo(-3.9, -10);
+      ctx.closePath();
+      ctx.fill('evenodd');
+      ctx.save();
+      ctx.clip('evenodd');
+      ctx.fillStyle = '#BF3A33';
+      ctx.fillRect(-12.2, -14, 4.8, 30);
+      ctx.fillStyle = '#E0554B';
+      ctx.fillRect(-7.4, -14, 14.8, 30);
+      ctx.fillStyle = '#C93F37';
+      ctx.fillRect(7.4, -14, 5.2, 30);
+      ctx.restore();
+      ctx.strokeStyle = '#A83029';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-5.3, -12.5);
+      ctx.lineTo(-0.3, -12.5);
+      ctx.lineTo(4, -10);
+      ctx.lineTo(-3.9, -10);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(8.4, -9.4);
+      ctx.rotate(0.78);
+      ctx.fillStyle = '#A83029';
+      rrect(ctx, -1.8, -3.2, 3.6, 4, 0.8);
+      ctx.fill();
+      ctx.fillStyle = '#F2C230';
+      rrect(ctx, -2.4, -5.4, 4.8, 2.8, 0.9);
+      ctx.fill();
+      ctx.restore();
+      ctx.restore();
+      break;
+    }
     case 'tire':
       ctx.fillStyle = '#2B2B33';
       ctx.beginPath();
@@ -132,6 +273,7 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       ctx.stroke();
       break;
     case 'coin':
+      ctx.scale(0.5, 0.5);
       for (let i = 0; i < 3; i++) {
         ctx.fillStyle = GOLD_DARK;
         ctx.beginPath();
@@ -178,6 +320,7 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       }
       break;
     case 'wheel':
+      ctx.scale(0.75, 0.75);
       ctx.strokeStyle = '#A8693B';
       ctx.fillStyle = '#A8693B';
       ctx.lineWidth = 3.5;
@@ -201,6 +344,7 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       ctx.fill();
       break;
     case 'pearl':
+      ctx.scale(0.5, 0.5);
       ctx.fillStyle = '#E890AE';
       ctx.beginPath();
       ctx.ellipse(0, 4, 17, 9, 0, 0, Math.PI);

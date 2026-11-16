@@ -12,6 +12,7 @@ import {
   CRUSH_DEPTH_SHOWN,
   DEPTH_WARN_RANGE,
   MAP_SURFACE_FADE,
+  MAP_MAX_WIDTH,
   PX_PER_M,
 } from "../config";
 import {
@@ -33,6 +34,7 @@ import { ITEMS, ITEM_KINDS, type ItemKind } from "../data/items";
 import { drawSub } from "../art/sub";
 import { drawItem } from "../art/items";
 import { money, mixColor } from "../util";
+import { shelfPolygon } from "../art/polar";
 
 const ICON = {
   hull: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>',
@@ -536,7 +538,7 @@ export class UI {
         b.hidden = !label;
       });
       const boost =
-        (g.mode === "docked" && !this.modalKind && !g.travel) || (diving && g.propellerLevel >= 1);
+        ((g.mode === "docked" && !this.modalKind && !g.travel) || diving) && g.propellerLevel >= 1;
       this.set("t-boost", String(boost), () => ($(this.root, "#btn-boost").hidden = !boost));
       const drop = diving && g.weightsOn;
       this.set("t-drop", String(drop), () => ($(this.root, "#btn-drop").hidden = !drop));
@@ -556,9 +558,10 @@ export class UI {
       if (spot?.kind === "portal") return `${this.touch ? "" : "<kbd>Enter</kbd> or <kbd>E</kbd> "}Enter the portal`;
       if (spot?.kind === "sail")
         return `${this.touch ? "" : "<kbd>Enter</kbd> or <kbd>E</kbd> "}Open the route map`;
+      const boostHint = g.propellerLevel >= 1 ? " &nbsp;·&nbsp; <kbd>Shift</kbd> Boost" : "";
       return this.touch
         ? "Drag to sail · Tap Dive to launch"
-        : "<kbd>←</kbd><kbd>→</kbd> Sail &nbsp;·&nbsp; <kbd>Shift</kbd> Boost &nbsp;·&nbsp; <kbd>Space</kbd> Dive";
+        : `<kbd>←</kbd><kbd>→</kbd> Sail${boostHint} &nbsp;·&nbsp; <kbd>Space</kbd> Dive`;
     }
     const s = g.sub;
     if (s.battery <= 0)
@@ -577,13 +580,14 @@ export class UI {
 
   private mapBg: { world: Game["world"]; canvas: HTMLCanvasElement } | null = null;
   private mapScroll = 0;
+  private mapScrollX = 0;
   private mapFog: {
     explored: NonNullable<Game["explored"]>;
     version: number;
     canvas: HTMLCanvasElement;
   } | null = null;
 
-  private fogLayer(W: number, fullH: number, sy: number) {
+  private fogLayer(W: number, fullH: number, sx: number, sy: number) {
     const ex = this.game.explored;
     if (!ex) return null;
     if (this.mapFog?.explored === ex && this.mapFog.version === ex.version)
@@ -615,44 +619,50 @@ export class UI {
     return c;
   }
 
+  private mapTargetX(g: Game, mx: (x: number) => number, W: number, fullW: number) {
+    const x = g.mode === "diving" ? g.sub.x : g.ship.x;
+    return Math.max(0, Math.min(fullW - W, mx(x) - W / 2));
+  }
+
   private drawMap() {
     const g = this.game;
     const w = g.world;
     const ctx = ($(this.root, "#minimap") as HTMLCanvasElement).getContext("2d")!;
     const W = 440;
     const H = 220;
-    const sx = W / w.width;
+    const sx = W / Math.min(w.width, MAP_MAX_WIDTH);
     const sy = sx;
+    const fullW = Math.max(W, Math.ceil(w.width * sx));
     const fullH = Math.max(H, Math.ceil(24 + (w.maxFloor + 100) * sy));
     const mx = (x: number) => x * sx;
     const my = (y: number) => 24 + Math.max(0, y) * sy;
 
     if (this.mapBg?.world !== w) {
       const c = document.createElement("canvas");
-      c.width = W;
+      c.width = fullW;
       c.height = fullH;
       const b = c.getContext("2d")!;
       b.fillStyle = w.def.water[1];
-      b.fillRect(0, 0, W, fullH);
+      b.fillRect(0, 0, fullW, fullH);
       const sea = b.createLinearGradient(0, 24, 0, fullH);
       sea.addColorStop(0, w.def.water[0]);
       sea.addColorStop(1, w.def.water[1]);
       b.fillStyle = sea;
-      b.fillRect(0, 24, W, fullH - 24);
+      b.fillRect(0, 24, fullW, fullH - 24);
       b.fillStyle = w.def.sky[1];
-      b.fillRect(0, 0, W, 24);
+      b.fillRect(0, 0, fullW, 24);
       b.fillStyle = w.def.ground[0];
       b.beginPath();
       b.moveTo(0, fullH);
-      for (let px = 0; px <= W; px += 2) b.lineTo(px, my(w.floorAt(px / sx)));
-      b.lineTo(W, fullH);
+      for (let px = 0; px <= fullW; px += 2) b.lineTo(px, my(w.floorAt(px / sx)));
+      b.lineTo(fullW, fullH);
       b.closePath();
       b.fill();
       b.save();
       b.beginPath();
       b.moveTo(0, fullH);
-      for (let px = 0; px <= W; px += 2) b.lineTo(px, my(w.floorAt(px / sx)));
-      b.lineTo(W, fullH);
+      for (let px = 0; px <= fullW; px += 2) b.lineTo(px, my(w.floorAt(px / sx)));
+      b.lineTo(fullW, fullH);
       b.closePath();
       b.clip();
       b.fillStyle = mixColor(w.def.ground[1], "#050A1E", 0.7);
@@ -670,7 +680,7 @@ export class UI {
         );
       }
       if (w.abyss) {
-        const pts = w.abyssOutline(0, W / sx, 2 / sx);
+        const pts = w.abyssOutline(0, fullW / sx, 2 / sx);
         b.moveTo(mx(pts[0][0]), my(pts[0][1]));
         for (const [x, y] of pts) b.lineTo(mx(x), my(y));
         b.closePath();
@@ -692,8 +702,21 @@ export class UI {
         b.closePath();
         b.fill();
       }
+      const shelf = w.def.polar?.shelf;
+      if (shelf) {
+        b.beginPath();
+        shelfPolygon(shelf).forEach(([x, y], i) => (i ? b.lineTo(mx(x), 24 + y * sy) : b.moveTo(mx(x), 24 + y * sy)));
+        b.closePath();
+        b.fillStyle = "rgba(226,244,253,0.88)";
+        b.fill();
+        b.lineJoin = "round";
+        b.lineWidth = 1.5;
+        b.strokeStyle = "rgba(255,255,255,0.95)";
+        b.stroke();
+      }
       this.mapBg = { world: w, canvas: c };
       this.mapScroll = 0;
+      this.mapScrollX = this.mapTargetX(g, mx, W, fullW);
     }
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(this.mapBg.canvas, 0, 0);
@@ -701,13 +724,14 @@ export class UI {
     const follow = g.mode === "diving" ? my(g.sub.y) - H / 2 : 0;
     const scroll = Math.max(0, Math.min(fullH - H, follow));
     this.mapScroll += (scroll - this.mapScroll) * 0.12;
+    this.mapScrollX += (this.mapTargetX(g, mx, W, fullW) - this.mapScrollX) * 0.12;
     ctx.clearRect(0, 0, W, H);
-    ctx.drawImage(this.mapBg.canvas, 0, this.mapScroll, W, H, 0, 0, W, H);
-    const fog = this.fogLayer(W, fullH, sy);
+    ctx.drawImage(this.mapBg.canvas, this.mapScrollX, this.mapScroll, W, H, 0, 0, W, H);
+    const fog = this.fogLayer(fullW, fullH, sx, sy);
     if (fog && !g.debugFast && !g.world.def.catalog)
-      ctx.drawImage(fog, 0, this.mapScroll, W, H, 0, 0, W, H);
+      ctx.drawImage(fog, this.mapScrollX, this.mapScroll, W, H, 0, 0, W, H);
     ctx.save();
-    ctx.translate(0, -this.mapScroll);
+    ctx.translate(-this.mapScrollX, -this.mapScroll);
 
     ctx.lineWidth = 2;
     ctx.strokeStyle = "rgba(255,255,255,0.55)";
@@ -1249,6 +1273,14 @@ export class UI {
         <div class="route-list">${list}</div>
       </div>`,
     );
+    const mark = (zone?: string) =>
+      this.modal.querySelectorAll<SVGGElement>(".route-svg .node").forEach((n) => n.classList.toggle("target", !!zone && n.dataset.zone === zone));
+    const focused = () => (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(".route-list [data-zone]")?.dataset.zone;
+    const card = this.modal.querySelector<HTMLElement>(".route-map")!;
+    card.addEventListener("focusin", () => mark(focused()));
+    card.addEventListener("focusout", () => mark());
+    this.modal.onmouseover = (e) => mark((e.target as HTMLElement).closest<HTMLElement>("[data-zone]")?.dataset.zone ?? focused());
+    mark(focused());
     this.modal.onclick = (e) => {
       const target = e.target as HTMLElement;
       if (target === this.modal) return this.close();
@@ -1332,7 +1364,7 @@ export class UI {
           <h4 class="howto-title">Ship</h4>
           <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>"} to sail the ship.</li>
-            <li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while sailing to boost.</li>
+            ${g.propellerLevel >= 1 ? `<li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while sailing to boost.</li>` : ""}
             <li>${this.touch ? "Tap <b>Dive</b>" : "Press <kbd>Space</kbd>"} to drop the sub. Drive back up to the ship to dock, recharge and repair.</li>
             <li>Sail next to an island and ${this.touch ? "tap <b>Shop</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to sell your haul and buy upgrades.</li>
             <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
@@ -1376,7 +1408,7 @@ export class UI {
         <details class="acc">
           <summary>Upgrades</summary>
           <p class="muted">Collect treasure on your dives, then sell it at island shops to earn money. Spend it there on upgrades for your sub. Different shops stock different upgrades, so visit more than one.</p>
-          <ul class="upg-sum">${UPGRADE_ORDER.map((id) => {
+          <ul class="upg-sum" style="--pips:${Math.max(...UPGRADE_ORDER.map((id) => UPGRADES[id].levels.length))}">${UPGRADE_ORDER.map((id) => {
             const def = UPGRADES[id];
             const lvl = g.up[id];
             const pips = def.levels.map((_, i) => `<i class="${i <= lvl ? "on" : ""}"></i>`).join("");

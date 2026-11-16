@@ -8,6 +8,8 @@ export type CreatureKind =
   | "squid"
   | "angler"
   | "whale"
+  | "orca"
+  | "orcacalf"
   | "mobydick"
   | "stingray"
   | "manta"
@@ -40,7 +42,8 @@ export const turtleScale = (tint: number) => TURTLE_SCALES[Math.floor(tint * 3) 
 const TURTLE_MAX = TURTLE_SCALES[TURTLE_SCALES.length - 1];
 export const JELLY_SCALE = 0.5;
 /** Manta rays come in three sizes, the largest as they were before, picked by the same third of the tint as their color. */
-export const MANTA_SCALES = [0.8, 0.9, 1];
+export const MANTA_SCALES = [0.8, 0.9, 1].map((s) => s * 0.75);
+export const STINGRAY_SCALE = 0.5;
 export const mantaScale = (tint: number) => MANTA_SCALES[Math.floor(tint * 3) % 3];
 /** Anglerfish come in three sizes, the largest as they were before, picked by the same third of the tint as their color. */
 export const ANGLER_SCALES = [0.65, 0.75, 0.85];
@@ -75,6 +78,12 @@ export const GIANT_SCALE = COLOSSAL_SCALE * 0.75;
 /** Segments in each of the giant squid's two long tentacles (an ordinary squid has 11). */
 export const GIANT_TENTACLE = 24;
 
+/** How big the orca is drawn against its 330 px design, and how much smaller a calf is than an adult. */
+export const ORCA_SCALE = 1;
+/** The orca is drawn turned this far nose-down (10 degrees) to level out its arched body. */
+export const ORCA_TILT = (10 * Math.PI) / 180;
+export const ORCA_CALF_SCALE = 0.38;
+
 /** Kinds drawn behind the sea floor and scenery, so the sub passes in front of them. */
 export const BACKGROUND_KINDS: CreatureKind[] = ["bluewhale"];
 
@@ -85,14 +94,28 @@ export const CREATURES: Record<CreatureKind, CreatureDef> = {
   hammerhead: { name: "Hammerhead Shark", radius: 32 * SHARK_SCALE * HAMMERHEAD_SCALE, harmful: true },
   squid: { name: "Squid", radius: 32 * SQUID_SCALE, harmful: true },
   angler: { name: "Anglerfish", radius: 21 * ANGLER_MAX, harmful: true },
-  stingray: { name: "Stingray", radius: 26, harmful: false },
-  manta: { name: "Manta Ray", radius: 62, harmful: false },
+  stingray: { name: "Stingray", radius: 26 * STINGRAY_SCALE, harmful: false },
+  manta: { name: "Manta Ray", radius: 62 * 0.75, harmful: false },
   turtle: { name: "Sea Turtle", radius: 26 * TURTLE_MAX, harmful: false },
   bluewhale: { name: "Blue Whale", radius: 110, harmful: false },
   bigfin: { name: "Bigfin Squid", radius: 26 * BIGFIN_SCALE, harmful: false },
   leviathan: { name: "Leviathan", radius: 95 * MONSTER_SCALE, harmful: true },
   colossal: { name: "Colossal Squid", radius: 38.5 * COLOSSAL_SCALE, harmful: true },
   giant: { name: "Giant Squid", radius: 38.5 * GIANT_SCALE, harmful: true },
+  orca: {
+    name: "Orca",
+    radius: 44 * ORCA_SCALE,
+    harmful: true,
+    body: (
+      [
+        [125, 36],
+        [50, 42],
+        [-40, 36],
+        [-110, 22],
+      ] as [number, number][]
+    ).map(([dx, r]): [number, number] => [dx * ORCA_SCALE, r * ORCA_SCALE]),
+  },
+  orcacalf: { name: "Orca Calf", radius: 44 * ORCA_CALF_SCALE, harmful: false },
   whale: {
     name: "Sperm Whale",
     radius: 130 * WHALE_SCALE,
@@ -129,10 +152,12 @@ export const CREATURE_EXTENT: Record<CreatureKind, number> = {
   hammerhead: 110 * SHARK_LENGTH * SHARK_SCALE * HAMMERHEAD_SCALE,
   squid: 140 * SQUID_SCALE,
   angler: 80 * ANGLER_MAX,
+  orca: 215 * ORCA_SCALE,
+  orcacalf: 215 * ORCA_CALF_SCALE,
   whale: 270 * WHALE_SCALE,
   mobydick: 270 * MOBY_DICK_SCALE,
-  stingray: 130,
-  manta: 170,
+  stingray: 130 * STINGRAY_SCALE,
+  manta: 170 * 0.75,
   turtle: 70 * TURTLE_MAX,
   bluewhale: 360 * BLUE_WHALE_SCALE,
   bigfin: 1000 * BIGFIN_SCALE,

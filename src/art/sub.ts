@@ -137,6 +137,8 @@ export function debrisColors(plating: number) {
 
 export interface AirGear {
   candles: number;
+  /** Whether the candle rack is carried at all, even when every candle is used up. */
+  rack?: boolean;
   scrubbers: boolean;
   electrolysis: boolean;
 }
@@ -325,7 +327,7 @@ export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, p
   part('sonar', () => drawSonar(ctx, up.sonar));
   if (gear?.scrubbers) part('scrubber', () => rear(() => drawScrubber(ctx, facing)));
   if (gear?.electrolysis) part('electro', () => drawElectrolysis(ctx, t, facing));
-  if (gear?.candles) part('candles', () => drawCandles(ctx, gear.candles));
+  if (gear?.candles || gear?.rack) part('candles', () => drawCandles(ctx, gear.candles));
   ctx.restore();
 }
 
