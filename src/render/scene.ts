@@ -1,12 +1,13 @@
 import type { Game } from '../game/game';
 import { allAchievementsEarned } from '../game/save';
 import type { WreckKind } from '../data/zones';
-import { SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE, CRACK_TIME, HOOK_DROP } from '../config';
+import { RADIO_FX_SWITCH, SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE, CRACK_TIME, HOOK_DROP } from '../config';
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
 import { CATALOG } from '../data/catalog';
 import { buoyLabel, routesFrom, PORTALS } from '../data/routes';
-import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, drawGlassCracks, runningLights, sternStretch, anchorFor, lampFor, challengerBoomTips, challengerViewport, CAPSULE_SIDE_VIEWPORT, COCKPIT, REAR_LAMP } from '../art/sub';
+import { ULYSSES_DOME, ULYSSES_LIGHT_RGB, ULYSSES_GLOW_X, ULYSSES_GLOW_R, drawUlyssesLamps, drawUlyssesCage, clipOutUlyssesFront } from '../art/ulysses';
+import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, drawGlassCracks, runningLights, sternStretch, anchorFor, lampFor, rearLampFor, challengerBoomTips, challengerViewport, CAPSULE_SIDE_VIEWPORT, COCKPIT, REAR_LAMP } from '../art/sub';
 import { drawIslandGulls } from '../art/gulls';
 import { drawShip, drawIsland, dockPoles, drawCloud, cloudShape, drawBuoy, drawPortal, drawPortalStone, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
 import { BACKGROUND_KINDS, CREATURE_EXTENT, anglerRelSize } from '../data/creatures';
@@ -28,6 +29,38 @@ const DIM_SCALE = 0.75;
 const dimCanvas = document.createElement('canvas');
 
 /** Draws something at the current origin; when `dim` is set it is shaded darker and shrunk toward its base at `baseY`, so it reads as sitting back in a tunnel mouth instead of blocking it. */
+const flash = (n: number) => {
+  const v = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return v - Math.floor(v);
+};
+
+/** Small jagged static bolts that flicker out from an ellipse (rx, ry) around a point. */
+function drawStaticBolts(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, rx: number, ry: number, count: number) {
+  const frame = Math.floor(t * 9);
+  ctx.save();
+  ctx.lineCap = 'butt';
+  ctx.lineJoin = 'miter';
+  ctx.strokeStyle = 'rgba(214, 240, 255, 0.85)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < count; i++) {
+    const k = frame * 13 + i * 5;
+    if (flash(k) < 0.45) continue;
+    const a = flash(k + 1) * Math.PI * 2;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    const len = 8 + flash(k + 2) * 8;
+    ctx.beginPath();
+    ctx.moveTo(x + dx * rx, y + dy * ry);
+    for (let seg = 1; seg <= 4; seg++) {
+      const d = (len * seg) / 4;
+      const zig = seg % 2 ? 4 : -4;
+      ctx.lineTo(x + dx * (rx + d) - dy * zig, y + dy * (ry + d) + dx * zig);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawDimmed(ctx: CanvasRenderingContext2D, dim: boolean, draw: (c: CanvasRenderingContext2D) => void, baseY = 0) {
   if (!dim) {
     draw(ctx);
@@ -677,16 +710,16 @@ export function renderScene(g: Game) {
     ctx.restore();
   }
   const z = g.save.zone;
-  if (routesFrom(z, 'east').length && inView(world.width - SHIP_MARGIN - 40)) {
+  if (routesFrom(z, 'east', g.owned).length && inView(world.width - SHIP_MARGIN - 40)) {
     ctx.save();
     ctx.translate(world.width - SHIP_MARGIN - 40, waveY(world.width - SHIP_MARGIN - 40, t));
-    drawBuoy(ctx, t, buoyLabel(z, 'east'), 1);
+    drawBuoy(ctx, t, buoyLabel(z, 'east', g.owned), 1);
     ctx.restore();
   }
-  if (routesFrom(z, 'west').length && inView(SHIP_MARGIN + 40)) {
+  if (routesFrom(z, 'west', g.owned).length && inView(SHIP_MARGIN + 40)) {
     ctx.save();
     ctx.translate(SHIP_MARGIN + 40, waveY(SHIP_MARGIN + 40, t));
-    drawBuoy(ctx, t, buoyLabel(z, 'west'), -1);
+    drawBuoy(ctx, t, buoyLabel(z, 'west', g.owned), -1);
     ctx.restore();
   }
 
@@ -731,7 +764,7 @@ export function renderScene(g: Game) {
   ctx.translate(g.ship.x, bob);
   ctx.scale(g.ship.facing, 1);
   ctx.rotate(Math.sin(t * 0.9) * 0.02 + g.shipPitch);
-  drawShip(ctx, t, g.ship.facing, lampNight, Math.min(g.up.plating, g.up.oxygen), g.up.oxygen, g.treasureAlert, g.shipProp, g.up.propeller, g.save.skin);
+  drawShip(ctx, t, g.ship.facing, lampNight, Math.min(g.owned.plating, g.owned.oxygen), g.owned.oxygen, g.treasureAlert, g.shipProp, g.up.propeller, g.save.skin);
   ctx.restore();
 
   if (g.foam.length) {
@@ -768,9 +801,21 @@ export function renderScene(g: Game) {
     crumple(ctx);
     if (blink) ctx.globalAlpha = 0.4;
     if (g.swallow) ctx.globalAlpha *= 1 - clamp((g.swallow.t - SWALLOW_CLOSE + 0.6) / 0.5, 0, 1);
-    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, rack: g.save.candles > 0, scrubbers: g.save.scrubbers, electrolysis: g.save.electrolysis }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut);
+    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, rack: g.gear.candles > 0, scrubbers: g.gear.scrubbers, electrolysis: g.gear.electrolysis }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut);
     if (g.crack !== null) drawGlassCracks(ctx, Math.min(1, g.crack / CRACK_TIME), g.save.skin);
     ctx.restore();
+  }
+  if (g.radioFx >= 0 && !im) {
+    const fx = g.radioFx;
+    if (fx < RADIO_FX_SWITCH) drawStaticBolts(ctx, s.x, subY, t, 58, 28, 4);
+    else {
+      const ship = g.ship;
+      const onScreen = Math.abs(ship.x - g.cam.x) < g.view.w / 2 - 60;
+      const dir = ship.x > s.x ? 1 : -1;
+      const ax = onScreen ? ship.x : g.cam.x + dir * (g.view.w / 2 - 70);
+      const ay = onScreen ? waveY(ship.x, t) - 110 : subY - 30;
+      drawStaticBolts(ctx, ax, ay, t, 34, 22, 4);
+    }
   }
   if (g.swallow) for (const c of world.creatures) if (c.kind === 'leviathan') drawCreature(ctx, c, 'front');
   for (const d of g.debris) {
@@ -946,6 +991,7 @@ export function renderScene(g: Game) {
   const spot = STATS.light[g.up.light];
   let lamp: { x: number; y: number; angle: number } | null = null;
   const boomLamps: { x: number; y: number; angle: number; power?: number }[] = [];
+  let rearBeam: { x: number; y: number; angle: number; range: number; spread: number } | null = null;
   const elapsed = FLICKER_TIME - g.flicker;
   const dip = g.flicker > 0 && ((elapsed > 0.05 && elapsed < 0.15) || (elapsed > 0.27 && elapsed < 0.37));
   const glitchDip = g.glitch > 0 && Math.sin(t * 47) + Math.sin(t * 29.3) > 0.4;
@@ -964,11 +1010,27 @@ export function renderScene(g: Game) {
     s.crankLight / 0.8,
   );
   const lampPt = lampFor(g.save.skin, g.subPose);
+  let glowPts = [{ x: s.x, y: subY }];
+  let glowR = spot ? spot.glow * reach : 0;
+  const warmGlows: { x: number; y: number; r: number; a: number }[] = [];
+  if (diving && g.save.skin === 'ulysses' && subY > 8 && (!im || crush < 1)) {
+    const cs = Math.cos(s.tilt);
+    const sn = Math.sin(s.tilt);
+    const at = (p: { x: number; y: number }) => ({ x: s.x + s.facing * (p.x * cs - p.y * sn), y: subY + (p.x * sn + p.y * cs) });
+    const eye = at(ULYSSES_DOME);
+    const domePower = 0.15 + 0.85 * g.lampLevel;
+    warmGlows.push({ ...eye, r: 400, a: 0.14 * alive * domePower });
+    lights.push({ x: eye.x, y: eye.y, r: 300, a: 0.5 * alive * domePower, sub: true });
+  }
   if (diving) {
     if (spot && lit) {
-      lights.push({ x: s.x, y: subY, r: spot.glow * reach, a: glitchDip ? fade * 0.4 : fade, sub: true });
       const cos = Math.cos(s.tilt);
       const sin = Math.sin(s.tilt);
+      if (g.save.skin === 'ulysses') {
+        glowPts = ULYSSES_GLOW_X.map((lx) => ({ x: s.x + s.facing * lx * cos, y: subY + lx * sin }));
+        glowR = ULYSSES_GLOW_R * reach;
+      }
+      for (const p of glowPts) lights.push({ x: p.x, y: p.y, r: glowR, a: glitchDip ? fade * 0.4 : fade, sub: true });
       const aim = s.facing > 0 ? s.tilt + frontDown : Math.PI - (s.tilt + frontDown);
       const challenger = g.save.skin === 'challenger';
       lamp = {
@@ -990,15 +1052,18 @@ export function renderScene(g: Game) {
         }
       }
       if (g.up.light === 3 && g.save.skin !== 'challenger') {
-        lights.push({
-          x: s.x + s.facing * ((REAR_LAMP.x - sternStretch(g.up.cargo)) * cos - REAR_LAMP.y * sin) * pieceScale('rearLamp', crush),
-          y: subY + ((REAR_LAMP.x - sternStretch(g.up.cargo)) * sin + REAR_LAMP.y * cos) * pieceScale('rearLamp', crush),
+        const rearPt = rearLampFor(g.save.skin, g.up.cargo);
+        const rear = {
+          x: s.x + s.facing * (rearPt.x * cos - rearPt.y * sin) * pieceScale('rearLamp', crush),
+          y: subY + (rearPt.x * sin + rearPt.y * cos) * pieceScale('rearLamp', crush),
           r: 420 * reach,
           angle: s.facing > 0 ? Math.PI + s.tilt - rearDown : rearDown - s.tilt,
           spread: 0.5,
           a: a * fade,
           sub: true,
-        });
+        };
+        lights.push(rear);
+        rearBeam = { x: rear.x, y: rear.y, angle: rear.angle, range: rear.r, spread: rear.spread };
       }
     } else if (g.save.skin === 'challenger') {
       const cos = Math.cos(s.tilt);
@@ -1014,10 +1079,11 @@ export function renderScene(g: Game) {
     } else if (g.save.skin !== 'oceangate') {
       const cos = Math.cos(s.tilt);
       const sin = Math.sin(s.tilt);
+      const eye = g.save.skin === 'ulysses' ? ULYSSES_DOME : COCKPIT;
       lights.push({
-        x: s.x + s.facing * (COCKPIT.x * cos - COCKPIT.y * sin) * pieceScale('glass', crush),
-        y: subY + (COCKPIT.x * sin + COCKPIT.y * cos) * pieceScale('glass', crush),
-        r: 48,
+        x: s.x + s.facing * (eye.x * cos - eye.y * sin) * pieceScale('glass', crush),
+        y: subY + (eye.x * sin + eye.y * cos) * pieceScale('glass', crush),
+        r: g.save.skin === 'ulysses' ? 192 : 48,
         a: 0.8 * cockpitPower * alive,
         sub: true,
       });
@@ -1074,24 +1140,32 @@ export function renderScene(g: Game) {
   if (lamp && spot) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const halo = ctx.createRadialGradient(s.x, subY, 0, s.x, subY, spot.glow * reach);
-    halo.addColorStop(0, `rgba(${spot.rgb},${0.14 * fade})`);
-    halo.addColorStop(1, `rgba(${spot.rgb},0)`);
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(s.x, subY, spot.glow * reach, 0, Math.PI * 2);
-    ctx.fill();
-    const sources: { x: number; y: number; angle: number; power?: number }[] = [lamp, ...boomLamps];
+    const glowRgb = g.save.skin === 'ulysses' ? ULYSSES_LIGHT_RGB : spot.rgb;
+    for (const p of glowPts) {
+      const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowR);
+      halo.addColorStop(0, `rgba(${glowRgb},${(glowPts.length > 1 ? 0.05 : 0.14) * fade})`);
+      halo.addColorStop(1, `rgba(${glowRgb},0)`);
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const orange = g.save.skin === 'ulysses';
+    const rgb = orange ? ULYSSES_LIGHT_RGB : spot.rgb;
+    const sources: { x: number; y: number; angle: number; power?: number; range?: number; spread?: number }[] = [lamp, ...boomLamps];
+    if (orange && rearBeam) sources.push({ ...rearBeam, power: 0.8 });
     for (const l of sources) {
-      const tint = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, spot.range * reach);
-      tint.addColorStop(0, `rgba(${spot.rgb},${0.016 * a * fade * (l.power ?? 1)})`);
-      tint.addColorStop(1, `rgba(${spot.rgb},0)`);
+      const range = l.range ?? spot.range * reach;
+      const spread = l.spread ?? spot.spread;
+      const tint = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, range);
+      tint.addColorStop(0, `rgba(${rgb},${0.016 * a * fade * (l.power ?? 1)})`);
+      tint.addColorStop(1, `rgba(${rgb},0)`);
       ctx.fillStyle = tint;
       for (let i = 0; i < 10; i++) {
         const k = 0.4 + 0.8 * (i / 9);
         ctx.beginPath();
         ctx.moveTo(l.x, l.y);
-        ctx.arc(l.x, l.y, spot.range * reach, l.angle - spot.spread * k, l.angle + spot.spread * k);
+        ctx.arc(l.x, l.y, range, l.angle - spread * k, l.angle + spread * k);
         ctx.closePath();
         ctx.fill();
       }
@@ -1122,7 +1196,8 @@ export function renderScene(g: Game) {
     crumple(ctx);
     ctx.save();
     crumplePiece(ctx, 'hull', crush);
-    if (g.save.skin !== 'oceangate' && g.save.skin !== 'sm13' && g.save.skin !== 'challenger') runningLights(ctx, t, g.warning, sternStretch(g.up.cargo), g.save.skin === 'standard');
+    if (g.save.skin !== 'oceangate' && g.save.skin !== 'sm13' && g.save.skin !== 'ulysses' && g.save.skin !== 'challenger') runningLights(ctx, t, g.warning, sternStretch(g.up.cargo), g.save.skin === 'standard');
+    if (g.save.skin === 'ulysses') drawUlyssesLamps(ctx, g.lampLevel);
     ctx.restore();
     if (g.save.skin === 'standard' || g.save.skin === 'capsule') {
       ctx.save();
@@ -1135,6 +1210,28 @@ export function renderScene(g: Game) {
       const dark = Math.max(clamp((s.y - startPx) / (deepPx - startPx), 0, 1), night * 0.8);
       crumplePiece(ctx, 'glass', crush);
       glassGlow(ctx, dark * 0.55 * cockpitPower, g.save.skin, g.subPose);
+    }
+    if (warmGlows.length) {
+      ctx.save();
+      crumplePiece(ctx, 'hull', crush);
+      clipOutUlyssesFront(ctx);
+      ctx.globalCompositeOperation = 'lighter';
+      const w = warmGlows[0];
+      const glow = ctx.createRadialGradient(ULYSSES_DOME.x, ULYSSES_DOME.y, 0, ULYSSES_DOME.x, ULYSSES_DOME.y, w.r);
+      glow.addColorStop(0, `rgba(${ULYSSES_LIGHT_RGB},${w.a})`);
+      glow.addColorStop(1, `rgba(${ULYSSES_LIGHT_RGB},0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(ULYSSES_DOME.x, ULYSSES_DOME.y, w.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    if (g.save.skin === 'ulysses') {
+      ctx.save();
+      crumplePiece(ctx, 'hull', crush);
+      clipOutUlyssesFront(ctx);
+      drawUlyssesCage(ctx);
+      ctx.restore();
     }
     ctx.restore();
   }
@@ -1315,6 +1412,13 @@ export function renderScene(g: Game) {
     const label = `Ship ${Math.round(Math.abs(g.ship.x - s.x) / PX_PER_M)} m`;
     ctx.strokeText(label, x, y + 40 * u);
     ctx.fillText(label, x, y + 40 * u);
+    if (g.radioReady) {
+      ctx.font = `600 ${12 * u}px Fredoka, Nunito, sans-serif`;
+      ctx.fillStyle = '#BFE6FF';
+      const hint = g.ui.touch ? 'Tap Radio to call the ship' : 'Press R to call the ship';
+      ctx.strokeText(hint, x, y + 58 * u);
+      ctx.fillText(hint, x, y + 58 * u);
+    }
     ctx.textAlign = 'left';
   }
   if (g.speech.length && (diving || g.mode === 'docked')) {
@@ -1375,6 +1479,72 @@ export function renderScene(g: Game) {
       ctx.fillText(b.text, 8 * u, 1 * u);
       ctx.restore();
     });
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+  if (g.radioReply && diving) {
+    const u = view.ui * view.dpr;
+    const rp = g.radioReply;
+    const shipX = g.ship.x * k + ox;
+    const onScreen = shipX > 0 && shipX < cw;
+    ctx.font = `500 ${14 * u}px Fredoka, Nunito, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    const pop = Math.min(1, rp.age / 0.2);
+    ctx.globalAlpha = Math.min(pop, rp.life / 0.4);
+    const w = ctx.measureText(rp.text).width + 62 * u;
+    const h = 54 * u;
+    const r = 14 * u;
+    const cx = onScreen ? Math.min(cw - w / 2 - 8 * u, Math.max(w / 2 + 8 * u, shipX)) : rp.side > 0 ? cw - w / 2 - 14 * u : w / 2 + 14 * u;
+    const cy = onScreen ? (bob - 150) * k + oy : (s.y - 70) * k + oy;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(0.8 + 0.2 * pop, 0.8 + 0.2 * pop);
+    ctx.fillStyle = mixColor('#FFFFFF', '#0E1838', g.uiDark);
+    ctx.strokeStyle = mixColor('#14245A', '#8FA2E0', g.uiDark);
+    ctx.lineWidth = 1.5 * u;
+    const x0 = -w / 2;
+    const x1 = w / 2;
+    const y0 = -h / 2;
+    const y1 = h / 2;
+    ctx.beginPath();
+    ctx.moveTo(x0 + r, y0);
+    ctx.lineTo(x1 - r, y0);
+    ctx.arcTo(x1, y0, x1, y0 + r, r);
+    if (!onScreen && rp.side > 0) {
+      ctx.lineTo(x1, -8 * u);
+      ctx.lineTo(x1 + 16 * u, 0);
+      ctx.lineTo(x1, 8 * u);
+    }
+    ctx.lineTo(x1, y1 - r);
+    ctx.arcTo(x1, y1, x1 - r, y1, r);
+    if (onScreen) {
+      const tx = Math.max(x0 + r + 10 * u, Math.min(x1 - r - 10 * u, shipX - cx));
+      ctx.lineTo(tx + 8 * u, y1);
+      ctx.lineTo(tx, y1 + 18 * u);
+      ctx.lineTo(tx - 8 * u, y1);
+    }
+    ctx.lineTo(x0 + r, y1);
+    ctx.arcTo(x0, y1, x0, y1 - r, r);
+    if (!onScreen && rp.side < 0) {
+      ctx.lineTo(x0, 8 * u);
+      ctx.lineTo(x0 - 16 * u, 0);
+      ctx.lineTo(x0, -8 * u);
+    }
+    ctx.lineTo(x0, y0 + r);
+    ctx.arcTo(x0, y0, x0 + r, y0, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#6CC5F0';
+    ctx.beginPath();
+    ctx.arc(x0 + 28 * u, 0, 5 * u, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = mixColor('#14245A', '#E8EEFF', g.uiDark);
+    ctx.fillText(rp.text, 8 * u, 1 * u);
+    ctx.restore();
     ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';

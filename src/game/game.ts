@@ -10,11 +10,12 @@ import { DAY_SECONDS, NOON, START_DAY, daylight } from "../render/daylight";
 import { rainAt } from "../render/weather";
 import { AudioManager } from "./audio";
 import { allAchievementsEarned, fullyUpgraded, loadSave, newSave, writeSave, type SaveData, type SwitchMode } from "./save";
-import { GEAR, STATS, UPGRADES, WEIGHTS, stockAt, type GearId, type UpgradeId } from "../data/upgrades";
+import { GEAR, TRASH_GIFTS, STATS, UPGRADES, UPGRADE_ORDER, WEIGHTS, stockAt, type GearId, type Loadout, type UpgradeId } from "../data/upgrades";
+import { ULYSSES_REACH, ULYSSES_TAIL, ULYSSES_WEIGHTS } from "../art/ulysses";
 import { weightMounts, WEIGHT_Y, GATE_THRUSTER_BUBBLES, challengerBase, challengerWeights } from "../art/sub";
-import { ITEMS, ITEM_KINDS } from "../data/items";
+import { ITEMS, ITEM_KINDS, REGROW_KINDS } from "../data/items";
 import { ZONES, type WreckKind } from "../data/zones";
-import { SKINS, CAPSULE_DEATHS, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
+import { SKINS, CAPSULE_DEATHS, ULYSSES_ZONE, ULYSSES_DIVE_ZOOM, ULYSSES_DEPTH_RATING, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
 import { CREATURES, CREATURE_EXTENT, ORCA_TILT, creatureRadius, whalePitch, type CreatureKind } from "../data/creatures";
 import { leviathanSpine } from "../data/leviathan";
 import { routesFrom, PORTALS, type Portal, type Endpoint, type Side } from "../data/routes";
@@ -27,6 +28,7 @@ import {
   HOLD_MOTOR_VOLUME,
   BOOST_ENGINE_VOLUME,
   BOOST_ENGINE_PITCH,
+  RADIO_FX_SWITCH,
   SHIP_MARGIN,
   LAMP_PITCH_DOWN,
   LAMP_PITCH_FORWARD,
@@ -262,7 +264,15 @@ const SURFACE_Y = 8;
 const SURFACE_RAMP = 12;
 const SURFACE_GRAVITY = 1100;
 const SAIL_ZONE = SHIP_MARGIN + 100;
+/** How deep the sub may be, in px, for the radio to reach the ship. */
+const RADIO_MAX_Y = 100;
+/** Seconds into the radio sound when it ends. */
+const RADIO_FX_END = 9;
+const RADIO_SHIP_SPEED = 280;
 /** How quickly the camera eases while zooming for a zone's `shipZoom`, slower than the usual 1.6 so the pull-back is gentle. */
+/** Seconds in a zone between one extra seaweed or shell growing in. */
+const EXTRA_GROW_SECONDS = 60;
+
 const SHIP_ZOOM_RATE = 0.7;
 const PORTAL_EARSHOT = 2500;
 const UNLOCK_NOTE_DELAY = 5;
@@ -271,6 +281,9 @@ const POSE_RISE = 0.3;
 const BOOM_SPEED = 0.8;
 /** Radians each of climbing, diving and sailing leans the upright Challenger skin: about 1.5 degrees, so 3 in all at most. */
 const CHALLENGER_TILT = 0.026;
+/** How far the huge Ulysses leans (radians, about 6 degrees at most) and how quickly it settles into the lean, against 0.35 and 6 for the other skins. */
+const ULYSSES_TILT = 0.1;
+const ULYSSES_TILT_RATE = 1.2;
 /** How far the upright Challenger skin reaches from its center, in px, matching its drawing. */
 const CHALLENGER_REACH = { half: 60, above: 72, below: 81 };
 const POSE_FALL = 0.8;
@@ -303,6 +316,12 @@ export class Game {
   private driving = false;
   private lastBump = 0;
   atSurface = false;
+  /** Whether the ship is sailing over to the surfaced sub after a radio call. */
+  radioCall = false;
+  /** Seconds since the radio call began, or -1: the sub crackles with static at first, then the ship's side does. */
+  radioFx = -1;
+  /** The ship's answer over the radio, shown over the ship or from the screen edge it is coming from. */
+  radioReply: { text: string; age: number; life: number; side: 1 | -1 } | null = null;
   private airLow = false;
   private holdingBreath = false;
   /** The grabber arm: t is seconds since it was fired (-1 when stowed), dir is its world direction. */
@@ -356,6 +375,7 @@ export class Game {
   /** `ui` is the scale for screen-space drawing; `scale` also includes the dive zoom. */
   view = { w: 1280, h: 720, scale: 1, dpr: 1, ui: 1, zoom: 1 };
   private zoom = 1;
+  private growWait = 0;
   t = 0;
   paused = true;
   /** True while the skins list is open in the menu: the camera drifts left so the sub and ship sit clear of the menu. */
@@ -488,17 +508,54 @@ export class Game {
     this.ui = new UI(this);
   }
 
-  get up() {
+  /** The upgrades in effect: everything maxed while the Ulysses is worn, otherwise what was bought. */
+  get up(): Loadout {
+    if (this.save.skin === "ulysses") return this.maxedUp;
+    const eq = this.save.equipped;
+    if (!Object.keys(eq).length) return this.save.upgrades;
+    return Object.fromEntries(
+      UPGRADE_ORDER.map((id) => [id, Math.min(eq[id] ?? Infinity, this.save.upgrades[id])]),
+    ) as Loadout;
+  }
+
+  /** Wears a bought level of an upgrade (docked only). Returns why it could not, or null. */
+  equip(id: UpgradeId, level: number) {
+    if (this.mode !== "docked") return "Return to the ship to change your loadout.";
+    if (level < 0 || level > this.owned[id]) return "You haven't bought that level yet.";
+    if (id === "cargo" && this.cargoCount() > STATS.cargo[level]) return "Sell some of your haul first: it won't fit in that hold.";
+    if (level === this.owned[id]) delete this.save.equipped[id];
+    else this.save.equipped[id] = level;
+    this.resetSub();
+    this.persist();
+    return null;
+  }
+  /** What the player has actually bought, which the shop and the achievements go by. */
+  get owned() {
     return this.save.upgrades;
+  }
+  private readonly maxedUp = Object.fromEntries(UPGRADE_ORDER.map((id) => [id, UPGRADES[id].levels.length - 1])) as Loadout;
+  /** The air gear in effect: all of it while the Ulysses is worn. */
+  get gear() {
+    const all = this.save.skin === "ulysses";
+    return {
+      candles: all ? GEAR.candles.max : this.save.candles,
+      scrubbers: all || this.save.scrubbers,
+      electrolysis: all || this.save.electrolysis,
+      weights: all || this.save.weights,
+      radio: all || this.save.radio,
+    };
   }
   /** How far the sub's body reaches sideways, up and down from its center, for bumping into terrain; the tall Challenger skin reaches further up and down once it stands. */
   private get subHalf() {
+    if (this.save.skin === "ulysses") return ULYSSES_REACH.half;
     return this.save.skin === "challenger" ? SUB_HALF_WIDTH + (CHALLENGER_REACH.half - SUB_HALF_WIDTH) * this.subPose : SUB_HALF_WIDTH;
   }
   private get subAbove() {
+    if (this.save.skin === "ulysses") return ULYSSES_REACH.above;
     return this.save.skin === "challenger" ? 24 + (CHALLENGER_REACH.above - 24) * this.subPose : 24;
   }
   private get subBelow() {
+    if (this.save.skin === "ulysses") return ULYSSES_REACH.below;
     return this.save.skin === "challenger" ? 26 + (CHALLENGER_REACH.below - 26) * this.subPose : 26;
   }
   /** The propeller level that sets speed and boost: the Challenger skin always has the stock one, whatever was bought. */
@@ -506,7 +563,7 @@ export class Game {
     return this.save.skin === "challenger" ? 0 : this.up.propeller;
   }
   get depthRating() {
-    return this.save.skin === "challenger" ? CHALLENGER_DEPTH_RATING : STATS.depthRating[this.up.plating];
+    return this.save.skin === "ulysses" ? ULYSSES_DEPTH_RATING : this.save.skin === "challenger" ? CHALLENGER_DEPTH_RATING : STATS.depthRating[this.up.plating];
   }
   get maxOxygen() {
     return STATS.oxygen[this.up.oxygen];
@@ -745,8 +802,37 @@ export class Game {
     this.save.money += v;
     this.save.stats.earned += v;
     this.save.cargo = {};
+    this.releaseRegrow();
+    this.applyRegrow(this.save.zone, this.world, this.offscreen());
     this.persist();
     return v;
+  }
+
+  /** The x range of the world on screen plus a margin, where nothing may appear. */
+  private offscreen() {
+    return { x0: this.cam.x - this.view.w / 2 - 600, x1: this.cam.x + this.view.w / 2 + 600 };
+  }
+
+  /** Cheap finds that were picked up (and now sold or lost) become due to grow back in their zones. */
+  private releaseRegrow() {
+    for (const [z, held] of Object.entries(this.save.regrowHeld)) {
+      const due = (this.save.regrowDue[Number(z)] ??= {});
+      for (const k of REGROW_KINDS as ("seaweed" | "shell")[]) due[k] = (due[k] ?? 0) + (held[k] ?? 0);
+    }
+    this.save.regrowHeld = {};
+  }
+
+  /** Grows back what is due in a zone: far from `avoid` when given, otherwise where it first lay. */
+  private applyRegrow(zone: number, world: World, avoid?: { x0: number; x1: number }) {
+    const due = this.save.regrowDue[zone];
+    if (!due) return;
+    for (const k of REGROW_KINDS as ("seaweed" | "shell")[]) {
+      if (!due[k]) continue;
+      const slots = world.regrow(k, due[k]!, avoid);
+      due[k]! -= slots.length;
+      const taken = this.save.caveLoot[zone];
+      if (taken) this.save.caveLoot[zone] = taken.filter((s) => !slots.includes(s));
+    }
   }
 
   /** Price of the next purchase of an item, or null when it is fully bought. */
@@ -773,7 +859,7 @@ export class Game {
         GEAR.candles.max,
       );
     else this.save[id] = step > 0;
-    this.candlesLeft = this.save.candles;
+    this.candlesLeft = this.gear.candles;
     this.persist();
   }
 
@@ -815,6 +901,7 @@ export class Game {
   /** Gives or takes away the dive weights without a purchase (for the test panel). */
   setSkin(skin: SkinId) {
     this.save.skin = skin;
+    if (this.mode === "docked") this.resetSub();
     this.persist();
   }
 
@@ -851,7 +938,9 @@ export class Game {
     const mounts =
       this.save.skin === "challenger"
         ? challengerWeights(this.subPose)
-        : weightMounts(this.up.cargo).map((x) => ({ x, y: WEIGHT_Y }));
+        : this.save.skin === "ulysses"
+          ? ULYSSES_WEIGHTS
+          : weightMounts(this.up.cargo).map((x) => ({ x, y: WEIGHT_Y }));
     for (const { x: lx, y: ly } of mounts) {
       this.weightFx.push({
         x: s.x + s.facing * (lx * cos - ly * sin),
@@ -871,13 +960,14 @@ export class Game {
   }
 
   buy(id: UpgradeId, island: string) {
-    const next = UPGRADES[id].levels[this.up[id] + 1];
+    const next = UPGRADES[id].levels[this.owned[id] + 1];
     if (!next || this.save.money < next.cost) return false;
     const slot = stockAt(id, this.save.stock[id], this.save.zone, island).open;
     if (slot < 0) return false;
     this.save.stock[id].push(slot);
     this.save.money -= next.cost;
-    this.up[id]++;
+    this.owned[id]++;
+    delete this.save.equipped[id];
     this.audio.play("chime1");
     if (this.mode === "docked") this.resetSub();
     this.persist();
@@ -924,9 +1014,9 @@ export class Game {
     const z = this.save.zone;
     const portal = this.openPortal();
     if (portal && Math.abs(portal.x - x) < 200) return { kind: "portal", portal };
-    if (x > this.world.width - SAIL_ZONE && routesFrom(z, "east").length)
+    if (x > this.world.width - SAIL_ZONE && routesFrom(z, "east", this.owned).length)
       return { kind: "sail", side: "east", name: "the route map" };
-    if (x < SAIL_ZONE && routesFrom(z, "west").length)
+    if (x < SAIL_ZONE && routesFrom(z, "west", this.owned).length)
       return { kind: "sail", side: "west", name: "the route map" };
     return null;
   }
@@ -940,7 +1030,8 @@ export class Game {
     this.updateGear(dt);
     this.audio.setScene(this.underwater ? "dive" : "surface");
     this.audio.setSailing(
-      this.mode === "docked" && !this.paused && !this.travel && Math.abs(this.input.axis().x) > 0.2,
+      (this.mode === "docked" && !this.paused && !this.travel && Math.abs(this.input.axis().x) > 0.2) ||
+        (this.radioCall && !this.paused && this.shipInView()),
       1 + BOOST_ENGINE_VOLUME * this.boost,
       1 + BOOST_ENGINE_PITCH * this.boost,
     );
@@ -952,6 +1043,23 @@ export class Game {
       this.world.abyss !== null && this.sub.y > this.world.abyssTop(this.sub.x),
     );
     this.flicker = Math.max(0, this.flicker - dt);
+    if (this.radioFx >= 0) {
+      const before = this.radioFx;
+      this.radioFx += dt;
+      if (before < RADIO_FX_SWITCH && this.radioFx >= RADIO_FX_SWITCH) {
+        this.radioReply = {
+          text: this.shipInView() ? "Coming in!" : "On my way!",
+          age: 0,
+          life: SPEECH_TIME,
+          side: this.ship.x > this.sub.x ? 1 : -1,
+        };
+      }
+      if (this.radioFx > RADIO_FX_END) this.radioFx = -1;
+    }
+    if (this.radioReply) {
+      this.radioReply.age += dt;
+      if ((this.radioReply.life -= dt) <= 0) this.radioReply = null;
+    }
     this.glitch = this.glitchHeld ? GLITCH_TIME : Math.max(0, this.glitch - dt);
     if (this.deathGlitch !== null && (this.deathGlitch -= dt) <= 0) {
       this.deathGlitch = null;
@@ -1036,11 +1144,16 @@ export class Game {
           ? DEBUG_ZOOM
           : inAbyss
             ? cavern
-            : this.world.def.diveZoom * (1 - (1 - BOOST_ZOOM) * 0.5 * this.subBoost)
+            : (this.save.skin === "ulysses" ? Math.min(this.world.def.diveZoom, ULYSSES_DIVE_ZOOM) : this.world.def.diveZoom) * (1 - (1 - BOOST_ZOOM) * 0.5 * this.subBoost)
         : (1 - (1 - BOOST_ZOOM) * this.boost) * this.shipZoom();
     if (Math.abs(zoomTarget - this.zoom) > 0.001) {
       this.zoom += (zoomTarget - this.zoom) * damp(this.mode === "docked" && this.world.def.polar?.shipZoom ? SHIP_ZOOM_RATE : 1.6, dt);
       this.applyView();
+    }
+
+    if (live && !this.world.def.catalog && (this.growWait += dt) >= EXTRA_GROW_SECONDS) {
+      this.growWait = 0;
+      this.world.growExtra(this.offscreen());
     }
 
     if (live) {
@@ -1074,12 +1187,11 @@ export class Game {
     const ax = this.input.axis().x;
     if (Math.abs(ax) > 0.2) this.ship.facing = ax > 0 ? 1 : -1;
     const prevVx = this.ship.vx;
-    const boosting = this.input.isDown("boost") && this.propellerLevel >= 1 && Math.abs(ax) > 0.2;
+    const boosting = this.input.isDown("boost") && Math.abs(ax) > 0.2;
     this.boost += ((boosting ? 1 : 0) - this.boost) * damp(2.5, dt);
     if (boosting) this.boostUsed = true;
     if (
       Math.abs(ax) > 0.2 &&
-      this.propellerLevel >= 1 &&
       !this.boostUsed &&
       !this.speech.length &&
       (this.boostTipWait -= dt) <= 0
@@ -1175,6 +1287,7 @@ export class Game {
   launch() {
     if (this.mode !== "docked") return;
     this.mode = "diving";
+    this.radioCall = false;
     this.hookGrip = 0;
     this.alarmed = false;
     this.audio.play("splash");
@@ -1246,6 +1359,57 @@ export class Game {
     }
   }
 
+  /** Whether a radio call would go out: a surfaced sub and a ship that is out of sight. */
+  get radioReady() {
+    return this.mode === "diving" && this.gear.radio && !this.radioCall && this.sub.y <= RADIO_MAX_Y && !this.shipInView();
+  }
+
+  /** Radio: sends the ship sailing over to a sub that is at the surface. */
+  private callShip() {
+    if (this.radioCall) return this.say("The ship is already on its way!", "#6CC5F0");
+    if (this.sub.y > RADIO_MAX_Y) return this.say("We need to be near the surface to reach the ship.", "#6CC5F0");
+    if (this.shipInView()) return this.say("The ship is right there, no need for the radio!", "#6CC5F0");
+    this.radioCall = true;
+    this.radioReply = null;
+    this.audio.radioCall();
+    this.radioFx = 0;
+    this.say("I need a pickup.", "#6CC5F0");
+  }
+
+  /** While a radio call is active the ship sails to where the sub can mount it. */
+  private updateRadioShip(dt: number) {
+    if (!this.radioCall) return;
+    const s = this.sub;
+    const ship = this.ship;
+    if (s.y > RADIO_MAX_Y) {
+      this.radioCall = false;
+      return;
+    }
+    const mountFor = (f: number) => s.x - SUB_DOCK_OFFSET * f;
+    if ((mountFor(ship.facing) - ship.x) * ship.facing < -40) ship.facing = ship.facing === 1 ? -1 : 1;
+    const f = ship.facing;
+    const tx = mountFor(f);
+    const prevVx = ship.vx;
+    const want = f * clamp((tx - ship.x) * f * 2.2, 0, RADIO_SHIP_SPEED);
+    ship.vx += (want - ship.vx) * damp(3.5, dt);
+    if (ship.vx * f < 0) ship.vx = 0;
+    const x = ship.x + ship.vx * dt;
+    const shelf = this.world.def.polar?.shelf;
+    const lo = shelf && ship.x > shelf.x1 ? shelf.x1 + ICE_STOP : SHIP_MARGIN;
+    const hi = shelf && ship.x < shelf.x0 ? shelf.x0 - ICE_STOP : this.world.width - SHIP_MARGIN;
+    ship.x = clamp(x, lo, hi);
+    if (ship.x !== x && Math.abs(tx - ship.x) > 60) {
+      ship.vx = 0;
+      this.radioCall = false;
+      this.say("The ship can't get any closer. Meet it at the edge!", "#6CC5F0");
+    }
+    const accel = (ship.vx - prevVx) / dt;
+    this.updateSwing(dt, accel);
+    this.shipPitch += (clamp(-0.035 * Math.abs(ship.vx / 280) - 0.00007 * accel * ship.facing, -0.17, 0.05) - this.shipPitch) * damp(4, dt);
+    this.shipProp += (0.6 + Math.abs(ship.vx) * 0.012) * dt * 10;
+    this.emitWake(dt, Math.abs(ship.vx) / 280);
+  }
+
   /** True when the sub has settled in at the ship's mounting spot at the surface, ready for the hook to come down. */
   private inDockPosition() {
     const s = this.sub;
@@ -1278,6 +1442,7 @@ export class Game {
     if (this.airLow) this.audio.play("breathResurface");
     this.airLow = false;
     this.mode = "docked";
+    this.radioCall = false;
     this.hoist = 0;
     this.lowering = false;
     const beast = this.monster.stage === "chase" || this.monster.stage === "watch";
@@ -1342,6 +1507,8 @@ export class Game {
     if (this.swallow) return this.tickSwallow(dt, this.swallow);
     const inp = this.input;
     s.diveTime += dt;
+    if (this.gear.radio && inp.pressed("radio")) this.callShip();
+    this.updateRadioShip(dt);
     if (this.unlockNote && s.diveTime >= UNLOCK_NOTE_DELAY) {
       this.ui.toast(`Skin unlocked: ${SKINS[this.unlockNote].name} · equip it in Settings`);
       this.unlockNote = null;
@@ -1510,8 +1677,8 @@ export class Game {
     const lean =
       this.save.skin === "challenger"
         ? clamp(s.vy / 240, -1, 1) * CHALLENGER_TILT + clamp((s.vx * s.facing) / 400, -1, 1) * CHALLENGER_TILT
-        : clamp(s.vy / 240, -1, 1) * 0.35;
-    s.tilt += (lean - s.tilt) * damp(6, dt);
+        : clamp(s.vy / 240, -1, 1) * (this.save.skin === "ulysses" ? ULYSSES_TILT : 0.35);
+    s.tilt += (lean - s.tilt) * damp(this.save.skin === "ulysses" ? ULYSSES_TILT_RATE : 6, dt);
     const spin =
       moving && s.battery > 0 ? 0.6 + sp * 0.012 : this.depthHeld ? 0.08 : cranks ? 0.4 : 0;
     s.prop += spin * dt * 10;
@@ -1527,7 +1694,7 @@ export class Game {
     if (surfaced) this.airLow = false;
     else if (s.oxygen <= this.maxOxygen * LOW_AIR) this.airLow = true;
     if (this.lampOn) s.battery = Math.max(0, s.battery - STATS.lampDrain[this.up.light] * dt);
-    const electrolysis = this.save.electrolysis && s.battery > 0;
+    const electrolysis = this.gear.electrolysis && s.battery > 0;
     if (this.electrolysisOn && !electrolysis && !surfaced)
       this.say("Electrolysis offline: out of battery", "#E5484D");
     this.electrolysisOn = electrolysis;
@@ -1536,7 +1703,7 @@ export class Game {
       s.battery = Math.max(0, s.battery - GEAR.electrolysis.drain * dt);
       s.oxygen = Math.min(this.maxOxygen, s.oxygen + GEAR.electrolysis.rate * dt);
     } else {
-      const scrubbing = this.save.scrubbers && s.battery > 0;
+      const scrubbing = this.gear.scrubbers && s.battery > 0;
       if (scrubbing) s.battery = Math.max(0, s.battery - GEAR.scrubbers.batteryDrain * dt);
       s.oxygen = Math.max(0, s.oxygen - dt * (scrubbing ? GEAR.scrubbers.drain : 1));
     }
@@ -1592,7 +1759,7 @@ export class Game {
     const airFrac = s.oxygen / this.maxOxygen;
     const batteryFrac = s.battery / this.maxBattery;
     const candles = this.candlesLeft;
-    const candleNote = !this.save.candles
+    const candleNote = !this.gear.candles
       ? ""
       : candles
         ? ` ${candles} oxygen ${candles === 1 ? "candle" : "candles"} left`
@@ -1628,7 +1795,9 @@ export class Game {
 
     s.invuln = Math.max(0, s.invuln - dt);
     for (const c of this.world.creatures) {
-      if (this.debugFast || this.world.def.catalog || c.state === "dead" || !CREATURES[c.kind].harmful) continue;
+      if (this.debugFast || this.world.def.catalog || c.state === "dead") continue;
+      if (this.save.skin === "ulysses") continue;
+      if (!CREATURES[c.kind].harmful) continue;
       if (c.kind === "leviathan") {
         if (c.state === "rest") continue;
         if (Math.hypot(c.x - s.x, c.y - s.y) < CREATURES.leviathan.radius * 0.8 + SUB_RADIUS) {
@@ -1649,19 +1818,7 @@ export class Game {
         continue;
       }
       if (s.invuln > 0) continue;
-      const def = CREATURES[c.kind];
-      const pitch =
-        c.kind === "whale" || c.kind === "mobydick"
-          ? whalePitch(c)
-          : c.kind === "orca"
-            ? whalePitch(c) + ORCA_TILT
-            : 0;
-      const circles = def.body
-        ? def.body.map(
-            ([dx, r]) =>
-              [c.x + c.facing * dx * Math.cos(pitch), c.y + dx * Math.sin(pitch), r] as const,
-          )
-        : [[c.x, c.y, creatureRadius(c)] as const];
+      const circles = this.creatureCircles(c);
       if (circles.some(([x, y, r]) => (x - s.x) ** 2 + (y - s.y) ** 2 < (r + SUB_RADIUS) ** 2)) {
         if (this.damage(c)) return;
       }
@@ -1743,6 +1900,7 @@ export class Game {
     y = Math.max(y, 0.3);
     const m = Math.hypot(x, y);
     this.claw = { t: 0, dirX: x / m, dirY: y / m, grabbed: false };
+    this.audio.play("clawHydraulic");
   }
 
   /** Where the claw's mount and tip are in the world, and how open its jaws are (1 open, 0 shut). */
@@ -1877,6 +2035,20 @@ export class Game {
       s.y = py;
       s.vy *= -0.2;
     }
+  }
+
+  /** The circles that make up an animal's body for bumping into. */
+  private creatureCircles(c: Creature) {
+    const def = CREATURES[c.kind];
+    const pitch =
+      c.kind === "whale" || c.kind === "mobydick"
+        ? whalePitch(c)
+        : c.kind === "orca"
+          ? whalePitch(c) + ORCA_TILT
+          : 0;
+    return def.body
+      ? def.body.map(([dx, r]) => [c.x + c.facing * dx * Math.cos(pitch), c.y + dx * Math.sin(pitch), r] as const)
+      : [[c.x, c.y, creatureRadius(c)] as const];
   }
 
   private damage(c: Creature | null): boolean {
@@ -2085,6 +2257,7 @@ export class Game {
     const lostCount = this.cargoCount();
     this.lostCargo = lostCount && reason !== "leviathan" ? { ...this.save.cargo } : null;
     this.save.cargo = {};
+    this.releaseRegrow();
     this.persist();
     const titles: Record<WreckReason, string> = {
       shark: "Great white attack!",
@@ -2212,7 +2385,10 @@ export class Game {
   private enterZone(zone: number) {
     const kept = (this.save.trash[zone] ??= []);
     const seed = (this.save.lootSeed[zone] ??= (Math.random() * 0x100000000) >>> 0);
-    return new World(zone, kept, this.save.caveLoot[zone] ?? [], seed, this.save.salvage);
+    this.growWait = 0;
+    const world = new World(zone, kept, this.save.caveLoot[zone] ?? [], seed, this.save.salvage);
+    this.applyRegrow(zone, world);
+    return world;
   }
 
   /** The zone's clean-up progress, or null when it has no trash. */
@@ -2233,15 +2409,39 @@ export class Game {
     const id = `trash-${zone}`;
     if (list.length < this.world.trashTotal || this.save.achievements.includes(id)) return;
     this.save.achievements.push(id);
-    this.audio.play("chime1");
-    this.say("Achievement: Squeaky Clean!", "#FFD95A");
-    this.ui.toast(`Achievement unlocked: Squeaky Clean · ${ZONES[zone].name}`);
-    if (zone < GEAR.candles.max && this.save.candles < zone + 1) {
-      this.save.candles = zone + 1;
-      this.candlesLeft = this.save.candles;
-      this.ui.toast(`Unlocked: oxygen candle (carry ${this.save.candles} of ${GEAR.candles.max})`);
-    }
+    const name = ZONES[zone].name;
+    const gift = this.trashGift();
+    setTimeout(
+      () =>
+        this.ui.showAchievement(
+          `Achievement unlocked: Squeaky Clean · ${name}`,
+          gift ? "A thank-you gift is waiting in the island shops." : "Every piece of trash collected.",
+        ),
+      3000,
+    );
     this.persist();
+  }
+
+  /** The free gift waiting in this zone's shops for clearing its trash, if it has not been taken. */
+  trashGift() {
+    const zone = this.save.zone;
+    const gift = TRASH_GIFTS[zone];
+    if (!gift || !this.save.achievements.includes(`trash-${zone}`)) return null;
+    return (gift === "radio" ? this.save.radio : this.save.candleClaimed.includes(zone)) ? null : gift;
+  }
+
+  claimGift() {
+    const gift = this.trashGift();
+    if (!gift) return null;
+    if (gift === "radio") this.save.radio = true;
+    else {
+      this.save.candleClaimed.push(this.save.zone);
+      this.save.candles = Math.max(this.save.candles, this.save.candleClaimed.length);
+      this.candlesLeft = this.gear.candles;
+    }
+    this.audio.play("chime1");
+    this.persist();
+    return gift;
   }
 
   private collect(it: ItemInst) {
@@ -2266,6 +2466,11 @@ export class Game {
     }
     if (it.trash !== undefined) this.noteTrash(it.trash);
     if (it.cave !== undefined) (this.save.caveLoot[this.save.zone] ??= []).push(it.cave);
+    if (REGROW_KINDS.includes(it.kind) && it.cave !== undefined && !it.salvage) {
+      const held = (this.save.regrowHeld[this.save.zone] ??= {});
+      const k = it.kind as "seaweed" | "shell";
+      held[k] = (held[k] ?? 0) + 1;
+    }
     this.save.cargo[it.kind] = (this.save.cargo[it.kind] ?? 0) + 1;
     this.popup(
       it.x,
@@ -2425,7 +2630,7 @@ export class Game {
         this.blips.push({
           x: c.x,
           y: c.y,
-          danger: harmful,
+          danger: harmful && this.save.skin !== "ulysses",
           life: ping.linger,
           max: ping.linger,
           shape:
@@ -2517,6 +2722,7 @@ export class Game {
       this.persist();
       this.ui.toast(`Welcome to ${this.world.def.name}`);
       if (this.world.def.space && this.unlockSkin("sm13")) this.unlockNote = "sm13";
+      if (this.save.zone === ULYSSES_ZONE && this.save.stats.deaths === 0 && this.unlockSkin("ulysses")) this.unlockNote = "ulysses";
       if (this.world.def.space && !this.said.has("arrive")) {
         this.said.add("arrive");
         this.say("What is this place? Where are we?", "#E5484D");
@@ -2636,7 +2842,7 @@ export class Game {
     }
     this.foam = this.foam.filter((p) => p.life > 0);
     if (this.mode !== "docked") {
-      this.shipPitch *= Math.exp(-3 * dt);
+      if (!this.radioCall) this.shipPitch *= Math.exp(-3 * dt);
       this.boost = 0;
       const ready = this.inDockPosition();
       const down = ready || this.sub.y < (this.reelDir > 0 ? HOOK_DROP_DEPTH : HOOK_RETRACT_DEPTH) * PX_PER_M;
@@ -2746,8 +2952,8 @@ export class Game {
 
   private resetSub(keepBeast = false) {
     this.deepWarned = false;
-    this.weightsOn = this.save.weights;
-    this.candlesLeft = this.save.candles;
+    this.weightsOn = this.gear.weights;
+    this.candlesLeft = this.gear.candles;
     if (!keepBeast) this.monster = { stage: "idle", t: 0 };
     this.swallow = null;
     this.glitch = 0;
@@ -2846,6 +3052,8 @@ export class Game {
     const s = this.sub;
     if (this.save.skin === "oceangate") {
       this.emitBubbles(s.x + s.facing * GATE_THRUSTER_BUBBLES.x, s.y + GATE_THRUSTER_BUBBLES.y, n, spread);
+    } else if (this.save.skin === "ulysses") {
+      this.emitBubbles(s.x + s.facing * ULYSSES_TAIL.x, s.y + ULYSSES_TAIL.y, n, spread);
     } else if (this.save.skin === "challenger") {
       const b = challengerBase(this.subPose);
       this.emitBubbles(s.x + s.facing * b.x, s.y + b.y, n, spread);

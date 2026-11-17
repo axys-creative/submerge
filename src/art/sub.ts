@@ -3,6 +3,7 @@ import type { SkinId } from '../data/skins';
 import { rrect } from '../util';
 import { drawLostSubSkin, LOST_PORTHOLE } from './lostSub';
 import { drawChallenger, challengerPoint, challengerLamp, challengerViewport, challengerWeights, challengerBoomTips, CHALLENGER_GLASS, CHALLENGER_RIM, CHALLENGER_HOOK, CHALLENGER_BASE } from './challenger';
+import { clipOutUlyssesFront, drawUlysses, ULYSSES_SCALE, ULYSSES_WEIGHTS, ULYSSES_DOME, ULYSSES_HOOK, ULYSSES_LAMP, ULYSSES_REAR_LAMP } from './ulysses';
 import logoUrl from '../assets/svgs/logo-oceangate.svg';
 
 interface Plating {
@@ -35,10 +36,12 @@ export const sternStretch = (cargo: number) => STERN_STRETCH[cargo];
 export const LAMP = { x: 30, y: 31 };
 export const REAR_LAMP = { x: -50, y: 26 };
 /** Where the front spotlight sits: the fixed spot, or on the Challenger skin the tip of its upper boom. */
-export const lampFor = (skin: SkinId, pose = 1) => (skin === 'challenger' ? challengerLamp(pose) : LAMP);
+export const lampFor = (skin: SkinId, pose = 1) => (skin === 'challenger' ? challengerLamp(pose) : skin === 'ulysses' ? ULYSSES_LAMP : LAMP);
 export { challengerBoomTips, challengerViewport, challengerWeights };
 /** Where the Challenger skin's bubbles rise from: its base, in the sub's local space. */
 export const challengerBase = (pose: number) => challengerPoint(CHALLENGER_BASE.x, CHALLENGER_BASE.y, pose, false);
+/** Where the rear spotlight sits, in the sub's local space. */
+export const rearLampFor = (skin: SkinId, cargo: number) => (skin === 'ulysses' ? ULYSSES_REAR_LAMP : { x: REAR_LAMP.x - STERN_STRETCH[cargo], y: REAR_LAMP.y });
 /** Center of the nose glass, where the cockpit's own faint glow comes from. */
 export const COCKPIT = { x: 42, y: 0 };
 /** Where the OceanGate skin's top thruster blows its bubbles from, in the sub's local space. */
@@ -61,7 +64,7 @@ export const ANCHOR = { x: -4, y: -51 };
 const ANCHOR_CAPSULE = { x: -4, y: -38 };
 const ANCHOR_GATE = { x: -4, y: -26 };
 const ANCHOR_LOST = { x: -4, y: -27 };
-export const anchorFor = (skin: SkinId, pose = 0, lying = true) => (skin === 'challenger' ? challengerPoint(CHALLENGER_HOOK.x, CHALLENGER_HOOK.y, pose, lying) : skin === 'capsule' ? ANCHOR_CAPSULE : skin === 'oceangate' ? ANCHOR_GATE : skin === 'sm13' ? ANCHOR_LOST : ANCHOR);
+export const anchorFor = (skin: SkinId, pose = 0, lying = true) => (skin === 'challenger' ? challengerPoint(CHALLENGER_HOOK.x, CHALLENGER_HOOK.y, pose, lying) : skin === 'capsule' ? ANCHOR_CAPSULE : skin === 'oceangate' ? ANCHOR_GATE : skin === 'sm13' ? ANCHOR_LOST : skin === 'ulysses' ? ULYSSES_HOOK : ANCHOR);
 
 /** Draws the sub facing right, centered on the origin, about 140 px long. */
 /** Where the two dive weights hang, as x offsets in the sub's local space. */
@@ -241,12 +244,17 @@ export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, p
     return;
   }
   if (weights) {
-    weightMounts(up.cargo).forEach((x, i) =>
-      part(i ? 'weightR' : 'weightL', () => {
-        ctx.translate(x, WEIGHT_Y);
+    (skin === 'ulysses' ? ULYSSES_WEIGHTS : weightMounts(up.cargo).map((x) => ({ x, y: WEIGHT_Y }))).forEach(({ x, y }, i) =>
+      part(i % 2 ? 'weightR' : 'weightL', () => {
+        ctx.translate(x, y);
         drawWeight(ctx);
       }),
     );
+  }
+  if (skin === 'ulysses') {
+    part('hull', () => drawUlysses(ctx));
+    ctx.restore();
+    return;
   }
   if (skin === 'sm13') {
     part('hull', () => drawLostSubSkin(ctx, prop));
@@ -865,8 +873,9 @@ export function drawGlassCracks(ctx: CanvasRenderingContext2D, progress: number,
   if (standard) ctx.translate(39, 9);
   else if (skin === 'oceangate') ctx.translate(GATE_ORB.x + 3, GATE_ORB.y);
   else if (skin === 'sm13') ctx.translate(LOST_PORTHOLE.x, LOST_PORTHOLE.y);
+  else if (skin === 'ulysses') ctx.translate(ULYSSES_DOME.x, ULYSSES_DOME.y);
   else ctx.translate(CAPSULE_VIEWPORT.x, CAPSULE_VIEWPORT.y);
-  const k = standard ? 0.45 : 0.225;
+  const k = standard ? 0.45 : skin === 'ulysses' ? 0.225 * ULYSSES_SCALE : 0.225;
   ctx.scale(k, k);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -909,6 +918,16 @@ export function glassGlow(ctx: CanvasRenderingContext2D, amount: number, skin: S
     ctx.clip();
     ctx.beginPath();
     ctx.arc(at.x, at.y, CHALLENGER_GLASS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (skin === 'ulysses') {
+    ctx.fillStyle = '#FFB060';
+    ctx.shadowColor = '#FF8A3C';
+    clipOutUlyssesFront(ctx);
+    ctx.beginPath();
+    ctx.arc(ULYSSES_DOME.x, ULYSSES_DOME.y, ULYSSES_DOME.r - 1, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
     return;

@@ -71,6 +71,26 @@ kbd {
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
 }
 
+/* The U and I crank keys press in turn: each shrinks to 0.75 and springs back, one after the other. */
+kbd.tap {
+  animation: key-press 1.2s ease-in-out infinite;
+}
+
+kbd.tap-b {
+  animation-delay: 0.6s;
+}
+
+@keyframes key-press {
+  0%,
+  50%,
+  100% {
+    transform: scale(1);
+  }
+  15% {
+    transform: scale(0.75);
+  }
+}
+
 /* ---- HUD ---- */
 
 .hud {
@@ -1043,6 +1063,105 @@ textarea:focus {
   color: var(--mint-dark);
 }
 
+.shop-overlay {
+  grid-template-columns: minmax(0, 900px) 260px;
+  justify-content: center;
+  align-content: center;
+  column-gap: 12px;
+}
+
+.shopkeeper {
+  align-self: end;
+  pointer-events: none;
+  animation: keeper-in 0.35s ease-out 0.1s both;
+}
+
+.shopkeeper {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.keeper-bubble {
+  position: relative;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.35;
+  box-shadow: 0 4px 0 rgba(20, 36, 90, 0.2);
+  animation: bubble-in 0.3s cubic-bezier(0.3, 1.4, 0.5, 1) 0.4s both;
+}
+
+.keeper-bubble[hidden] {
+  display: none;
+}
+
+.keeper-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  margin-left: -9px;
+  border: 9px solid transparent;
+  border-top-color: #fff;
+  border-bottom: 0;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(8px);
+  }
+}
+
+.upg.gift {
+  box-shadow: 0 0 0 3px var(--sun), 0 4px 0 var(--sun-dark);
+}
+
+.shopkeeper svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+}
+
+.overlay:has(> .card.shop.closing) .shopkeeper {
+  animation: keeper-out 0.2s ease-in both;
+}
+
+@keyframes keeper-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes keeper-out {
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@media (max-width: 1240px) {
+  .shopkeeper {
+    display: none;
+  }
+  .shop-overlay {
+    grid-template-columns: minmax(0, 900px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shopkeeper {
+    animation: none;
+  }
+}
+
 .shop-body {
   display: grid;
   grid-template-columns: 260px 1fr;
@@ -1486,7 +1605,8 @@ textarea:focus {
   .overlay:has(> .card:is(.menu, .shop)),
   .wreck-overlay,
   .wreck-overlay .card,
-  .unlock-banner {
+  .unlock-banner,
+  .achievement-pop.out .unlock-banner {
     animation: none;
   }
 }
@@ -1511,7 +1631,7 @@ textarea:focus {
 }
 
 #ui.ui-dark .minimap {
-  border-color: rgba(130, 150, 210, 0.6);
+  border-color: rgba(14, 24, 56, 0.9);
 }
 
 #ui.ui-dark .hull-tip {
@@ -1547,7 +1667,9 @@ textarea:focus {
 }
 
 #ui.ui-dark .minimap-tab {
-  background: rgba(130, 150, 210, 0.6);
+  --ink-soft: #9fb0dc;
+  --line: #2b3a6b;
+  background: rgba(14, 24, 56, 0.9);
   color: #e8eeff;
 }
 
@@ -2375,6 +2497,41 @@ body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
   color: var(--sea-dark);
 }
 
+.achievement-pop {
+  position: fixed;
+  top: 18%;
+  left: 50%;
+  width: min(560px, calc(100% - 32px));
+  transform: translateX(-50%);
+  z-index: 60;
+  pointer-events: none;
+}
+
+.achievement-pop .unlock-banner {
+  position: static;
+  margin: 0;
+  animation: unlock-pop 0.8s both, unlock-glow 1.8s ease-in-out 0.8s infinite;
+}
+
+.achievement-pop.out .unlock-banner {
+  animation: unlock-out 0.5s cubic-bezier(0.5, 0, 0.8, 0.4) both;
+}
+
+@keyframes unlock-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+}
+
 .unlock-banner small {
   display: block;
   margin-top: 2px;
@@ -2491,6 +2648,46 @@ body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
   width: calc(var(--pips) * 12px + (var(--pips) - 1) * 4px);
 }
 
+.upg-sum .pip {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: var(--line);
+  cursor: pointer;
+  position: relative;
+}
+
+.upg-sum .pip::before {
+  content: "";
+  position: absolute;
+  inset: -6px -2px;
+}
+
+.upg-sum .pip.on {
+  background: var(--sun);
+}
+
+.upg-sum .pip:not(.on):not(.locked) {
+  box-shadow: inset 0 0 0 2px var(--sun);
+}
+
+.upg-sum .pip.worn {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.upg-sum .pip.locked {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.upg-sum .pip:not(.locked):hover {
+  filter: brightness(1.12);
+  transform: scale(1.2);
+}
+
 .maxed-pill {
   font-style: normal;
   font-size: 11px;
@@ -2570,8 +2767,10 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgba(20, 36, 90, 0.85);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--ink);
+  box-shadow: 0 3px 0 rgba(20, 36, 90, 0.28);
+  transition: background 0.6s, color 0.6s, box-shadow 0.6s;
   cursor: default;
 }
 
@@ -2596,8 +2795,8 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
   min-width: 250px;
   padding: 14px 18px 30px;
   border-radius: 16px;
-  background: rgba(20, 36, 90, 0.85);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--ink);
   font-size: 13px;
   font-weight: 800;
   white-space: nowrap;
@@ -2641,7 +2840,13 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
 
 .ctl-hint.has-msg:is(.open, :hover, :focus-within) .ctl-msg {
   padding-bottom: 8px;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 2px solid rgba(20, 36, 90, 0.15);
+}
+
+.ctl-panel kbd {
+  background: #dde5ff;
+  color: #14245a;
+  box-shadow: 0 2px 0 rgba(20, 36, 90, 0.35);
 }
 
 .ctl-row {
@@ -2653,7 +2858,22 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
 
 #ui.ui-dark .ctl-btn,
 #ui.ui-dark .ctl-panel {
-  background: rgba(8, 14, 36, 0.9);
+  background: rgba(14, 24, 56, 0.9);
+  color: #e8eeff;
+}
+
+#ui.ui-dark .ctl-btn {
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+}
+
+#ui.ui-dark .ctl-panel kbd {
+  background: #2f4080;
+  color: #fff;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+#ui.ui-dark .ctl-hint.has-msg:is(.open, :hover, :focus-within) .ctl-msg {
+  border-bottom-color: rgba(255, 255, 255, 0.2);
 }
 
 #ui.ui-dim .ctl-hint {

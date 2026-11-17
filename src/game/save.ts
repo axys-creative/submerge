@@ -1,5 +1,5 @@
 import { SAVE_KEY } from '../config';
-import { GEAR, UPGRADES, UPGRADE_ORDER, type Loadout, type UpgradeId } from '../data/upgrades';
+import { GEAR, TRASH_GIFTS, UPGRADES, UPGRADE_ORDER, type Loadout, type UpgradeId } from '../data/upgrades';
 import { SKINS, type SkinId } from '../data/skins';
 import { ITEM_KINDS, type ItemKind } from '../data/items';
 import { ZONES } from '../data/zones';
@@ -7,12 +7,16 @@ import { PORTALS } from '../data/routes';
 import { START_DAY } from '../render/daylight';
 import type { Salvage } from './world';
 
+export type Regrow = Partial<Record<'seaweed' | 'shell', number>>;
+
 export type SwitchMode = 'off' | 'on' | 'auto';
 
 export interface SaveData {
   v: 1;
   money: number;
   upgrades: Loadout;
+  /** Levels worn below the bought one, chosen in settings; an upgrade not listed uses its bought level. */
+  equipped: Partial<Record<UpgradeId, number>>;
   /** Which stock slots of each upgrade's shops have been used up. */
   stock: Record<UpgradeId, number[]>;
   /** The submarine's look. */
@@ -25,6 +29,10 @@ export interface SaveData {
   /** Total game days played, which the weather follows. */
   days: number;
   cargo: Partial<Record<ItemKind, number>>;
+  /** Seaweed and shells picked up per zone and not sold yet. */
+  regrowHeld: Record<number, Regrow>;
+  /** Seaweed and shells sold per zone that are still to grow back there. */
+  regrowDue: Record<number, Regrow>;
   /** Whether the one-time dive weights have been bought. */
   weights: boolean;
   /** The spotlight and sonar switches: auto turns each on once the water is dark enough. */
@@ -51,6 +59,10 @@ export interface SaveData {
   visited: number[];
   /** Earned achievement ids, such as 'trash-0'. */
   achievements: string[];
+  /** Zones whose free oxygen candle, a thank-you for clearing the trash, has been taken from a shop. */
+  candleClaimed: number[];
+  /** The ship radio, a thank-you for cleaning up Coral Gardens: it calls the ship to a surfaced sub. */
+  radio: boolean;
   stats: { dives: number; earned: number; deepest: number; deaths: number };
 }
 
@@ -75,6 +87,7 @@ export function newSave(): SaveData {
     v: 1,
     money: 0,
     upgrades: { plating: 0, oxygen: 0, battery: 0, hull: 0, light: 0, sonar: 0, propeller: 0, cargo: 0 },
+    equipped: {},
     stock: { plating: [], oxygen: [], battery: [], hull: [], light: [], sonar: [], propeller: [], cargo: [] },
     skin: 'standard',
     skins: ['standard'],
@@ -92,12 +105,16 @@ export function newSave(): SaveData {
     explored: {},
     trash: {},
     caveLoot: {},
+    regrowHeld: {},
+    regrowDue: {},
     lootSeed: {},
     salvage: null,
     portal: false,
     visited: [0],
     monsterWoke: false,
     achievements: [],
+    candleClaimed: [],
+    radio: false,
     stats: { dives: 0, earned: 0, deepest: 0, deaths: 0 },
   };
 }
@@ -112,6 +129,10 @@ export function sanitize(raw: any): SaveData | null {
   s.money = Math.floor(num(raw.money, 0, 1e9, 0));
   for (const id of UPGRADE_ORDER) {
     s.upgrades[id] = Math.floor(num(raw.upgrades?.[id], 0, UPGRADES[id].levels.length - 1, 0));
+  }
+  for (const id of UPGRADE_ORDER) {
+    const e = raw.equipped?.[id];
+    if (typeof e === 'number' && Number.isInteger(e) && e >= 0 && e < s.upgrades[id]) s.equipped[id] = e;
   }
   for (const id of UPGRADE_ORDER) {
     const slots = UPGRADES[id].stock.length;
@@ -149,6 +170,13 @@ export function sanitize(raw: any): SaveData | null {
     const t = raw.caveLoot?.[z];
     if (Array.isArray(t)) s.caveLoot[z] = [...new Set(t.map((n: unknown) => Math.floor(num(n, 0, 99, -1))).filter((n: number) => n >= 0))].slice(0, 1000);
   }
+  for (const key of ['regrowHeld', 'regrowDue'] as const) {
+    for (let z = 0; z < ZONES.length; z++) {
+      const r = raw[key]?.[z];
+      if (!r || typeof r !== 'object') continue;
+      s[key][z] = { seaweed: Math.floor(num(r.seaweed, 0, 999, 0)), shell: Math.floor(num(r.shell, 0, 999, 0)) };
+    }
+  }
   for (let z = 0; z < ZONES.length; z++) {
     const n = raw.lootSeed?.[z];
     if (typeof n === 'number' && Number.isFinite(n)) s.lootSeed[z] = Math.floor(n) >>> 0;
@@ -169,6 +197,10 @@ export function sanitize(raw: any): SaveData | null {
   if (Array.isArray(raw.achievements)) {
     s.achievements = raw.achievements.filter((a: unknown) => typeof a === 'string' && (a === 'upgraded' || (/^trash-\d+$/.test(a) && Number(a.slice(6)) < ZONES.length)));
   }
+  s.candleClaimed = Array.isArray(raw.candleClaimed)
+    ? [...new Set<number>(raw.candleClaimed.map((n: unknown) => Math.floor(num(n, -1, 99, -1))).filter((n: number) => TRASH_GIFTS[n] === 'candle'))]
+    : [0, 2].filter((z) => s.achievements.includes(`trash-${z}`) && s.candles >= z + 1);
+  s.radio = raw.radio === true;
   s.stats.dives = Math.floor(num(raw.stats?.dives, 0, 1e9, 0));
   s.stats.earned = Math.floor(num(raw.stats?.earned, 0, 1e12, 0));
   s.stats.deepest = Math.floor(num(raw.stats?.deepest, 0, 1e5, 0));

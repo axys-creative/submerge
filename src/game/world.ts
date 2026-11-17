@@ -19,6 +19,8 @@ const FLOOR_SOFTNESS = 25;
 /** Closest two surface items may spawn to each other, in px. */
 const CORAL_SPACING = 150;
 const ITEM_SPACING = 160;
+/** The most grown-in seaweed and shells lying in a zone at once. */
+const EXTRA_CAP = 10;
 /** Loot slot numbers: cave loot takes 0 and up, then floor items and wreck chests start here. */
 export const FLOOR_SLOT = 100;
 export const CHEST_SLOT = 500;
@@ -84,6 +86,8 @@ export interface ItemInst {
   wreck: number;
   /** Cargo lost in a wreck, which can be taken back from where the sub sank. */
   salvage?: boolean;
+  /** Seaweed or a shell that grew in while the player was in the zone; it is not part of the zone's saved loot. */
+  extra?: boolean;
   /** Which of the zone's fixed trash spots this is, for junk that never respawns. */
   trash?: number;
   /** Which of the zone's loot slots this is; once taken it never comes back. */
@@ -947,6 +951,47 @@ export class World {
   /** How many of the zone's trash spots are cleared right now. */
   trashCleared() {
     return this.items.reduce((n, it) => n + (it.trash !== undefined && !it.alive ? 1 : 0), 0);
+  }
+
+  /** Brings back up to `n` collected items of a kind; with `avoid` each reappears on the floor outside that x range. Returns the slots it revived. */
+  regrow(kind: ItemKind, n: number, avoid?: { x0: number; x1: number }) {
+    const slots: number[] = [];
+    for (const it of this.items) {
+      if (slots.length >= n) break;
+      if (it.alive || it.kind !== kind || it.cave === undefined || it.x === 0 || it.salvage || it.wreck >= 0 || it.trash !== undefined) continue;
+      if (avoid && !this.placeFar(it, avoid)) continue;
+      it.alive = true;
+      slots.push(it.cave);
+    }
+    return slots;
+  }
+
+  /** Grows one more seaweed or shell on the floor outside `avoid`, unless too many extras are already lying about. */
+  growExtra(avoid: { x0: number; x1: number }) {
+    for (let i = this.items.length - 1; i >= 0; i--) if (this.items[i].extra && !this.items[i].alive) this.items.splice(i, 1);
+    if (this.items.filter((it) => it.extra).length >= EXTRA_CAP) return false;
+    const it = this.blankItem();
+    it.kind = this.rng() < 0.6 ? 'seaweed' : 'shell';
+    it.extra = true;
+    if (!this.placeFar(it, avoid)) return false;
+    this.items.push(it);
+    return true;
+  }
+
+  private placeFar(it: ItemInst, avoid: { x0: number; x1: number }) {
+    const def = ITEMS[it.kind];
+    for (let tries = 0; tries < 40; tries++) {
+      const x = rand(this.rng, 250, this.width - 250);
+      if (x > avoid.x0 && x < avoid.x1) continue;
+      const floor = this.floorAt(x);
+      if (floor / PX_PER_M < def.minDepth || floor / PX_PER_M > def.maxDepth) continue;
+      if (Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 20 || this.atMouth(x, floor)) continue;
+      if (this.items.some((o) => o !== it && o.alive && Math.abs(o.x - x) < ITEM_SPACING)) continue;
+      it.x = x;
+      it.y = floor - def.size * 0.45;
+      return true;
+    }
+    return false;
   }
 
   private blankItem(): ItemInst {

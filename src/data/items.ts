@@ -56,4 +56,7 @@ export const ITEMS: Record<ItemKind, ItemDef> = {
   chest: { name: 'Treasure Chest', value: 350, minDepth: 0, maxDepth: 0, weight: 0, size: 38, treasure: true, caveWeight: 2 },
 };
 
+/** The cheap finds that grow back after the player sells them. */
+export const REGROW_KINDS: ItemKind[] = ['seaweed', 'shell'];
+
 export const ITEM_KINDS = Object.keys(ITEMS) as ItemKind[];

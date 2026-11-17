@@ -153,3 +153,6 @@ export const SHIP_MARGIN = 300;
 /** A provoked orca chases at this speed (px/s) until the sub is this far away (about five screens) or docks. */
 export const ORCA_CHASE_SPEED = 250;
 export const ORCA_LOSE_RANGE = 3500;
+
+/** Seconds into the radio call when the static moves from the sub over to the ship's side. */
+export const RADIO_FX_SWITCH = 4.4;

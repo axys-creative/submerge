@@ -9,6 +9,7 @@ const FILES = {
   sailing: ["sound-ship-sailing.m4a"],
   tetherReel: ["sound-ship-tether-reel.m4a"],
   tetherHydraulic: ["sound-ship-tether-hydraulic.m4a"],
+  clawHydraulic: ["sound-ship-tether-hydraulic.m4a"],
   implosion: ["sound-implosion.m4a"],
   horn: ["sound-warning-horn.m4a"],
   clank1: ["sound-clank-1.m4a"],
@@ -42,6 +43,8 @@ const FILES = {
   portal2: ["sound-portal-2.m4a"],
   portal3: ["sound-portal-3.m4a"],
   shopDoor: ["sound-store-entry-leave.m4a"],
+  radioSwitch: ["sound-switch.m4a"],
+  radio: ["sound-radio.m4a"],
 } as const;
 
 const ZEN_TRACKS = ["sound-zen-track-1.m4a", "sound-zen-track-2.m4a", "sound-zen-track-3.m4a"];
@@ -62,6 +65,7 @@ const VOLUME: Record<Sound, number> = {
   sailing: 0.25,
   tetherReel: 0.15,
   tetherHydraulic: 0.375,
+  clawHydraulic: 0.375,
   implosion: 0.5,
   horn: 0.8,
   clank1: 0.8,
@@ -95,11 +99,14 @@ const VOLUME: Record<Sound, number> = {
   portal2: 1,
   portal3: 0.5,
   shopDoor: 0.25,
+  radioSwitch: 0.5,
+  radio: 0.5,
 };
 
 /** Playback speed per sound, applied on top of any rate passed to `play`; above 1 is faster and higher pitched. */
 const RATE: Partial<Record<Sound, number>> = {
   tetherHydraulic: 1.75,
+  clawHydraulic: 3,
   candle2: 0.4,
 };
 
@@ -127,12 +134,12 @@ const WHALE_FAR_FROM_PX = 1500;
 
 /** Depth in meters at which the music is fully muffled, and the cutoff range it sweeps through. */
 const MUFFLE_DEPTH = 220;
-const UNDERWATER_LOWPASS: Partial<Record<Sound, number>> = { tetherReel: 2500, tetherHydraulic: 2500 };
+const UNDERWATER_LOWPASS: Partial<Record<Sound, number>> = { tetherReel: 2500, tetherHydraulic: 2500, clawHydraulic: 2500 };
 const OPEN_HZ = 18000;
 const MUFFLED_HZ = 250;
 const MUFFLED_GAIN = 0.2;
 const GULL_MUFFLED_HZ = 450;
-const RAIN_VOLUME = 0.12;
+const RAIN_VOLUME = 0.09;
 /** Depth in meters over which the rain dulls to a muffled drumming, and where it can no longer be heard. */
 const RAIN_MUFFLE_M = 6;
 const RAIN_REACH_M = 40;
@@ -574,6 +581,12 @@ export class AudioManager {
   candle() {
     this.play("candle1");
     this.play("candle2", 1, 0, 1, this.buffers.get("candle1")?.duration ?? 0);
+  }
+
+  /** The radio's click, then its chatter at 1.5 times speed. */
+  radioCall() {
+    this.play("radioSwitch");
+    this.play("radio", 1, 0, 1.5, this.buffers.get("radioSwitch")?.duration ?? 0);
   }
 
   stop(name: Sound) {

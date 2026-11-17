@@ -2,6 +2,7 @@ import lockIcon from "../assets/icons/icon-lock.svg?raw";
 import infoIcon from "../assets/icons/icon-info.svg?raw";
 import zenIcon from "../assets/icons/icon-zen.svg?raw";
 import pinIcon from "../assets/icons/icon-pin.svg?raw";
+import shopkeeper from "../assets/svgs/shopkeeper.svg?raw";
 import type { Game } from "../game/game";
 import { ZEN_BARS } from "../game/audio";
 import type { Action } from "../game/input";
@@ -19,6 +20,7 @@ import {
 } from "../config";
 import {
   GEAR,
+  RADIO,
   STATS,
   UPGRADES,
   UPGRADE_ORDER,
@@ -31,7 +33,7 @@ import {
 import { ZONES, ZONE_ORDER, zoneNumber } from "../data/zones";
 import { SKINS, SKIN_ORDER, type SkinId } from "../data/skins";
 import { DEPTH_ZONES, METER_WINDOW, zoneIndexAt } from "../data/depthZones";
-import { ROUTES, PORTAL_LINK, routesFrom, type Endpoint, type Portal } from "../data/routes";
+import { ROUTES, PORTAL_LINK, FROZEN, frozenOpen, routesFrom, type Endpoint, type Portal } from "../data/routes";
 import { ITEMS, ITEM_KINDS, type ItemKind } from "../data/items";
 import { drawSub } from "../art/sub";
 import { drawItem } from "../art/items";
@@ -74,6 +76,19 @@ const RING =
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+const THANKS = "Thank you for collecting all the trash in the area! Please, take a little something for your trouble.";
+
+const SHOP_GREETINGS = [
+  "Welcome!",
+  "Come on in!",
+  "Ahoy there, captain!",
+  "Good to see you!",
+  "Take a look around!",
+  "Welcome back, sailor!",
+  "Come in, come in!",
+  "Fine day for shopping!",
+];
+
 export class UI {
   touch = false;
   private modalKind: ModalKind | null = null;
@@ -83,7 +98,10 @@ export class UI {
   private cache = new Map<string, string>();
   private toastTimer = 0;
   private shopRaf = 0;
-  private shopPreview: UpgradeId | "scrubbers" | "electrolysis" | "weights" | null = null;
+  private giftTaken = false;
+  private greeting = "";
+  private giftIntro = false;
+  private shopPreview: UpgradeId | "scrubbers" | "electrolysis" | "weights" | "candle" | null = null;
   private prevHull = 0;
   private shopIsland = "";
 
@@ -132,6 +150,7 @@ export class UI {
           <button class="round-btn crank" data-act="crankK" hidden>I</button>
           <button class="round-btn secondary" id="btn-drop" data-act="drop" hidden>Drop</button>
 <button class="round-btn secondary" id="btn-boost" data-act="boost" data-hold hidden>Boost</button>
+          <button class="round-btn secondary" id="btn-radio" data-act="radio" hidden>Radio</button>
           <button class="round-btn secondary" id="btn-spot" data-act="action" hidden>Shop</button>
           <button class="round-btn primary" id="btn-dive" data-act="dive" hidden>Dive</button>
         </div>
@@ -156,7 +175,7 @@ export class UI {
 
     $(this.root, "#debug-up").onclick = (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
-        "[data-dbg], [data-zone], [data-all], [data-weights], [data-gear], [data-fast], [data-skin], [data-rain]",
+        "[data-dbg], [data-zone], [data-all], [data-weights], [data-radio], [data-gear], [data-fast], [data-skin], [data-rain]",
       );
       if (!btn) return;
       btn.blur();
@@ -175,6 +194,10 @@ export class UI {
         this.game.debugFast = btn.dataset.fast === "1";
         return;
       }
+      if (btn.dataset.radio) {
+        this.game.save.radio = btn.dataset.radio === "1";
+        return;
+      }
       if (btn.dataset.weights) {
         this.game.setWeights(btn.dataset.weights === "1");
         return;
@@ -190,9 +213,11 @@ export class UI {
           0,
           Math.min(MAX_TEST_LEVEL, this.masterLevel() + Number(btn.dataset.all)),
         );
+        g.save.equipped = {};
         for (const id of UPGRADE_ORDER)
           g.save.upgrades[id] = Math.min(level, UPGRADES[id].levels.length - 1);
         g.setWeights(level === MAX_TEST_LEVEL);
+        g.save.radio = level === MAX_TEST_LEVEL;
         for (const id of Object.keys(GEAR) as GearId[])
           g.setGear(id, level === MAX_TEST_LEVEL ? 1 : -1, true);
         g.audio.play("chime1");
@@ -210,6 +235,7 @@ export class UI {
       const g = this.game;
       const max = UPGRADES[id].levels.length - 1;
       const before = g.save.upgrades[id];
+      delete g.save.equipped[id];
       g.save.upgrades[id] = Math.max(0, Math.min(max, before + Number(step)));
       if (g.save.upgrades[id] > before) g.audio.play("chime1");
       g.sub.hull = g.maxHull;
@@ -282,7 +308,10 @@ export class UI {
     };
     setPinned(pinned);
     pin.addEventListener("mousedown", (e) => e.preventDefault());
-    pin.addEventListener("click", () => setPinned(!pinned));
+    pin.addEventListener("click", () => {
+      setPinned(!pinned);
+      this.toast(pinned ? "Minimap pinned" : "Minimap unpinned: hover to reveal it");
+    });
     this.setupTouch();
     this.showTitle();
   }
@@ -462,7 +491,7 @@ export class UI {
     this.set(
       "dbg",
       UPGRADE_ORDER.map((id) => g.save.upgrades[id]).join() +
-        `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}|${g.debugFast}|${g.save.skin}|${g.debugRain}`,
+        `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.radio}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}|${g.debugFast}|${g.save.skin}|${g.debugRain}`,
       () => {
         const zone = g.save.zone;
         const prevZone = this.stepZone(zone, -1);
@@ -484,6 +513,7 @@ export class UI {
             return `<div class="dbg-row"><button tabindex="-1" data-dbg="${id}:-1">−</button><span><b>${def.title} ${lv + 1}/${def.levels.length}</b><small>${def.levels[lv].name}</small></span><button tabindex="-1" data-dbg="${id}:1">+</button></div>`;
           }).join("") +
           `<div class="dbg-row"><button tabindex="-1" data-weights="0"${g.save.weights ? "" : " disabled"}>−</button><span><b>${WEIGHTS.name}</b><small>${g.save.weights ? "Owned" : "Not owned"}</small></span><button tabindex="-1" data-weights="1"${g.save.weights ? " disabled" : ""}>+</button></div>` +
+          `<div class="dbg-row"><button tabindex="-1" data-radio="0"${g.save.radio ? "" : " disabled"}>−</button><span><b>${RADIO.name}</b><small>${g.save.radio ? "Owned" : "Not owned"}</small></span><button tabindex="-1" data-radio="1"${g.save.radio ? " disabled" : ""}>+</button></div>` +
           (Object.keys(GEAR) as GearId[])
             .map((id) => {
               const have = id === "candles" ? g.save.candles : Number(g.save[id]);
@@ -572,8 +602,10 @@ export class UI {
         b.hidden = !label;
       });
       const boost =
-        ((g.mode === "docked" && !this.modalKind && !g.travel) || diving) && g.propellerLevel >= 1;
+        (g.mode === "docked" && !this.modalKind && !g.travel) || (diving && g.propellerLevel >= 1);
       this.set("t-boost", String(boost), () => ($(this.root, "#btn-boost").hidden = !boost));
+      const radio = g.radioReady;
+      this.set("t-radio", String(radio), () => ($(this.root, "#btn-radio").hidden = !radio));
       const drop = diving && g.weightsOn;
       this.set("t-drop", String(drop), () => ($(this.root, "#btn-drop").hidden = !drop));
       const crank = diving && s.battery <= 0;
@@ -608,13 +640,14 @@ export class UI {
       ? [
           [k("←", "↑", "↓", "→") + " or " + k("WASD"), "Steer"],
           ...(g.propellerLevel >= 1 ? [[k("Shift"), "Boost"] as [string, string]] : []),
+          ...(g.gear.radio ? [[k("R"), "Call the ship"] as [string, string]] : []),
           [k("Space"), "Mechanical arm"],
           [k("E") + " or " + k("/"), "Lock depth"],
           ...(g.weightsOn ? [[k("Q") + " or " + k("."), "Drop weights"] as [string, string]] : []),
         ]
       : [
           [k("←", "→") + " or " + k("A", "D"), "Sail"],
-          ...(g.propellerLevel >= 1 ? [[k("Shift"), "Boost"] as [string, string]] : []),
+          [k("Shift"), "Boost"],
           [k("Space"), "Dive"],
           [k("E") + " or " + k("Enter"), "Shop, map"],
         ];
@@ -652,7 +685,7 @@ export class UI {
     if (s.battery <= 0)
       return this.touch
         ? "Battery empty! Tap U and I back and forth"
-        : "Battery empty! Tap <kbd>U</kbd><kbd>I</kbd> back and forth to crank";
+        : "Battery empty! Tap <kbd class=\"tap\">U</kbd><kbd class=\"tap tap-b\">I</kbd> back and forth to crank";
     if (g.depthM > g.depthRating) return `Too deep! Rise above ${g.depthRating} m`;
     if (s.oxygen < g.maxOxygen * 0.25) return "Air running low! Head for the surface";
     if (g.weightsOn && s.diveTime < 7)
@@ -862,7 +895,7 @@ export class UI {
   private updatePopovers() {
     const g = this.game;
     const s = g.sub;
-    const save = g.save;
+    const save = g.gear;
     const row = (text: string) => `<p>${text}</p>`;
     const tank = UPGRADES.oxygen.levels[g.up.oxygen];
     const stretch = save.scrubbers && s.battery > 0 ? 1 / GEAR.scrubbers.drain : 1;
@@ -925,7 +958,7 @@ export class UI {
           row(
             this.touch
               ? "If it runs out, tap the two crank buttons back and forth to turn the rudders by hand."
-              : "If it runs out, press <kbd>U</kbd> and <kbd>I</kbd> back and forth to turn the rudders by hand.",
+              : "If it runs out, press <kbd class=\"tap\">U</kbd> and <kbd class=\"tap tap-b\">I</kbd> back and forth to turn the rudders by hand.",
           ),
         ];
         if (g.lampOn)
@@ -1003,6 +1036,20 @@ export class UI {
     if (this.cache.get(key) === value) return;
     this.cache.set(key, value);
     apply(value);
+  }
+
+  showAchievement(title: string, note: string) {
+    this.root.querySelector(".achievement-pop")?.remove();
+    const el = document.createElement("div");
+    el.className = "achievement-pop";
+    el.setAttribute("role", "status");
+    el.innerHTML = `<div class="unlock-banner"><span class="unlock-star">✨</span>${esc(title)}<small><span class="info-icon">${infoIcon}</span>${esc(note)}</small></div>`;
+    this.root.appendChild(el);
+    this.game.audio.play("chime2");
+    setTimeout(() => {
+      el.classList.add("out");
+      setTimeout(() => el.remove(), 500);
+    }, 5000);
   }
 
   toast(text: string) {
@@ -1297,7 +1344,7 @@ export class UI {
   openRouteMap(from: Endpoint, portal?: Portal) {
     const dests = portal
       ? [{ zone: portal.to, side: "west" as const }]
-      : routesFrom(from.zone, from.side);
+      : routesFrom(from.zone, from.side, this.game.owned);
     const half = 25;
     const same = (a: Endpoint, b: Endpoint) => a.zone === b.zone && a.side === b.side;
     const port = (e: Endpoint) => {
@@ -1307,6 +1354,7 @@ export class UI {
     const links = this.game.save.portal ? [...ROUTES, PORTAL_LINK] : ROUTES;
     const edges = links
       .filter(([a]) => !portal || a === PORTAL_LINK[0])
+      .filter(([a, b]) => frozenOpen(this.game.owned) || (a.zone !== FROZEN && b.zone !== FROZEN))
       .map(([a, b]) => {
         const pa = port(a);
         const pb = port(b);
@@ -1422,6 +1470,23 @@ export class UI {
     $(this.root, "#debug-up").style.display = devModeOn() ? "" : "none";
   }
 
+  private upgradeList() {
+    const g = this.game;
+    return UPGRADE_ORDER.map((id) => {
+      const def = UPGRADES[id];
+      const lvl = g.owned[id];
+      const worn = g.save.skin === "ulysses" ? lvl : g.up[id];
+      const text = (i: number) => `${def.levels[i].name} · ${def.levels[i].effect}`;
+      const pips = def.levels
+        .map(
+          (_, i) =>
+            `<button type="button" class="pip${i <= worn ? " on" : ""}${i === worn ? " worn" : ""}${i <= lvl ? "" : " locked"}" data-equip="${id}:${i}" data-tip="${i <= lvl ? esc(text(i)) : "???"}"${i <= lvl ? "" : " aria-disabled=\"true\""} aria-label="${esc(def.title + " " + (i <= lvl ? def.levels[i].name : "locked"))}"></button>`,
+        )
+        .join("");
+      return `<li><div class="upg-head"><b>${def.title}</b><div class="pips-wrap">${lvl >= def.levels.length - 1 && worn === lvl ? `<em class="maxed-pill">Maxed out</em>` : ""}<div class="pips">${pips}</div></div></div><span class="upg-desc" data-base="${esc(text(worn))}">${esc(text(worn))}</span></li>`;
+    }).join("");
+  }
+
   private skinList() {
     const g = this.game;
     return SKIN_ORDER.map((id) => {
@@ -1449,7 +1514,7 @@ export class UI {
           <h4 class="howto-title">Ship</h4>
           <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>"} to sail the ship.</li>
-            ${g.propellerLevel >= 1 ? `<li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while sailing to boost.</li>` : ""}
+            <li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while sailing to boost.</li>
             <li>${this.touch ? "Tap <b>Dive</b>" : "Press <kbd>Space</kbd>"} to drop the sub. Drive back up to the ship to dock, recharge and repair.</li>
             <li>Sail next to an island and ${this.touch ? "tap <b>Shop</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to sell your haul and buy upgrades.</li>
             <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
@@ -1460,10 +1525,11 @@ export class UI {
             <li>${this.touch ? "Tap <b>Grab</b>" : "Press <kbd>Space</kbd>"} to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
             <li>Below about 5 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>?</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
             ${g.propellerLevel >= 1 ? `<li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while steering to boost. It drains the battery fast.</li>` : ""}
+            ${g.gear.radio ? `<li>${this.touch ? "Tap <b>Radio</b>" : "Press <kbd>R</kbd>"} at the surface to call the ship over to you.</li>` : ""}
             ${g.save.weights ? `<li>${this.touch ? "Tap <b>Drop</b>" : "Press <kbd>Q</kbd> or <kbd>.</kbd>"} to drop the dive weights for a quick ride up.</li>` : ""}
             ${this.touch ? "" : "<li>Press <kbd>L</kbd> to cycle the spotlight, and <kbd>O</kbd> to cycle the sonar, between off, on and auto.</li>"}
             <li>Surface anywhere to refill your air.</li>
-            <li>When the battery runs out, ${this.touch ? "tap the <b>U</b> and <b>I</b> buttons" : "press <kbd>U</kbd> and <kbd>I</kbd>"} back and forth to hand-crank.</li>
+            <li>When the battery runs out, ${this.touch ? "tap the <b>U</b> and <b>I</b> buttons" : "press <kbd class=\"tap\">U</kbd> and <kbd class=\"tap tap-b\">I</kbd>"} back and forth to hand-crank.</li>
             <li>${this.touch ? "Tap <b>Menu</b>" : "Press <kbd>Esc</kbd> or <kbd>P</kbd>"} to pause.</li>
           </ul>
         </details>
@@ -1490,15 +1556,11 @@ export class UI {
           <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}" style="--p:${Math.round(g.audio.volume * 100)}%"></label>
           <label class="sound-row">Music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}" style="--p:${Math.round(g.audio.musicVolume * 100)}%"></label>
         </details>
-        <details class="acc">
+        <details class="acc" id="upgrades-acc">
           <summary>Upgrades</summary>
           <p class="muted">Collect treasure on your dives, then sell it at island shops to earn money. Spend it there on upgrades for your sub. Different shops stock different upgrades, so visit more than one.</p>
-          <ul class="upg-sum" style="--pips:${Math.max(...UPGRADE_ORDER.map((id) => UPGRADES[id].levels.length))}">${UPGRADE_ORDER.map((id) => {
-            const def = UPGRADES[id];
-            const lvl = g.up[id];
-            const pips = def.levels.map((_, i) => `<i class="${i <= lvl ? "on" : ""}"></i>`).join("");
-            return `<li><div class="upg-head"><b>${def.title}</b><div class="pips-wrap">${lvl >= def.levels.length - 1 ? `<em class="maxed-pill">Maxed out</em>` : ""}<div class="pips">${pips}</div></div></div><span>${esc(def.levels[lvl].name)} · ${esc(def.levels[lvl].effect)}</span></li>`;
-          }).join("")}</ul>
+          <ul class="upg-sum" id="upg-list" style="--pips:${Math.max(...UPGRADE_ORDER.map((id) => UPGRADES[id].levels.length))}">${this.upgradeList()}</ul>
+          <p class="muted" id="upg-msg">Hover a light to see that level; click one you own to wear it. Lights past your latest purchase are not bought yet.</p>
         </details>
         <details class="acc" id="skins-acc">
           <summary>Skins</summary>
@@ -1528,19 +1590,36 @@ export class UI {
           <p>Vibe coded with Claude by <a href="https://aarongarciacreative.com/" target="_blank" rel="noopener noreferrer">Aaron Garcia</a>.</p>
           <p class="muted">For my children, Aaliyah and Eden.</p>
         </details>
-        <div class="sound-row switch-row"><span>Dev panel</span><button class="dim-switch${devModeOn() ? " on" : ""}" id="dev-mode" role="switch" aria-checked="${devModeOn()}" aria-label="Dev panel"><span class="dim-knob"></span></button></div>
+        <details class="acc">
+          <summary>Developer</summary>
+          <div class="sound-row switch-row"><span>Dev panel</span><button class="dim-switch${devModeOn() ? " on" : ""}" id="dev-mode" role="switch" aria-checked="${devModeOn()}" aria-label="Dev panel"><span class="dim-knob"></span></button></div>
+        </details>
       </div>`,
     );
     const skinsAcc = $<HTMLDetailsElement>(this.modal, "#skins-acc");
-    skinsAcc.addEventListener("toggle", () => {
-      this.modal.classList.toggle("skins-open", skinsAcc.open);
-      this.game.skinPreview = skinsAcc.open;
-    });
-    this.modal.querySelectorAll<HTMLDetailsElement>("details.acc:not(#skins-acc)").forEach((d) =>
+    const upgradesAcc = $<HTMLDetailsElement>(this.modal, "#upgrades-acc");
+    this.modal.querySelectorAll<HTMLDetailsElement>("details.acc").forEach((d) =>
       d.addEventListener("toggle", () => {
-        if (d.open) skinsAcc.open = false;
+        if (d.open) for (const o of [skinsAcc, upgradesAcc]) if (o !== d) o.open = false;
+        const preview = skinsAcc.open || upgradesAcc.open;
+        this.modal.classList.toggle("skins-open", preview);
+        this.game.skinPreview = preview;
       }),
     );
+    const describe = (pip: HTMLElement | null) => {
+      const li = pip?.closest("li");
+      const desc = li?.querySelector<HTMLElement>(".upg-desc");
+      if (desc) desc.textContent = pip?.dataset.tip ?? desc.dataset.base ?? "";
+    };
+    this.modal.onmouseover = (e) => {
+      const pip = (e.target as HTMLElement).closest<HTMLElement>("[data-equip]");
+      if (pip) describe(pip);
+    };
+    this.modal.onmouseout = (e) => {
+      const li = (e.target as HTMLElement).closest("li");
+      const desc = li?.querySelector<HTMLElement>(".upg-desc");
+      if (desc) desc.textContent = desc.dataset.base ?? "";
+    };
     this.modal.oninput = (e) => {
       const el = e.target as HTMLInputElement;
       if (el.type === "range") el.style.setProperty("--p", `${el.value}%`);
@@ -1570,6 +1649,15 @@ export class UI {
       if (pick && g.save.skins.includes(pick)) {
         g.setSkin(pick);
         $(this.modal, "#skin-list").innerHTML = this.skinList();
+      }
+      const pipEl = target.closest<HTMLElement>("[data-equip]");
+      const equip = pipEl?.classList.contains("locked") ? undefined : pipEl?.dataset.equip;
+      if (equip) {
+        const [id, lv] = equip.split(":") as [UpgradeId, string];
+        const why = g.equip(id, Number(lv));
+        $(this.modal, "#upg-list").innerHTML = this.upgradeList();
+        if (why) $(this.modal, "#upg-msg").textContent = why;
+        else g.audio.play("chime1");
       }
       if (act === "copy") {
         const ta = $<HTMLTextAreaElement>(this.modal, "#save-out");
@@ -1608,6 +1696,8 @@ export class UI {
   openShop(island: string) {
     this.shopIsland = island;
     this.shopPreview = null;
+    this.giftTaken = false;
+    this.greeting = SHOP_GREETINGS[Math.floor(Math.random() * SHOP_GREETINGS.length)];
     this.game.audio.play("shopDoor");
     this.open(
       "shop",
@@ -1622,10 +1712,14 @@ export class UI {
           <div class="preview-wrap"><canvas id="shop-preview"></canvas><p class="muted" id="preview-label">Your sub</p></div>
           <div class="upgrades" id="shop-upgrades"></div>
         </div>
-      </div>`,
+      </div>
+      <div class="shopkeeper"><div class="keeper-bubble" id="keeper-bubble" role="status" hidden></div>${shopkeeper}</div>`,
       "shop-overlay",
     );
+    this.giftIntro = true;
     this.renderShop();
+    this.giftIntro = false;
+    this.revealGift(this.modal);
     this.modal.onclick = (e) => {
       const target = e.target as HTMLElement;
       if (target === this.modal) return this.close();
@@ -1642,6 +1736,18 @@ export class UI {
         if (v) this.toast(`Sold your haul for ${money(v)}`);
         this.renderShop();
       }
+      if (act === "claimGift") {
+        const gift = this.game.claimGift();
+        if (gift) {
+          this.giftTaken = true;
+          this.toast(
+            gift === "radio"
+              ? `Took the ${RADIO.name}: press R at the surface to call the ship`
+              : `Took an oxygen candle (carry ${this.game.save.candles} of ${GEAR.candles.max})`,
+          );
+          this.renderShop();
+        }
+      }
       if (act === "buyGear") {
         const id = btn.dataset.id as Exclude<GearId, "candles">;
         if (this.game.buyGear(id)) {
@@ -1656,7 +1762,7 @@ export class UI {
       if (act === "buy") {
         const id = btn.dataset.id as UpgradeId;
         if (this.game.buy(id, this.shopIsland)) {
-          const lvl = UPGRADES[id].levels[this.game.up[id]];
+          const lvl = UPGRADES[id].levels[this.game.owned[id]];
           this.toast(`Installed ${lvl.name}`);
           this.shopPreview = null;
           this.renderShop();
@@ -1669,7 +1775,7 @@ export class UI {
       this.shopPreview =
         row &&
         id &&
-        (id in UPGRADES || id === "scrubbers" || id === "electrolysis" || id === "weights") &&
+        (id in UPGRADES || id === "candle" || id === "scrubbers" || id === "electrolysis" || id === "weights") &&
         !row.classList.contains("maxed") &&
         !row.classList.contains("sold")
           ? (id as NonNullable<typeof this.shopPreview>)
@@ -1678,6 +1784,47 @@ export class UI {
     this.modal.addEventListener("pointerover", setPreview);
     this.modal.addEventListener("focusin", setPreview);
     this.drawPreviewLoop();
+  }
+
+  private revealGift(modal: HTMLElement) {
+    const gift = this.game.trashGift();
+    if (!gift) return;
+    setTimeout(() => {
+      const list = modal.querySelector<HTMLElement>("#shop-upgrades");
+      if (this.modal !== modal || this.modalKind !== "shop" || !list || list.querySelector(".gift")) return;
+      const cards = [...list.querySelectorAll<HTMLElement>(".upg")];
+      const before = cards.map((c) => c.getBoundingClientRect());
+      list.insertAdjacentHTML("afterbegin", this.giftCard(gift));
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const bubble = modal.querySelector<HTMLElement>("#keeper-bubble");
+      if (bubble) {
+        const thanks = () => {
+          bubble.getAnimations().forEach((a) => a.cancel());
+          bubble.textContent = THANKS;
+          if (!reduced) bubble.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250 });
+        };
+        if (reduced) thanks();
+        else bubble.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: "forwards" }).onfinish = thanks;
+      }
+      if (reduced) return;
+      cards.forEach((c, i) => {
+        const now = c.getBoundingClientRect();
+        const dx = before[i].left - now.left;
+        const dy = before[i].top - now.top;
+        if (dx || dy)
+          c.animate(
+            [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
+            { duration: 600, easing: "cubic-bezier(0.3, 0.8, 0.3, 1)" },
+          );
+      });
+      list.querySelector<HTMLElement>(".gift")!.animate(
+        [
+          { opacity: 0, transform: "scale(0.8) translateY(14px)" },
+          { opacity: 1, transform: "none" },
+        ],
+        { duration: 700, delay: 150, easing: "cubic-bezier(0.2, 0.8, 0.3, 1.2)", fill: "backwards" },
+      );
+    }, 2000);
   }
 
   private renderShop() {
@@ -1705,13 +1852,23 @@ export class UI {
       });
     }
 
+    const gift = g.trashGift();
+    const bubble = $(this.modal, "#keeper-bubble");
+    bubble.hidden = false;
+    bubble.textContent = gift && !this.giftIntro
+      ? THANKS
+      : this.giftTaken
+        ? "Stay safe down there!"
+        : this.greeting;
+
     $(this.modal, "#shop-upgrades").innerHTML =
+      (gift && !this.giftIntro ? this.giftCard(gift) : "") +
       UPGRADE_ORDER.filter(
         (id) => stockAt(id, g.save.stock[id], g.save.zone, this.shopIsland).stocked,
       )
         .map((id) => {
           const def = UPGRADES[id];
-          const lvl = g.up[id];
+          const lvl = g.owned[id];
           const now = def.levels[lvl];
           const next = def.levels[lvl + 1];
           const pips = def.levels.map((_, i) => `<i class="${i <= lvl ? "on" : ""}"></i>`).join("");
@@ -1771,6 +1928,21 @@ export class UI {
       .join("");
   }
 
+  private giftCard(gift: "candle" | "radio") {
+    const radio = gift === "radio";
+    const name = radio ? RADIO.name : GEAR.candles.name;
+    const blurb = radio ? RADIO.blurb : `${GEAR.candles.blurb.split(". Cleaning")[0]}.`;
+    const now = radio
+      ? "Works anywhere once you take it"
+      : `Carry ${Math.max(this.game.save.candles, this.game.save.candleClaimed.length + 1)} of ${GEAR.candles.max} once you take it`;
+    return `<div class="upg gift" data-id="${radio ? "gift" : "candle"}" tabindex="-1">
+        <div class="upg-head"><h3>${name}</h3></div>
+        <p class="upg-next">A thank-you for cleaning up. ${blurb}</p>
+        <p class="upg-now">${now}</p>
+        <div class="upg-buy"><button class="btn small" data-act="claimGift">Take it · Free</button></div>
+      </div>`;
+  }
+
   private weightsCard() {
     const g = this.game;
     const action = g.save.weights
@@ -1796,17 +1968,20 @@ export class UI {
       if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);
       if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr);
       const t = now / 1000;
-      const up: Loadout = { ...this.game.up };
+      const up: Loadout = { ...this.game.owned };
       const pid = this.shopPreview;
       const upgrade = pid && pid in UPGRADES ? (pid as UpgradeId) : null;
       if (upgrade && up[upgrade] < UPGRADES[upgrade].levels.length - 1) up[upgrade]++;
       const gear = { ...this.game.save };
       if (pid === "scrubbers" || pid === "electrolysis") gear[pid] = true;
+      if (pid === "candle") gear.candles = Math.max(gear.candles, gear.candleClaimed.length + 1);
       const name = upgrade
         ? UPGRADES[upgrade].levels[up[upgrade]].name
         : pid === "weights"
           ? WEIGHTS.name
-          : pid
+          : pid === "candle"
+            ? GEAR.candles.name
+            : pid
             ? GEAR[pid as "scrubbers" | "electrolysis"].name
             : "";
       this.set(
@@ -1828,7 +2003,7 @@ export class UI {
         ctx.arc(w * (0.15 + ((i * 0.37) % 0.7)), y, 3 + (i % 3), 0, Math.PI * 2);
         ctx.fill();
       }
-      const scale = Math.min(w / 190, h / (this.game.save.skin === "challenger" ? 210 : 130));
+      const scale = this.game.save.skin === "ulysses" ? Math.min(w / 680, h / 260) : Math.min(w / 190, h / (this.game.save.skin === "challenger" ? 210 : 130));
       ctx.translate(w / 2, h / 2 + 6 + Math.sin(t * 1.6) * 4);
       ctx.scale(scale, scale);
       drawSub(ctx, up, t, t * 6, false, pid === "weights", 0, gear, 1, this.game.save.skin, 1);

@@ -140,7 +140,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   propeller: {
     title: "Propeller",
-    blurb: "Sail faster and cover more ocean per charge of air. Twin Blade and up unlock the boost: hold Shift to burn battery for speed.",
+    blurb: "Sail faster and cover more ocean per charge of air. The ship can always boost with Shift; Twin Blade and up let the sub boost too, burning battery for speed.",
     stock: [{ zones: [0], shop: GULL }, { zones: [2], shop: DOCK }],
     levels: [
       { name: "Stock Prop", cost: 0, effect: "Standard speed" },
@@ -224,6 +224,14 @@ const SCRUBBER_DRAIN = 0.65;
 const SCRUBBER_BATTERY = 5;
 const ELECTROLYSIS_BATTERY = 45;
 
+/** What cleaning up all the trash in a zone earns, as a free gift in that zone's shops. */
+export const TRASH_GIFTS: Record<number, "candle" | "radio"> = { 0: "candle", 1: "radio", 2: "candle", 3: "candle" };
+
+export const RADIO = {
+  name: "Ship Radio",
+  blurb: "Press R while the sub is at the surface to call the ship over. It sails over on its own, so a dead battery or a long swim home is no trouble.",
+};
+
 export type GearId = "candles" | "scrubbers" | "electrolysis";
 
 /** Air gear sold at the one island whose `gear` lists it (see `src/data/zones.ts`); candles are instead unlocked by cleaning up zones 1 to 3. */
@@ -234,7 +242,7 @@ export const GEAR = {
     /** Seconds of air one candle adds. */
     seconds: 20,
     blurb:
-      "Chemical candles that burn out extra air. One lights itself when your air is nearly gone. Cleaning up the trash in each of the first three zones lets you carry one more, and docking restocks them all.",
+      "Chemical candles that burn out extra air. One lights itself when your air is nearly gone. Cleaning up the trash in Sunny Shallows, Kelp Canyons and Midnight Trench lets you carry one more, and docking restocks them all.",
   },
   scrubbers: {
     name: "CO₂ Scrubbers",
