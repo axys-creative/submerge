@@ -473,7 +473,7 @@ export const ZONES: ZoneDef[] = [
     name: 'Frozen Expanse',
     islandWidth: 1,
     diveZoom: 0.6,
-    map: { x: 255, y: 165 },
+    map: { x: 330, y: 165 },
     width: 29000,
     floor: FROZEN_FLOOR,
     sky: ['#9FD6F2', '#EAF8FF'],

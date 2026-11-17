@@ -1,5 +1,7 @@
 import lockIcon from "../assets/icons/icon-lock.svg?raw";
 import infoIcon from "../assets/icons/icon-info.svg?raw";
+import zenIcon from "../assets/icons/icon-zen.svg?raw";
+import pinIcon from "../assets/icons/icon-pin.svg?raw";
 import type { Game } from "../game/game";
 import { ZEN_BARS } from "../game/audio";
 import type { Action } from "../game/input";
@@ -49,6 +51,9 @@ const ICON = {
 };
 
 const DIM_KEY = "submerge.ui.v1";
+/** How long the controls pill stays open on its own. */
+const CONTROLS_HINT_MS = 8000;
+const MAP_PIN_KEY = "submerge.map-pinned.v1";
 const MAX_TEST_LEVEL = 3;
 const DEV_KEY = "submerge-dev";
 const devModeOn = () => {
@@ -88,7 +93,7 @@ export class UI {
     this.root.innerHTML = `
       <div class="hud">
         <div class="panel vitals">
-          <div class="vitals-top"><div class="hull-row" id="hud-hull"></div><button class="dim-switch" id="btn-dim" role="switch" tabindex="-1" aria-label="Dim the interface" aria-checked="false" title="Dim the interface"><span class="dim-knob"></span></button></div>
+          <div class="vitals-top"><div class="hull-row" id="hud-hull"></div><button class="dim-switch" id="btn-dim" role="switch" tabindex="-1" aria-label="Dim the interface" aria-checked="false" title="Dim the interface"><span class="dim-icon">${zenIcon}</span><span class="dim-knob"></span></button></div>
           <div class="dials">
             <div class="dial-col"><div class="dial air" id="hud-air">${RING}${ICON.air}</div><span class="pct" id="pct-air">100%</span><div class="dial-pop" id="pop-air"></div></div>
             <div class="dial-col"><div class="dial batt" id="hud-batt">${RING}${ICON.bolt}</div><span class="pct" id="pct-batt">100%</span><div class="dial-pop" id="pop-batt"></div></div>
@@ -117,6 +122,7 @@ export class UI {
         <button class="icon-btn" id="btn-menu" aria-label="Menu">${ICON.menu}</button>
       </div>
       <div class="prompt" id="prompt" hidden></div>
+      <div class="ctl-hint" id="ctl-hint" hidden><div class="ctl-panel"><div class="ctl-msg" id="ctl-msg"></div><div class="ctl-rows" id="ctl-body"></div></div><button class="ctl-btn" type="button" aria-label="Controls">${infoIcon}</button></div>
       <div class="toast" id="toast" hidden></div>
       <div class="touch" id="touch" hidden>
         <div class="stick-zone" id="stick-zone"></div>
@@ -140,7 +146,8 @@ export class UI {
         <div class="dm-foot"><div class="panel dm-tag" id="dm-next"></div></div>
       </div>
       <canvas class="minimap" id="minimap" width="440" height="220"></canvas>
-      <div class="minimap-tab" id="map-zone"></div>
+      <div class="map-hot"></div>
+      <div class="minimap-tab"><span id="map-zone"></span><button class="dim-switch map-pin on" id="map-pin" type="button" role="switch" tabindex="-1" aria-label="Pin minimap" aria-checked="true" title="Unpin minimap"><span class="dim-icon">${pinIcon}</span><span class="dim-knob"></span></button></div>
       <div class="debug-upgrades" id="debug-up"></div>
       <div class="overlay" id="modal" hidden></div>`;
     this.modal = $(this.root, "#modal");
@@ -195,7 +202,7 @@ export class UI {
         return;
       }
       if (btn.dataset.zone) {
-        const zone = ZONE_ORDER[ZONE_ORDER.indexOf(this.game.save.zone) + Number(btn.dataset.zone)];
+        const zone = this.stepZone(this.game.save.zone, Number(btn.dataset.zone));
         if (zone !== undefined) this.game.sailTo({ zone, side: "west" });
         return;
       }
@@ -258,6 +265,24 @@ export class UI {
     try {
       this.setDim(localStorage.getItem(DIM_KEY) === "1");
     } catch {}
+    let pinned = true;
+    try {
+      pinned = localStorage.getItem(MAP_PIN_KEY) !== "0";
+    } catch {}
+    const pin = $(this.root, "#map-pin");
+    const setPinned = (on: boolean) => {
+      pinned = on;
+      this.root.classList.toggle("map-unpinned", !on);
+      pin.classList.toggle("on", on);
+      pin.setAttribute("aria-checked", String(on));
+      pin.title = on ? "Unpin minimap" : "Pin minimap";
+      try {
+        localStorage.setItem(MAP_PIN_KEY, on ? "1" : "0");
+      } catch {}
+    };
+    setPinned(pinned);
+    pin.addEventListener("mousedown", (e) => e.preventDefault());
+    pin.addEventListener("click", () => setPinned(!pinned));
     this.setupTouch();
     this.showTitle();
   }
@@ -307,6 +332,12 @@ export class UI {
   private glitchAt = 0;
   private glitchNoise = 0;
   private staticCanvas: HTMLCanvasElement | null = null;
+  private stepZone(from: number, dir: number) {
+    const visited = this.game.save.visited;
+    const order = ZONE_ORDER.filter((z) => z === from || !ZONES[z].secret || visited.includes(z));
+    return order[order.indexOf(from) + dir];
+  }
+
   private deepestZone = 0;
   private trackHeight = 0;
   private wasHeld = false;
@@ -434,13 +465,14 @@ export class UI {
         `|${g.save.zone}|${g.mode}|${g.save.weights}|${g.save.candles}|${g.save.scrubbers}|${g.save.electrolysis}|${g.debugFast}|${g.save.skin}|${g.debugRain}`,
       () => {
         const zone = g.save.zone;
-        const prevZone = ZONE_ORDER[ZONE_ORDER.indexOf(zone) - 1];
-        const nextZone = ZONE_ORDER[ZONE_ORDER.indexOf(zone) + 1];
+        const prevZone = this.stepZone(zone, -1);
+        const nextZone = this.stepZone(zone, 1);
+        const label = (z: number) => (z === zone || ZONES[z].catalog || g.save.visited.includes(z) ? ZONES[z].name : "???");
         const master = this.masterLevel();
         const off = (ok: boolean) => (ok && g.mode === "docked" ? "" : " disabled");
         $(this.root, "#debug-up").innerHTML =
           "<h4>Zone (test)</h4>" +
-          `<div class="dbg-row"><button tabindex="-1" data-zone="-1" title="${esc(ZONES[prevZone]?.name ?? "")}"${off(prevZone !== undefined)}>◀</button><span><b>Zone ${zoneNumber(zone)}/${ZONES.length - 1}</b><small>${ZONES[zone].name}</small></span><button tabindex="-1" data-zone="1" title="${esc(ZONES[nextZone]?.name ?? "")}"${off(nextZone !== undefined)}>▶</button></div>` +
+          `<div class="dbg-row"><button tabindex="-1" data-zone="-1" title="${esc(prevZone === undefined ? "" : label(prevZone))}"${off(prevZone !== undefined)}>◀</button><span><b>Zone ${zoneNumber(zone)}/${ZONES.length - 1}</b><small>${label(zone)}</small></span><button tabindex="-1" data-zone="1" title="${esc(nextZone === undefined ? "" : label(nextZone))}"${off(nextZone !== undefined)}>▶</button></div>` +
           `<div class="dbg-row"><button tabindex="-1" data-fast="0"${g.debugFast ? "" : " disabled"}>−</button><span><b>Dev mode</b><small>${g.debugFast ? "On: fast, lit, wide, map revealed, no clipping, no damage" : "Off"}</small></span><button tabindex="-1" data-fast="1"${g.debugFast ? " disabled" : ""}>+</button></div>` +
           `<div class="dbg-row"><button tabindex="-1" data-rain="-1">◀</button><span><b>Rain</b><small>${g.debugRain === null ? "Auto (follows the cycle)" : g.debugRain ? "Always raining" : "Never"}</small></span><button tabindex="-1" data-rain="1">▶</button></div>` +
           `<div class="dbg-row"><button tabindex="-1" data-skin="-1">◀</button><span><b>Skin</b><small>${SKINS[g.save.skin].name}</small></span><button tabindex="-1" data-skin="1">▶</button></div>` +
@@ -508,11 +540,13 @@ export class UI {
 
     const spot = g.dockSpot();
     const prompt = this.promptText(spot);
-    this.set("prompt", prompt, (v) => {
+    this.set("prompt", `${prompt}|${this.ctlVisible()}`, () => {
       const el = $(this.root, "#prompt");
-      el.innerHTML = v;
-      el.hidden = !v;
+      el.innerHTML = prompt;
+      el.hidden = !prompt || this.ctlVisible();
     });
+
+    this.updateControlsHint(diving, prompt);
 
     if (this.touch) {
       const docked = !diving && !this.modalKind && !g.travel;
@@ -549,6 +583,60 @@ export class UI {
     }
   }
 
+  private ctlShown = new Set<string>();
+  private ctlUntil = 0;
+  private ctlFade = 0;
+
+  /** The info pill: opens by itself for a few seconds the first time the ship and the sub are driven, then folds away until hovered. */
+  private ctlVisible() {
+    return !this.touch && !this.modalKind && !this.game.travel && !this.game.world.def.catalog;
+  }
+
+  private updateControlsHint(diving: boolean, message: string) {
+    const g = this.game;
+    const el = $(this.root, "#ctl-hint");
+    const show = this.ctlVisible();
+    this.set("ctl-show", String(show), () => (el.hidden = !show));
+    if (!show) return;
+    const mode = diving ? "sub" : "ship";
+    if (!this.ctlShown.has(mode)) {
+      this.ctlShown.add(mode);
+      this.ctlUntil = performance.now() + CONTROLS_HINT_MS;
+    }
+    const k = (...keys: string[]) => keys.map((x) => `<kbd>${x}</kbd>`).join("");
+    const rows: [string, string][] = diving
+      ? [
+          [k("←", "↑", "↓", "→") + " or " + k("WASD"), "Steer"],
+          ...(g.propellerLevel >= 1 ? [[k("Shift"), "Boost"] as [string, string]] : []),
+          [k("Space"), "Mechanical arm"],
+          [k("E") + " or " + k("/"), "Lock depth"],
+          ...(g.weightsOn ? [[k("Q") + " or " + k("."), "Drop weights"] as [string, string]] : []),
+        ]
+      : [
+          [k("←", "→") + " or " + k("A", "D"), "Sail"],
+          ...(g.propellerLevel >= 1 ? [[k("Shift"), "Boost"] as [string, string]] : []),
+          [k("Space"), "Dive"],
+          [k("E") + " or " + k("Enter"), "Shop, map"],
+        ];
+    this.set("ctl-body", rows.join("|"), () => {
+      $(this.root, "#ctl-body").innerHTML = rows.map(([a, b]) => `<div class="ctl-row"><span>${a}</span><span>${b}</span></div>`).join("");
+    });
+    this.set("ctl-msg", message, () => {
+      clearTimeout(this.ctlFade);
+      el.classList.toggle("has-msg", !!message);
+      if (message) {
+        $(this.root, "#ctl-msg").innerHTML = message;
+        el.classList.add("msg-only");
+      } else {
+        this.ctlFade = window.setTimeout(() => {
+          el.classList.remove("msg-only");
+          $(this.root, "#ctl-msg").innerHTML = "";
+        }, 400);
+      }
+    });
+    el.classList.toggle("open", performance.now() < this.ctlUntil);
+  }
+
   private promptText(spot: ReturnType<Game["dockSpot"]>) {
     const g = this.game;
     if (this.modalKind || g.travel) return "";
@@ -558,10 +646,7 @@ export class UI {
       if (spot?.kind === "portal") return `${this.touch ? "" : "<kbd>Enter</kbd> or <kbd>E</kbd> "}Enter the portal`;
       if (spot?.kind === "sail")
         return `${this.touch ? "" : "<kbd>Enter</kbd> or <kbd>E</kbd> "}Open the route map`;
-      const boostHint = g.propellerLevel >= 1 ? " &nbsp;·&nbsp; <kbd>Shift</kbd> Boost" : "";
-      return this.touch
-        ? "Drag to sail · Tap Dive to launch"
-        : `<kbd>←</kbd><kbd>→</kbd> Sail${boostHint} &nbsp;·&nbsp; <kbd>Space</kbd> Dive`;
+      return this.touch ? "Drag to sail · Tap Dive to launch" : "";
     }
     const s = g.sub;
     if (s.battery <= 0)
