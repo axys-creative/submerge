@@ -109,6 +109,7 @@ const PIECES: Record<string, { x: number; y: number; delay: number; spin: number
   scrubber: { x: -40, y: -1, delay: 0.1, spin: 1.8, squash: 0.2 },
   electro: { x: 28, y: -26, delay: 0.05, spin: -2, squash: 0.2 },
   candles: { x: 5, y: -19, delay: 0.1, spin: 2.4, squash: 0.2 },
+  radio: { x: -15, y: -41, delay: 0, spin: -2.8, squash: 0 },
 };
 
 export type PieceId = keyof typeof PIECES;
@@ -144,6 +145,7 @@ export interface AirGear {
   rack?: boolean;
   scrubbers: boolean;
   electrolysis: boolean;
+  radio?: boolean;
 }
 
 /** The CO2 scrubber: a small labeled box on the hull behind the cabin. */
@@ -200,6 +202,24 @@ function drawElectrolysis(ctx: CanvasRenderingContext2D, t: number, facing: numb
   ctx.restore();
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
+}
+
+/** The radio's short antenna on a small rectangular base, at the back of the tower. */
+function drawRadioMast(ctx: CanvasRenderingContext2D) {
+  ctx.fillStyle = '#2D3A4D';
+  rrect(ctx, -19, -40, 8, 8, 1);
+  ctx.fill();
+  ctx.strokeStyle = '#2D3A4D';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-18, -40);
+  ctx.lineTo(-18, -44);
+  ctx.stroke();
+  ctx.fillStyle = '#E5484D';
+  ctx.beginPath();
+  ctx.arc(-15, -36, 1.4, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 /** Up to three oxygen candles racked on the cabin, above the porthole. */
@@ -335,6 +355,7 @@ export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, p
   part('sonar', () => drawSonar(ctx, up.sonar));
   if (gear?.scrubbers) part('scrubber', () => rear(() => drawScrubber(ctx, facing)));
   if (gear?.electrolysis) part('electro', () => drawElectrolysis(ctx, t, facing));
+  if (gear?.radio && !capsule) part('radio', () => drawRadioMast(ctx));
   if (gear?.candles || gear?.rack) part('candles', () => drawCandles(ctx, gear.candles));
   ctx.restore();
 }

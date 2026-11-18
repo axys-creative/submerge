@@ -801,7 +801,7 @@ export function renderScene(g: Game) {
     crumple(ctx);
     if (blink) ctx.globalAlpha = 0.4;
     if (g.swallow) ctx.globalAlpha *= 1 - clamp((g.swallow.t - SWALLOW_CLOSE + 0.6) / 0.5, 0, 1);
-    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, rack: g.gear.candles > 0, scrubbers: g.gear.scrubbers, electrolysis: g.gear.electrolysis }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut);
+    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, rack: g.gear.candles > 0, scrubbers: g.gear.scrubbers, electrolysis: g.gear.electrolysis, radio: g.gear.radio }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut);
     if (g.crack !== null) drawGlassCracks(ctx, Math.min(1, g.crack / CRACK_TIME), g.save.skin);
     ctx.restore();
   }

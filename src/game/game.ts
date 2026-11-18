@@ -9,7 +9,7 @@ import { updateCreature } from "./creatures";
 import { DAY_SECONDS, NOON, START_DAY, daylight } from "../render/daylight";
 import { rainAt } from "../render/weather";
 import { AudioManager } from "./audio";
-import { allAchievementsEarned, fullyUpgraded, loadSave, newSave, writeSave, type SaveData, type SwitchMode } from "./save";
+import { allAchievementsEarned, fullyUpgraded, loadSave, newSave, writeSave, type GearToggle, type SaveData, type SwitchMode } from "./save";
 import { GEAR, TRASH_GIFTS, STATS, UPGRADES, UPGRADE_ORDER, WEIGHTS, stockAt, type GearId, type Loadout, type UpgradeId } from "../data/upgrades";
 import { ULYSSES_REACH, ULYSSES_TAIL, ULYSSES_WEIGHTS } from "../art/ulysses";
 import { weightMounts, WEIGHT_Y, GATE_THRUSTER_BUBBLES, challengerBase, challengerWeights } from "../art/sub";
@@ -537,13 +537,31 @@ export class Game {
   /** The air gear in effect: all of it while the Ulysses is worn. */
   get gear() {
     const all = this.save.skin === "ulysses";
+    const off = this.save.gearOff;
     return {
-      candles: all ? GEAR.candles.max : this.save.candles,
-      scrubbers: all || this.save.scrubbers,
-      electrolysis: all || this.save.electrolysis,
-      weights: all || this.save.weights,
-      radio: all || this.save.radio,
+      candles: all ? GEAR.candles.max : Math.max(0, this.save.candles - this.save.candlesOff),
+      scrubbers: all || (this.save.scrubbers && !off.scrubbers),
+      electrolysis: all || (this.save.electrolysis && !off.electrolysis),
+      weights: all || (this.save.weights && !off.weights),
+      radio: all || (this.save.radio && !off.radio),
     };
+  }
+  /** Sets how many of the carried oxygen candles are on (docked only). Returns why it could not, or null. */
+  setCandlesOn(n: number) {
+    if (this.mode !== "docked") return "Return to the ship to change your loadout.";
+    this.save.candlesOff = Math.max(0, this.save.candles - Math.max(0, Math.min(this.save.candles, n)));
+    this.resetSub();
+    this.persist();
+    return null;
+  }
+  /** Switches an owned piece of gear off or on (docked only). Returns why it could not, or null. */
+  toggleGear(id: GearToggle) {
+    if (this.mode !== "docked") return "Return to the ship to change your loadout.";
+    if (this.save.gearOff[id]) delete this.save.gearOff[id];
+    else this.save.gearOff[id] = true;
+    this.resetSub();
+    this.persist();
+    return null;
   }
   /** How far the sub's body reaches sideways, up and down from its center, for bumping into terrain; the tall Challenger skin reaches further up and down once it stands. */
   private get subHalf() {
@@ -1619,7 +1637,8 @@ export class Game {
         this.ui.toast(
           this.ui.touch
             ? "Battery empty! Tap the two crank buttons back and forth"
-            : "Battery empty! Press U and I back and forth to hand-crank",
+            : 'Battery empty! Press <kbd class="tap">U</kbd><kbd class="tap tap-b">I</kbd> back and forth to hand-crank',
+          true,
         );
       }
     }
@@ -2417,7 +2436,7 @@ export class Game {
           `Achievement unlocked: Squeaky Clean · ${name}`,
           gift ? "A thank-you gift is waiting in the island shops." : "Every piece of trash collected.",
         ),
-      3000,
+      1500,
     );
     this.persist();
   }

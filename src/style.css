@@ -2683,6 +2683,15 @@ body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
   opacity: 0.6;
 }
 
+.upg-sum .pip.gear {
+  cursor: default;
+}
+
+.upg-sum .pip.gear.gear:hover {
+  filter: none;
+  transform: none;
+}
+
 .upg-sum .pip:not(.locked):hover {
   filter: brightness(1.12);
   transform: scale(1.2);

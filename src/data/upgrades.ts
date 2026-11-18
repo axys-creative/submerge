@@ -1,6 +1,14 @@
 import { PX_PER_M } from "../config";
 
-export type UpgradeId = "plating" | "oxygen" | "battery" | "hull" | "light" | "sonar" | "propeller" | "cargo";
+export type UpgradeId =
+  | "plating"
+  | "oxygen"
+  | "battery"
+  | "hull"
+  | "light"
+  | "sonar"
+  | "propeller"
+  | "cargo";
 export type Loadout = Record<UpgradeId, number>;
 
 export interface UpgradeLevel {
@@ -47,7 +55,9 @@ const slotHere = (slot: StockSlot, zone: number, island: string) =>
 
 /** Whether a shop stocks the upgrade at all, and which unused slot a purchase there would use (-1 when sold out). */
 export function stockAt(id: UpgradeId, used: number[], zone: number, island: string) {
-  const here = UPGRADES[id].stock.map((slot, i) => (slotHere(slot, zone, island) ? i : -1)).filter((i) => i >= 0);
+  const here = UPGRADES[id].stock
+    .map((slot, i) => (slotHere(slot, zone, island) ? i : -1))
+    .filter((i) => i >= 0);
   const open = here.filter((i) => !used.includes(i));
   return { stocked: here.length > 0, open: open[0] ?? -1, left: open.length };
 }
@@ -92,12 +102,12 @@ export const STATS = {
   ] as (LightSpec | null)[],
 };
 
-
 /** Rounds a multiplier for display: one decimal below 10, a whole number above. */
 const times = (x: number) => `${x >= 10 ? Math.round(x) : Math.round(x * 10) / 10}×`;
 const sonarEffect = (level: number) =>
   `${meters(STATS.sonarRange[level])} m range, pings every ${STATS.sonarInterval[level]} s, readings last ${STATS.sonarLinger[level]} s`;
-const sonarDrain = (level: number) => `Each ping uses ${meters(STATS.sonarPingCost[level])} m of driving`;
+const sonarDrain = (level: number) =>
+  `Each ping uses ${meters(STATS.sonarPingCost[level])} m of driving`;
 const num = (n: number) => n.toLocaleString("en-US");
 const meters = (px: number) => num(Math.round(px / PX_PER_M));
 const perMinute = (perSecond: number) => `${meters(perSecond * 60)} m of driving per minute`;
@@ -108,7 +118,11 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   plating: {
     title: "Plating",
     blurb: "Dive deeper before the hull starts to buckle.",
-    stock: [{ zones: [0], shop: COVE }, { zones: [2], shop: DOCK }, { zones: [4], shop: PIER }],
+    stock: [
+      { zones: [0], shop: COVE },
+      { zones: [2], shop: DOCK },
+      { zones: [4], shop: PIER },
+    ],
     levels: [
       { name: "Silver Shell", cost: 0, effect: `Safe to ${num(STATS.depthRating[0])} m` },
       { name: "Graphite Steel", cost: 300, effect: `Safe to ${num(STATS.depthRating[1])} m` },
@@ -119,7 +133,11 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   oxygen: {
     title: "Oxygen Tank",
     blurb: "Stay under longer. Surfacing refills it.",
-    stock: [{ zones: [0], shop: COVE }, { zones: [2], shop: LANTERN }, { zones: [3], shop: LAST_LIGHT }],
+    stock: [
+      { zones: [0], shop: COVE },
+      { zones: [2], shop: LANTERN },
+      { zones: [3], shop: LAST_LIGHT },
+    ],
     levels: [
       { name: "Silver Tank", cost: 0, effect: `${STATS.oxygen[0]} seconds of air` },
       { name: "Graphite Tank", cost: 250, effect: `${STATS.oxygen[1]} seconds of air` },
@@ -130,22 +148,52 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   battery: {
     title: "Battery",
     blurb: "Drive farther before you have to hand-crank. Docking recharges it.",
-    stock: [{ zones: [0], shop: GULL }, { zones: [1], shop: PEARL }, { zones: [4], shop: PALM }],
+    stock: [
+      { zones: [0], shop: GULL },
+      { zones: [1], shop: PEARL },
+      { zones: [4], shop: PALM },
+    ],
     levels: [
       { name: "Starter Cell", cost: 0, effect: `${meters(STATS.battery[0])} m of driving` },
-      { name: "Twin Cells", cost: 200, effect: `${times(STATS.battery[1] / STATS.battery[0])} range (${meters(STATS.battery[1])} m)` },
-      { name: "Triple Pack", cost: 650, effect: `${times(STATS.battery[2] / STATS.battery[0])} range (${meters(STATS.battery[2])} m)` },
-      { name: "Gold Core", cost: 1800, effect: `${times(STATS.battery[3] / STATS.battery[0])} range (${meters(STATS.battery[3])} m)` },
+      {
+        name: "Twin Cells",
+        cost: 200,
+        effect: `${times(STATS.battery[1] / STATS.battery[0])} range (${meters(STATS.battery[1])} m)`,
+      },
+      {
+        name: "Triple Pack",
+        cost: 650,
+        effect: `${times(STATS.battery[2] / STATS.battery[0])} range (${meters(STATS.battery[2])} m)`,
+      },
+      {
+        name: "Gold Core",
+        cost: 1800,
+        effect: `${times(STATS.battery[3] / STATS.battery[0])} range (${meters(STATS.battery[3])} m)`,
+      },
     ],
   },
   propeller: {
     title: "Propeller",
-    blurb: "Sail faster and cover more ocean per charge of air. The ship can always boost with Shift; Twin Blade and up let the sub boost too, burning battery for speed.",
-    stock: [{ zones: [0], shop: GULL }, { zones: [2], shop: DOCK }],
+    blurb:
+      "Sail faster and cover more ocean per charge of air. The ship can always boost with Shift; Twin Blade and up let the sub boost too, burning battery for speed.",
+    stock: [
+      { zones: [0], shop: GULL },
+      { zones: [2], shop: DOCK },
+    ],
     levels: [
       { name: "Stock Prop", cost: 0, effect: "Standard speed" },
-      { name: "Twin Blade", cost: 300, effect: `${times(STATS.speed[1])} speed`, drain: `Drains the battery ${times(STATS.speed[1] * STATS.driveDrain[1])} faster while driving` },
-      { name: "Turbo Screw", cost: 1000, effect: `${times(STATS.speed[2])} speed`, drain: `Drains the battery ${times(STATS.speed[2] * STATS.driveDrain[2])} faster while driving` },
+      {
+        name: "Twin Blade",
+        cost: 300,
+        effect: `${times(STATS.speed[1])} speed`,
+        drain: `Drains the battery ${times(STATS.speed[1] * STATS.driveDrain[1])} faster`,
+      },
+      {
+        name: "Turbo Screw",
+        cost: 1000,
+        effect: `${times(STATS.speed[2])} speed`,
+        drain: `Drains the battery ${times(STATS.speed[2] * STATS.driveDrain[2])} faster`,
+      },
     ],
   },
   cargo: {
@@ -159,30 +207,73 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   },
   hull: {
     title: "Bumpers",
-    blurb: "Each upgrade adds a shield that soaks up one bump from sharks and squid. Docking repairs them.",
-    stock: [{ zones: [0], shop: GULL }, { zones: [2], shop: LANTERN }, { zones: [4], shop: PIER }],
+    blurb:
+      "Each upgrade adds a shield that soaks up one bump from sharks and squid. Docking repairs them.",
+    stock: [
+      { zones: [0], shop: GULL },
+      { zones: [2], shop: LANTERN },
+      { zones: [4], shop: PIER },
+    ],
     levels: [
       { name: "Bare Hull", cost: 0, effect: "No shields, the first hit sinks you" },
-      { name: "Bow Bumper", cost: 400, effect: `${STATS.maxHull[1]} shield`, gain: `+${STATS.maxHull[1] - STATS.maxHull[0]} shield` },
-      { name: "Full Fenders", cost: 1400, effect: `${STATS.maxHull[2]} shields`, gain: `+${STATS.maxHull[2] - STATS.maxHull[1]} ${STATS.maxHull[2] - STATS.maxHull[1] === 1 ? 'shield' : 'shields'}` },
-      { name: "Armor Cage", cost: 3000, effect: `${STATS.maxHull[3]} shields`, gain: `+${STATS.maxHull[3] - STATS.maxHull[2]} ${STATS.maxHull[3] - STATS.maxHull[2] === 1 ? 'shield' : 'shields'}` },
+      {
+        name: "Bow Bumper",
+        cost: 400,
+        effect: `${STATS.maxHull[1]} shield`,
+        gain: `+${STATS.maxHull[1] - STATS.maxHull[0]} shield`,
+      },
+      {
+        name: "Full Fenders",
+        cost: 1400,
+        effect: `${STATS.maxHull[2]} shields`,
+        gain: `+${STATS.maxHull[2] - STATS.maxHull[1]} ${STATS.maxHull[2] - STATS.maxHull[1] === 1 ? "shield" : "shields"}`,
+      },
+      {
+        name: "Armor Cage",
+        cost: 3000,
+        effect: `${STATS.maxHull[3]} shields`,
+        gain: `+${STATS.maxHull[3] - STATS.maxHull[2]} ${STATS.maxHull[3] - STATS.maxHull[2] === 1 ? "shield" : "shields"}`,
+      },
     ],
   },
   light: {
     title: "Spotlight",
     blurb: "See in the dark water of the deep.",
-    stock: [{ zones: [1], shop: PEARL }, { zones: [2], shop: LANTERN }, { zones: [3], shop: LAST_LIGHT }],
+    stock: [
+      { zones: [1], shop: PEARL },
+      { zones: [2], shop: LANTERN },
+      { zones: [3], shop: LAST_LIGHT },
+    ],
     levels: [
       { name: "Running Lights", cost: 0, effect: "Decorative only" },
-      { name: "Amber Lamp", cost: 180, effect: `Short yellow beam, ${meters(STATS.light[1]!.range)} m`, drain: `Lamp uses ${perMinute(STATS.lampDrain[1])}` },
-      { name: "White Floodlight", cost: 600, effect: `Long white beam, ${meters(STATS.light[2]!.range)} m`, drain: `Lamp uses ${perMinute(STATS.lampDrain[2])}` },
-      { name: "White Beam", cost: 1600, effect: `Long, wide white beam, ${meters(STATS.light[3]!.range)} m, plus a rear light`, drain: `Lamp uses ${perMinute(STATS.lampDrain[3])}` },
+      {
+        name: "Amber Lamp",
+        cost: 180,
+        effect: `Short yellow beam, ${meters(STATS.light[1]!.range)} m`,
+        drain: `Lamp uses ${perMinute(STATS.lampDrain[1])}`,
+      },
+      {
+        name: "White Floodlight",
+        cost: 600,
+        effect: `Long white beam, ${meters(STATS.light[2]!.range)} m`,
+        drain: `Lamp uses ${perMinute(STATS.lampDrain[2])}`,
+      },
+      {
+        name: "White Beam",
+        cost: 1600,
+        effect: `Long, wide white beam, ${meters(STATS.light[3]!.range)} m, plus a rear light`,
+        drain: `Lamp uses ${perMinute(STATS.lampDrain[3])}`,
+      },
     ],
   },
   sonar: {
     title: "Sonar",
     blurb: "Pings reveal what is hiding in the dark.",
-    stock: [{ zones: [2], shop: DOCK }, { zones: [3], shop: LAST_LIGHT }, { zones: [4], shop: PALM }],
+    stock: [
+      { zones: [2], shop: DOCK },
+      { zones: [3], shop: LAST_LIGHT },
+      { zones: [4], shop: PALM },
+    ],
     levels: [
       { name: "No Sonar", cost: 0, effect: "Nothing detected" },
       { name: "Basic Sonar", cost: 350, effect: sonarEffect(1), drain: sonarDrain(1) },
@@ -225,11 +316,17 @@ const SCRUBBER_BATTERY = 5;
 const ELECTROLYSIS_BATTERY = 45;
 
 /** What cleaning up all the trash in a zone earns, as a free gift in that zone's shops. */
-export const TRASH_GIFTS: Record<number, "candle" | "radio"> = { 0: "candle", 1: "radio", 2: "candle", 3: "candle" };
+export const TRASH_GIFTS: Record<number, "candle" | "radio"> = {
+  0: "candle",
+  1: "radio",
+  2: "candle",
+  3: "candle",
+};
 
 export const RADIO = {
   name: "Ship Radio",
-  blurb: "Press R while the sub is at the surface to call the ship over. It sails over on its own, so a dead battery or a long swim home is no trouble.",
+  blurb:
+    "Press R while the sub is at the surface to call the ship over. It sails over on its own, so a dead battery or a long swim home is no trouble.",
 };
 
 export type GearId = "candles" | "scrubbers" | "electrolysis";

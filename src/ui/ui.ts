@@ -6,7 +6,7 @@ import shopkeeper from "../assets/svgs/shopkeeper.svg?raw";
 import type { Game } from "../game/game";
 import { ZEN_BARS } from "../game/audio";
 import type { Action } from "../game/input";
-import { exportCode, importCode, type SwitchMode } from "../game/save";
+import { exportCode, importCode, type GearToggle, type SwitchMode } from "../game/save";
 import { CELL } from "../game/explored";
 import {
   DEPTH_HOLD_DRAIN,
@@ -101,7 +101,7 @@ export class UI {
   private giftTaken = false;
   private greeting = "";
   private giftIntro = false;
-  private shopPreview: UpgradeId | "scrubbers" | "electrolysis" | "weights" | "candle" | null = null;
+  private shopPreview: UpgradeId | "scrubbers" | "electrolysis" | "weights" | "candle" | "radio" | null = null;
   private prevHull = 0;
   private shopIsland = "";
 
@@ -1052,9 +1052,10 @@ export class UI {
     }, 5000);
   }
 
-  toast(text: string) {
+  toast(text: string, html = false) {
     const el = $(this.root, "#toast");
-    el.textContent = text;
+    if (html) el.innerHTML = text;
+    else el.textContent = text;
     el.hidden = false;
     el.classList.remove("out");
     clearTimeout(this.toastTimer);
@@ -1151,18 +1152,20 @@ export class UI {
     first?.focus();
   }
 
-  /** Keeps keyboard focus inside the route map: Tab or the arrow keys move between its buttons and Enter picks the focused one (Escape closes it elsewhere). */
+  /** Keeps keyboard focus inside the route map: Tab, the arrow keys or WASD move between its buttons and Enter or E picks the focused one (Escape closes it elsewhere). */
   private mapKeys(e: KeyboardEvent) {
     if (this.modalKind !== "map") return;
     const keys = ["Tab", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"];
-    if (!keys.includes(e.key)) return;
+    const wasd = ["KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code);
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!keys.includes(e.key) && e.code !== "KeyE" && !wasd) return;
     const buttons = [...this.modal.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
     if (!buttons.length) return;
     e.preventDefault();
     e.stopPropagation();
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    if (e.key === "Enter") return void buttons[Math.max(0, at)].click();
-    const back = e.key === "ArrowLeft" || e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey);
+    if (e.key === "Enter" || e.code === "KeyE") return void buttons[Math.max(0, at)].click();
+    const back = e.key === "ArrowLeft" || e.key === "ArrowUp" || e.code === "KeyW" || e.code === "KeyA" || (e.key === "Tab" && e.shiftKey);
     const next = at < 0 ? 0 : (at + (back ? -1 : 1) + buttons.length) % buttons.length;
     buttons[next].focus();
   }
@@ -1288,7 +1291,8 @@ export class UI {
         g.newGame();
         this.close();
         this.toast(
-          `${this.touch ? "Tap Dive" : "Press Space"} to dive. Grab treasure, then sell it at an island shop.`,
+          `${this.touch ? "Tap Dive" : "Press <kbd>Space</kbd>"} to dive. Grab treasure, then sell it at an island shop.`,
+          true,
         );
       }
       if (act === "new") $(this.modal, ".confirm").hidden = false;
@@ -1351,10 +1355,13 @@ export class UI {
       const m = ZONES[e.zone].map;
       return { x: m.x + (e.side === "east" ? half : -half), y: m.y };
     };
+    const seen = (z: number) =>
+      this.game.debugFast || z === from.zone || this.game.save.visited.includes(z) || dests.some((d) => d.zone === z);
     const links = this.game.save.portal ? [...ROUTES, PORTAL_LINK] : ROUTES;
     const edges = links
       .filter(([a]) => !portal || a === PORTAL_LINK[0])
       .filter(([a, b]) => frozenOpen(this.game.owned) || (a.zone !== FROZEN && b.zone !== FROZEN))
+      .filter(([a, b]) => seen(a.zone) && seen(b.zone))
       .map(([a, b]) => {
         const pa = port(a);
         const pb = port(b);
@@ -1364,7 +1371,7 @@ export class UI {
       })
       .join("");
     const nodes = ZONES.map((z, i) => {
-      if (z.catalog || (portal && i !== from.zone && i !== portal.to)) return "";
+      if (z.catalog || !seen(i) || (portal && i !== from.zone && i !== portal.to)) return "";
       const here = i === from.zone;
       const dest = dests.some((d) => d.zone === i);
       const route = dests.find((d) => d.zone === i);
@@ -1484,7 +1491,36 @@ export class UI {
         )
         .join("");
       return `<li><div class="upg-head"><b>${def.title}</b><div class="pips-wrap">${lvl >= def.levels.length - 1 && worn === lvl ? `<em class="maxed-pill">Maxed out</em>` : ""}<div class="pips">${pips}</div></div></div><span class="upg-desc" data-base="${esc(text(worn))}">${esc(text(worn))}</span></li>`;
-    }).join("");
+    }).join("") + this.gearList();
+  }
+
+  private gearList() {
+    const sv = this.game.save;
+    const rows: [GearToggle | "candles", string, string, number, number][] = [
+      ["candles", GEAR.candles.name, GEAR.candles.blurb, sv.candles, GEAR.candles.max],
+      ["scrubbers", GEAR.scrubbers.name, GEAR.scrubbers.blurb, +sv.scrubbers, 1],
+      ["electrolysis", GEAR.electrolysis.name, GEAR.electrolysis.blurb, +sv.electrolysis, 1],
+      ["weights", WEIGHTS.name, WEIGHTS.blurb, +sv.weights, 1],
+      ["radio", RADIO.name, RADIO.blurb, +sv.radio, 1],
+    ];
+    return rows
+      .filter(([, , , have]) => have > 0)
+      .map(([id, name, blurb, have, max]) => {
+        const candles = id === "candles";
+        const active = candles ? Math.max(0, have - sv.candlesOff) : have;
+        const off = candles ? active === 0 && have > 0 : !!sv.gearOff[id as GearToggle];
+        const pips = Array.from({ length: max }, (_, i) => {
+          if (i >= have) return `<span class="pip gear locked"></span>`;
+          const lit = candles ? i < active : !off;
+          const worn = candles ? i === active - 1 : lit;
+          return `<button type="button" class="pip${lit ? " on" : ""}${worn ? " worn" : ""}" data-gear="${id}" data-n="${i + 1 === active ? i : i + 1}" aria-pressed="${lit}" aria-label="${esc(name)} ${lit ? "on" : "off"}"></button>`;
+        }).join("");
+        const first = blurb.split(". ")[0].replace(/\.$/, "");
+        const desc = `${first}${candles && active && active < have ? ` (${active} of ${have} on)` : off ? " (switched off)" : ""}`;
+        const pill = off ? `<em class="maxed-pill">Off</em>` : "";
+        return `<li><div class="upg-head"><b>${esc(name)}</b><div class="pips-wrap">${pill}<div class="pips">${pips}</div></div></div><span class="upg-desc" data-base="${esc(desc)}">${esc(desc)}</span></li>`;
+      })
+      .join("");
   }
 
   private skinList() {
@@ -1560,7 +1596,7 @@ export class UI {
           <summary>Upgrades</summary>
           <p class="muted">Collect treasure on your dives, then sell it at island shops to earn money. Spend it there on upgrades for your sub. Different shops stock different upgrades, so visit more than one.</p>
           <ul class="upg-sum" id="upg-list" style="--pips:${Math.max(...UPGRADE_ORDER.map((id) => UPGRADES[id].levels.length))}">${this.upgradeList()}</ul>
-          <p class="muted" id="upg-msg">Hover a light to see that level; click one you own to wear it. Lights past your latest purchase are not bought yet.</p>
+          <p class="muted" id="upg-msg">Hover a light to see that level; click one you own to wear it. Click gear, or each candle, to switch it off or on. Lights past your latest purchase are not bought yet.</p>
         </details>
         <details class="acc" id="skins-acc">
           <summary>Skins</summary>
@@ -1649,6 +1685,14 @@ export class UI {
       if (pick && g.save.skins.includes(pick)) {
         g.setSkin(pick);
         $(this.modal, "#skin-list").innerHTML = this.skinList();
+      }
+      const gearEl = target.closest<HTMLElement>("[data-gear]");
+      const gearId = gearEl?.dataset.gear as GearToggle | "candles" | undefined;
+      if (gearId) {
+        const why = gearId === "candles" ? g.setCandlesOn(Number(gearEl!.dataset.n)) : g.toggleGear(gearId);
+        $(this.modal, "#upg-list").innerHTML = this.upgradeList();
+        if (why) $(this.modal, "#upg-msg").textContent = why;
+        else g.audio.play("chime1");
       }
       const pipEl = target.closest<HTMLElement>("[data-equip]");
       const equip = pipEl?.classList.contains("locked") ? undefined : pipEl?.dataset.equip;
@@ -1742,8 +1786,9 @@ export class UI {
           this.giftTaken = true;
           this.toast(
             gift === "radio"
-              ? `Took the ${RADIO.name}: press R at the surface to call the ship`
+              ? `Took the ${RADIO.name}: press <kbd>R</kbd> at the surface to call the ship`
               : `Took an oxygen candle (carry ${this.game.save.candles} of ${GEAR.candles.max})`,
+            true,
           );
           this.renderShop();
         }
@@ -1775,7 +1820,7 @@ export class UI {
       this.shopPreview =
         row &&
         id &&
-        (id in UPGRADES || id === "candle" || id === "scrubbers" || id === "electrolysis" || id === "weights") &&
+        (id in UPGRADES || id === "candle" || id === "radio" || id === "scrubbers" || id === "electrolysis" || id === "weights") &&
         !row.classList.contains("maxed") &&
         !row.classList.contains("sold")
           ? (id as NonNullable<typeof this.shopPreview>)
@@ -1824,7 +1869,7 @@ export class UI {
         ],
         { duration: 700, delay: 150, easing: "cubic-bezier(0.2, 0.8, 0.3, 1.2)", fill: "backwards" },
       );
-    }, 2000);
+    }, 1500);
   }
 
   private renderShop() {
@@ -1931,11 +1976,11 @@ export class UI {
   private giftCard(gift: "candle" | "radio") {
     const radio = gift === "radio";
     const name = radio ? RADIO.name : GEAR.candles.name;
-    const blurb = radio ? RADIO.blurb : `${GEAR.candles.blurb.split(". Cleaning")[0]}.`;
+    const blurb = radio ? RADIO.blurb.replace("Press R", "Press <kbd>R</kbd>") : `${GEAR.candles.blurb.split(". Cleaning")[0]}.`;
     const now = radio
       ? "Works anywhere once you take it"
       : `Carry ${Math.max(this.game.save.candles, this.game.save.candleClaimed.length + 1)} of ${GEAR.candles.max} once you take it`;
-    return `<div class="upg gift" data-id="${radio ? "gift" : "candle"}" tabindex="-1">
+    return `<div class="upg gift" data-id="${radio ? "radio" : "candle"}" tabindex="-1">
         <div class="upg-head"><h3>${name}</h3></div>
         <p class="upg-next">A thank-you for cleaning up. ${blurb}</p>
         <p class="upg-now">${now}</p>
@@ -1974,6 +2019,7 @@ export class UI {
       if (upgrade && up[upgrade] < UPGRADES[upgrade].levels.length - 1) up[upgrade]++;
       const gear = { ...this.game.save };
       if (pid === "scrubbers" || pid === "electrolysis") gear[pid] = true;
+      if (pid === "radio") gear.radio = true;
       if (pid === "candle") gear.candles = Math.max(gear.candles, gear.candleClaimed.length + 1);
       const name = upgrade
         ? UPGRADES[upgrade].levels[up[upgrade]].name
@@ -1981,6 +2027,8 @@ export class UI {
           ? WEIGHTS.name
           : pid === "candle"
             ? GEAR.candles.name
+            : pid === "radio"
+              ? RADIO.name
             : pid
             ? GEAR[pid as "scrubbers" | "electrolysis"].name
             : "";
