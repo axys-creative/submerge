@@ -54,7 +54,7 @@ export interface SaveData {
   lootSeed: Record<number, number>;
   /** Cargo lost in the last wreck, waiting where the sub sank. */
   salvage: Salvage | null;
-  /** Whether the portal stone has been taken, opening the portals between Moana Deep and Crimson Sea. */
+  /** Whether the portal stone has been taken, opening the portals between Abyssal Plains and Crimson Sea. */
   portal: boolean;
   /** Whether the Crimson Sea monster has started chasing, which brings back that zone's portal. */
   monsterWoke: boolean;

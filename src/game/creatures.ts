@@ -45,6 +45,14 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
     steer(c, c.heading * speed, (c.homeY - c.y) * depthPull + Math.sin(c.phase * bobRate + c.tint * 6) * bob, k, dt);
   };
 
+  /** Swims toward a point, following the open route around rock when the straight line is blocked. */
+  const aim = (tx: number, ty: number, speed: number, k: number) => {
+    const stop = world.clearLine(c.x, c.y, tx, ty) ? null : world.routeStep(c.x, c.y, tx, ty);
+    const a = stop ? Math.atan2(stop.y - c.y, stop.x - c.x) : Math.atan2(ty - c.y, tx - c.x);
+    steer(c, Math.cos(a) * speed, Math.sin(a) * speed, k, dt);
+  };
+  const underground = () => c.y > world.floorAt(c.x) + 10;
+
   const dead = c.state === 'dead';
   if (dead) {
     c.dying += dt;
@@ -72,10 +80,12 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
         if (d > 650 || c.timer <= 0) {
           c.state = 'rest';
           c.timer = 2.5;
-        } else steer(c, (dx / d) * 130, (dy / d) * 130, 2.2, dt);
+        } else if (world.def.caves?.length) aim(target!.x, target!.y, 130, 2.2);
+        else steer(c, (dx / d) * 130, (dy / d) * 130, 2.2, dt);
       } else {
         if (c.state === 'rest' && c.timer <= 0) c.state = 'idle';
-        wander(75, 1.2);
+        if (underground()) aim(c.x, c.homeY, 75, 1.2);
+        else wander(75, 1.2);
       }
       break;
     case 'squid':
@@ -275,6 +285,19 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
   }
 
   const r = creatureRadius(c);
+  if (c.kind === 'shark' && !dead && world.def.caves?.length && (c.state === 'chase' || underground())) {
+    const nx = clamp(c.x + c.vx * dt, 60, world.width - 60);
+    if (world.caveHit(nx, c.y, r, r * 0.5, r * 0.5)) c.vx = 0;
+    else c.x = nx;
+    const ny = c.y + c.vy * dt;
+    if (world.caveHit(c.x, ny, r, r * 0.5, r * 0.5)) c.vy = 0;
+    else c.y = ny;
+    c.y = Math.max(c.y, 40);
+    if (Math.abs(c.vx) > 8) c.facing = c.vx > 0 ? 1 : -1;
+    const goal = Math.hypot(c.vx, c.vy) > 60 ? Math.atan2(c.vy, c.vx) : -Math.PI / 2;
+    c.angle += (((goal - c.angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * damp(4, dt);
+    return;
+  }
   const nx = clamp(c.x + c.vx * dt, 60, world.width - 60);
   if (world.blocked(c.x, nx, c.y, r * 2, r + 12)) {
     c.vx = 0;

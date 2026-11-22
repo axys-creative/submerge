@@ -14,6 +14,7 @@ export type ItemKind =
   | 'pearl'
   | 'goldbar'
   | 'gem'
+  | 'diamond'
   | 'idol'
   | 'chest';
 
@@ -52,6 +53,7 @@ export const ITEMS: Record<ItemKind, ItemDef> = {
   pearl: { name: 'Pearl Clam', value: 140, minDepth: 120, maxDepth: 900, weight: 3, size: 14, treasure: true },
   goldbar: { name: 'Gold Bars', value: 220, minDepth: 180, maxDepth: 900, weight: 2.5, size: 30, treasure: true, wreckOnly: true },
   gem: { name: 'Sea Sapphire', value: 450, minDepth: 300, maxDepth: 900, weight: 1.5, size: 26, treasure: true },
+  diamond: { name: 'Diamond', value: 1200, minDepth: 0, maxDepth: 0, weight: 0, size: 24, treasure: true },
   idol: { name: 'Sunken Idol', value: 900, minDepth: 450, maxDepth: 900, weight: 1, size: 34, treasure: true, wreckOnly: true },
   chest: { name: 'Treasure Chest', value: 350, minDepth: 0, maxDepth: 0, weight: 0, size: 38, treasure: true, caveWeight: 2 },
 };

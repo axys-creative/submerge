@@ -39,7 +39,7 @@ export const PORTALS: Portal[] = [
   { zone: 6, x: 1200, to: 4, toX: 3450, sealed: false, chase: true },
 ];
 
-/** Moana Deep and Crimson Sea, joined by the portals; drawn on the route map once open. */
+/** Abyssal Plains and Crimson Sea, joined by the portals; drawn on the route map once open. */
 export const PORTAL_LINK: [Endpoint, Endpoint] = [{ zone: 4, side: 'east' }, { zone: 6, side: 'west' }];
 
 export const FROZEN = 5;

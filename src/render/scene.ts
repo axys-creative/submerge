@@ -1117,6 +1117,7 @@ export function renderScene(g: Game) {
   for (const b of shipBeams) {
     lights.push({ x: b.x, y: b.y, r: SHIP_BEAM_RANGE, angle: b.angle, spread: SHIP_BEAM_SPREAD, a: lampNight });
   }
+  for (const d of world.deco) if (d.kind === 'vent' && inView(d.x, 200)) lights.push({ x: d.x, y: d.y - 40 * d.size, r: 170 * d.size, a: 0.85 });
   const beastGlows: ReturnType<typeof leviathanGlows> = [];
   for (const c of world.creatures) {
     if (!inView(c.x) && c.kind !== 'leviathan') continue;
@@ -1415,9 +1416,10 @@ export function renderScene(g: Game) {
     if (g.radioReady) {
       ctx.font = `600 ${12 * u}px Fredoka, Nunito, sans-serif`;
       ctx.fillStyle = '#BFE6FF';
-      const hint = g.ui.touch ? 'Tap Radio to call the ship' : 'Press R to call the ship';
-      ctx.strokeText(hint, x, y + 58 * u);
-      ctx.fillText(hint, x, y + 58 * u);
+      if (g.ui.touch) {
+        ctx.strokeText('Tap Radio to call the ship', x, y + 58 * u);
+        ctx.fillText('Tap Radio to call the ship', x, y + 58 * u);
+      } else drawRich(ctx, 'Press {R} to call the ship', x, y + 58 * u, u, t, '#BFE6FF', { outline: true });
     }
     ctx.textAlign = 'left';
   }
@@ -1432,7 +1434,7 @@ export function renderScene(g: Game) {
     g.speech.forEach((b, i) => {
       const pop = Math.min(1, b.age / 0.2);
       ctx.globalAlpha = Math.min(pop, b.life / 0.4);
-      const w = ctx.measureText(b.text).width + 62 * u;
+      const w = richWidth(ctx, b.text, u) + 62 * u;
       const h = 54 * u;
       const r = 14 * u;
       const face = diving ? s.facing : g.ship.facing;
@@ -1476,7 +1478,7 @@ export function renderScene(g: Game) {
       ctx.arc(x0 + 28 * u, 0, 5 * u, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = mixColor('#14245A', '#E8EEFF', g.uiDark);
-      ctx.fillText(b.text, 8 * u, 1 * u);
+      drawRich(ctx, b.text, 8 * u, 1 * u, u, t, ctx.fillStyle as string, { press: true });
       ctx.restore();
     });
     ctx.globalAlpha = 1;
@@ -1554,4 +1556,65 @@ export function renderScene(g: Game) {
     ctx.fillStyle = `rgba(10,18,50,${tt < 0.5 ? tt / 0.5 : 1 - (tt - 0.5) / 0.5})`;
     ctx.fillRect(0, 0, cw, ch);
   }
+}
+
+const KEY_CYCLE = 1.2;
+
+/** Splits text on `{K}` markers into plain runs and key caps. */
+function richParts(text: string): { key?: string; text: string }[] {
+  return text.split(/(\{[^}]+\})/).filter(Boolean).map((p) => (p.startsWith('{') ? { key: p.slice(1, -1), text: '' } : { text: p }));
+}
+
+function keyWidth(ctx: CanvasRenderingContext2D, k: string, u: number) {
+  return Math.max(22 * u, ctx.measureText(k).width + 12 * u) + 4 * u;
+}
+
+function richWidth(ctx: CanvasRenderingContext2D, text: string, u: number) {
+  return richParts(text).reduce((n, p) => n + (p.key !== undefined ? keyWidth(ctx, p.key, u) : ctx.measureText(p.text).width), 0);
+}
+
+/** Draws text centered at (cx, cy), with `{K}` markers as keyboard keys that press in turn like the HUD's crank keys. */
+function drawRich(ctx: CanvasRenderingContext2D, text: string, cx: number, cy: number, u: number, t: number, ink: string, opts: { outline?: boolean; press?: boolean } = {}) {
+  const parts = richParts(text);
+  const total = richWidth(ctx, text, u);
+  let x = cx - total / 2;
+  const baseline = ctx.textBaseline;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  let n = 0;
+  for (const p of parts) {
+    if (p.key !== undefined) {
+      const w = keyWidth(ctx, p.key, u) - 4 * u;
+      const ph = (((t + (n++ % 2) * 0.6) / KEY_CYCLE) % 1 + 1) % 1;
+      const sc = !opts.press ? 1 : ph < 0.15 ? 1 - 0.25 * (ph / 0.15) : ph < 0.5 ? 0.75 + 0.25 * ((ph - 0.15) / 0.35) : 1;
+      ctx.save();
+      ctx.translate(x + 2 * u + w / 2, cy);
+      ctx.scale(sc, sc);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.roundRect(-w / 2, -10 * u + 2 * u, w, 20 * u, 6 * u);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.strokeStyle = 'rgba(20,36,90,0.35)';
+      ctx.lineWidth = 1 * u;
+      ctx.beginPath();
+      ctx.roundRect(-w / 2, -10 * u, w, 20 * u, 6 * u);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#14245A';
+      ctx.font = `600 ${13 * u}px Fredoka, Nunito, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(p.key, 0, 1 * u);
+      ctx.restore();
+      x += w + 4 * u;
+    } else {
+      ctx.fillStyle = ink;
+      ctx.textAlign = 'left';
+      if (opts.outline) ctx.strokeText(p.text, x, cy);
+      ctx.fillText(p.text, x, cy);
+      x += ctx.measureText(p.text).width;
+    }
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = baseline;
 }

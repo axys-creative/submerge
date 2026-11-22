@@ -160,7 +160,7 @@ export class UI {
         <div class="dm-track" id="dm-track">
           <div class="dm-frame"><div class="dm-scale" id="dm-scale">${this.depthMeterBands()}<div class="dm-warn" id="dm-warn"></div><div class="dm-crush" id="dm-crush"></div><div class="dm-limit" id="dm-limit"></div></div></div>
           <div class="dm-labels" id="dm-labels">${this.depthMeterLabels()}</div>
-          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b><div class="dial-pop" id="pop-hold"><h4>Depth lock</h4><p>Press <kbd>E</kbd> or <kbd>?</kbd>, or click the reading, to hold your depth. It uses battery, and steering up or down lets go.</p></div><div class="panel dm-tag dm-safe" id="dm-limit-tag"></div></div>
+          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b><div class="dial-pop" id="pop-hold"><h4>Depth lock</h4><p>Press <kbd>E</kbd> or <kbd>?</kbd>, or click the reading, to hold your depth. It uses battery. Steer up or down to move, and it holds your new depth; press again to release.</p></div><div class="panel dm-tag dm-safe" id="dm-limit-tag"></div></div>
         </div>
         <div class="dm-foot"><div class="panel dm-tag" id="dm-next"></div></div>
       </div>
@@ -344,7 +344,7 @@ export class UI {
   /** Positions below are in meters times --ppm (pixels per meter), so the track keeps its scale at any gauge height. */
   private depthMeterBands() {
     return DEPTH_ZONES.map((z, i) => {
-      const end = DEPTH_ZONES[i + 1]?.from ?? z.from + 5000;
+      const end = DEPTH_ZONES[i + 1]?.from ?? 12000;
       return `<div class="dm-band" style="top:calc(${z.from} * var(--ppm));height:calc(${end - z.from} * var(--ppm));background:${z.color}"></div>`;
     }).join("");
   }
@@ -435,12 +435,12 @@ export class UI {
     const next = DEPTH_ZONES[zone + 1];
     this.set(
       "dm-next",
-      next ? `${next.name}|${Math.ceil((next.from - depth) / 10) * 10}` : "none",
+      next ? `${next.name}|${Math.ceil((next.from - depth) / 10) * 10}` : "last",
       () => {
         const el = $(this.root, "#dm-next");
-        el.hidden = !next;
-        if (next)
-          el.textContent = `${next.name} in ${(Math.ceil((next.from - depth) / 10) * 10).toLocaleString()} m`;
+        el.textContent = next
+          ? `${next.name} in ${(Math.ceil((next.from - depth) / 10) * 10).toLocaleString()} m`
+          : DEPTH_ZONES[zone].name;
       },
     );
   }
@@ -602,7 +602,7 @@ export class UI {
         b.hidden = !label;
       });
       const boost =
-        (g.mode === "docked" && !this.modalKind && !g.travel) || (diving && g.propellerLevel >= 1);
+        (g.mode === "docked" && !this.modalKind && !g.travel) || (diving && g.canBoost);
       this.set("t-boost", String(boost), () => ($(this.root, "#btn-boost").hidden = !boost));
       const radio = g.radioReady;
       this.set("t-radio", String(radio), () => ($(this.root, "#btn-radio").hidden = !radio));
@@ -639,8 +639,10 @@ export class UI {
     const rows: [string, string][] = diving
       ? [
           [k("←", "↑", "↓", "→") + " or " + k("WASD"), "Steer"],
-          ...(g.propellerLevel >= 1 ? [[k("Shift"), "Boost"] as [string, string]] : []),
+          ...(g.canBoost ? [[k("Shift"), "Boost"] as [string, string]] : []),
           ...(g.gear.radio ? [[k("R"), "Call the ship"] as [string, string]] : []),
+          ...(g.up.light > 0 ? [[k("L"), "Toggle spotlight"] as [string, string]] : []),
+          ...(g.up.sonar > 0 ? [[k("O"), "Toggle sonar"] as [string, string]] : []),
           [k("Space"), "Mechanical arm"],
           [k("E") + " or " + k("/"), "Lock depth"],
           ...(g.weightsOn ? [[k("Q") + " or " + k("."), "Drop weights"] as [string, string]] : []),
@@ -1193,10 +1195,10 @@ export class UI {
       if (card) {
         e.preventDefault();
         e.stopPropagation();
-        const buy = card.querySelector<HTMLButtonElement>("button[data-act^=buy]");
+        const buy = card.querySelector<HTMLButtonElement>("button[data-act^=buy], button[data-act=claimGift]");
         if (buy?.disabled) this.denyBuy(card);
         if (buy && !buy.disabled) buy.click();
-        this.modal.querySelector<HTMLElement>(`.upg[data-id="${card.dataset.id}"]`)?.focus();
+        (this.modal.querySelector<HTMLElement>(`.upg[data-id="${card.dataset.id}"]`) ?? this.modal.querySelector<HTMLElement>(".upg"))?.focus();
       } else if (top) {
         e.preventDefault();
         e.stopPropagation();
@@ -1560,7 +1562,7 @@ export class UI {
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>"} to steer. The spotlight follows where you head.</li>
             <li>${this.touch ? "Tap <b>Grab</b>" : "Press <kbd>Space</kbd>"} to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
             <li>Below about 5 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>?</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
-            ${g.propellerLevel >= 1 ? `<li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while steering to boost. It drains the battery fast.</li>` : ""}
+            ${g.canBoost ? `<li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while steering to boost. It drains the battery fast.</li>` : ""}
             ${g.gear.radio ? `<li>${this.touch ? "Tap <b>Radio</b>" : "Press <kbd>R</kbd>"} at the surface to call the ship over to you.</li>` : ""}
             ${g.save.weights ? `<li>${this.touch ? "Tap <b>Drop</b>" : "Press <kbd>Q</kbd> or <kbd>.</kbd>"} to drop the dive weights for a quick ride up.</li>` : ""}
             ${this.touch ? "" : "<li>Press <kbd>L</kbd> to cycle the spotlight, and <kbd>O</kbd> to cycle the sonar, between off, on and auto.</li>"}

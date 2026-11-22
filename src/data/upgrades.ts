@@ -178,7 +178,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
       "Sail faster and cover more ocean per charge of air. The ship can always boost with Shift; Twin Blade and up let the sub boost too, burning battery for speed.",
     stock: [
       { zones: [0], shop: GULL },
-      { zones: [2], shop: DOCK },
+      { zones: [3], shop: LAST_LIGHT },
     ],
     levels: [
       { name: "Stock Prop", cost: 0, effect: "Standard speed" },

@@ -25,6 +25,7 @@ import {
   MAP_BLIND_DEPTH,
   LAMP_HOLD_TIME,
   DEPTH_HOLD_DRAIN,
+  HOLD_COAST_M,
   HOLD_MOTOR_VOLUME,
   BOOST_ENGINE_VOLUME,
   BOOST_ENGINE_PITCH,
@@ -481,6 +482,8 @@ export class Game {
   private batteryWarned = false;
   depthHeld = false;
   private holdY = 0;
+  private holdRate = 6;
+  private holdSteering = false;
   private holdHinted = false;
   private fullNoticeAt = -99;
   private invalidAt = -99;
@@ -579,6 +582,10 @@ export class Game {
   /** The propeller level that sets speed and boost: the Challenger skin always has the stock one, whatever was bought. */
   get propellerLevel() {
     return this.save.skin === "challenger" ? 0 : this.up.propeller;
+  }
+  /** Boost comes with owning any propeller upgrade, even while the Challenger skin keeps the stock speed. */
+  get canBoost() {
+    return this.up.propeller >= 1;
   }
   get depthRating() {
     return this.save.skin === "ulysses" ? ULYSSES_DEPTH_RATING : this.save.skin === "challenger" ? CHALLENGER_DEPTH_RATING : STATS.depthRating[this.up.plating];
@@ -1534,7 +1541,7 @@ export class Game {
     const a = inp.axis();
     const moving = Math.hypot(a.x, a.y) > 0.1;
     const cranks = inp.takeCranks();
-    const boosting = inp.isDown("boost") && this.propellerLevel >= 1 && s.battery > 0 && moving;
+    const boosting = inp.isDown("boost") && this.canBoost && s.battery > 0 && moving;
     this.subBoost += ((boosting ? 1 : 0) - this.subBoost) * damp(2.5, dt);
     const speed =
       STATS.speed[this.propellerLevel] *
@@ -1556,18 +1563,21 @@ export class Game {
       this.setSwitch(key, next);
       this.audio.play("menuTick");
     }
-    if (this.depthHeld && (Math.abs(a.y) > 0.1 || s.battery <= 0)) this.releaseDepth();
+    if (this.depthHeld && (s.battery <= 0 || s.y < SURFACE_Y)) this.releaseDepth();
     else if (inp.pressed("hold")) {
       if (this.depthHeld) this.releaseDepth();
-      else if (!this.atSurface && s.battery > 0) {
+      else if (!this.atSurface && !airborne && s.battery > 0) {
         this.depthHeld = true;
         this.holdY = s.y;
+        this.holdRate = 6;
+        this.holdSteering = false;
         this.audio.play("menuTick");
         this.say("Depth locked", "#9CF2C4");
       }
     }
     const fall = this.weightsOn ? WEIGHTS.descent : 1;
     const rise = this.weightsDropped ? WEIGHTS.ascent : 1;
+    if (cranks && s.battery <= 0 && !this.audio.isPlaying("rudders")) this.audio.play("rudders");
     s.crankLight = Math.max(0, Math.min(0.8, s.crankLight + cranks * 0.18 - dt * 0.15));
 
     if (s.battery > 0) {
@@ -1602,7 +1612,17 @@ export class Game {
 
     const sinkDepth = s.y / PX_PER_M;
     if (this.depthHeld) {
-      s.vy = (this.holdY - s.y) * 6;
+      const steering = Math.abs(a.y) > 0.1;
+      if (steering) this.holdSteering = true;
+      else {
+        if (this.holdSteering) {
+          this.holdSteering = false;
+          const lead = HOLD_COAST_M * PX_PER_M * Math.min(1, Math.abs(s.vy) / top);
+          this.holdY = Math.max(SURFACE_Y + 1, s.y + Math.sign(s.vy) * lead);
+          this.holdRate = lead > 1 ? Math.abs(s.vy) / lead : 6;
+        }
+        s.vy = (this.holdY - s.y) * this.holdRate;
+      }
       s.battery = Math.max(
         0,
         s.battery - DEPTH_HOLD_DRAIN * (this.weightsOn ? WEIGHTS.holdDrain : 1) * dt,
@@ -1691,7 +1711,7 @@ export class Game {
 
     if (!this.debugFast) this.collideIce(px, py);
 
-    if (this.depthHeld && Math.abs(s.y - this.holdY) > 40) this.releaseDepth();
+    if (this.depthHeld && !this.holdSteering && Math.abs(s.y - this.holdY) > 120) this.releaseDepth();
     if (Math.abs(a.x) > 0.2) s.facing = a.x > 0 ? 1 : -1;
     const lean =
       this.save.skin === "challenger"
@@ -1763,7 +1783,7 @@ export class Game {
       s.battery <= 0,
       this.ui.touch
         ? "Battery dead! Use the rudders: tap the U and I buttons"
-        : "Battery dead! Use the rudders with U and I",
+        : "Battery dead! Use the rudders with {U}{I}",
       "#E5484D",
     );
     const metersLeft = this.depthRating - depth;
@@ -1784,6 +1804,7 @@ export class Game {
         ? ` ${candles} oxygen ${candles === 1 ? "candle" : "candles"} left`
         : " No oxygen candles left";
     this.halfAir = this.sayAtLevel(airFrac, 0.5, this.halfAir, `Oxygen is at 50%!${candleNote}`, "#2AA6C9");
+    if (batteryFrac <= 0.5 && !this.halfBattery) this.audio.batteryBlip();
     this.halfBattery = this.sayAtLevel(
       batteryFrac,
       0.5,
@@ -1878,7 +1899,7 @@ export class Game {
     this.emitBubbles(stone.x, stone.y, 24, 80);
     this.popup(stone.x, stone.y - 60, "Ruby gem!", "#FF8A94");
     this.say("The gem hums... a portal just opened on the surface!", "#FF8A94");
-    this.ui.toast("A portal has opened above Moana Deep");
+    this.ui.toast("A portal has opened above Abyssal Plains");
     this.persist();
   }
 

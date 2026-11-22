@@ -45,6 +45,7 @@ const FILES = {
   shopDoor: ["sound-store-entry-leave.m4a"],
   radioSwitch: ["sound-switch.m4a"],
   radio: ["sound-radio.m4a"],
+  rudders: ["sound-manual-rudders.m4a"],
 } as const;
 
 const ZEN_TRACKS = ["sound-zen-track-1.m4a", "sound-zen-track-2.m4a", "sound-zen-track-3.m4a"];
@@ -101,6 +102,7 @@ const VOLUME: Record<Sound, number> = {
   shopDoor: 0.25,
   radioSwitch: 0.5,
   radio: 0.5,
+  rudders: 0.7,
 };
 
 /** Playback speed per sound, applied on top of any rate passed to `play`; above 1 is faster and higher pitched. */
@@ -108,6 +110,7 @@ const RATE: Partial<Record<Sound, number>> = {
   tetherHydraulic: 1.75,
   clawHydraulic: 3,
   candle2: 0.4,
+  rudders: 1.2,
 };
 
 /** Which looping beds play in each scene. */
@@ -575,6 +578,19 @@ export class AudioManager {
     voices.add(src);
     src.onended = () => voices.delete(src);
     src.start(this.ctx.currentTime + delay);
+  }
+
+  /** Plays the low-battery beeping once, cut off after 2 seconds. */
+  batteryBlip() {
+    if (!this.ctx) return;
+    this.play("alertBeep");
+    const voices = this.voices.get("alertBeep");
+    const last = voices && [...voices].pop();
+    last?.stop(this.ctx.currentTime + 2);
+  }
+
+  isPlaying(name: Sound) {
+    return (this.voices.get(name)?.size ?? 0) > 0;
   }
 
   /** The oxygen candle's strike, then its burn. */

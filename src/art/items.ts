@@ -407,6 +407,37 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       ctx.closePath();
       ctx.fill();
       break;
+    case 'diamond':
+      ctx.fillStyle = '#BFE9FF';
+      ctx.beginPath();
+      ctx.moveTo(-12, -4);
+      ctx.lineTo(-7, -12);
+      ctx.lineTo(7, -12);
+      ctx.lineTo(12, -4);
+      ctx.lineTo(0, 13);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.moveTo(-7, -12);
+      ctx.lineTo(0, -4);
+      ctx.lineTo(-12, -4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(7, -12);
+      ctx.lineTo(0, -4);
+      ctx.lineTo(7, -4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#8FCBEA';
+      ctx.beginPath();
+      ctx.moveTo(-12, -4);
+      ctx.lineTo(0, -4);
+      ctx.lineTo(0, 13);
+      ctx.closePath();
+      ctx.fill();
+      break;
     case 'idol':
       ctx.fillStyle = '#B98320';
       rrect(ctx, -13, 12, 26, 6, 2);

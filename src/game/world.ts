@@ -690,12 +690,14 @@ export class World {
   private terrainAt(x: number): number {
     const f = this.def.floor;
     const n = f.length - 1;
-    const t = clamp(x / this.width, 0, 1) * n;
+    const [a, b, c] = this.shape;
+    const rugged = this.def.rugged ?? 0;
+    const xw = rugged ? x + (Math.sin(x * 0.0083 + b) * 40 + Math.sin(x * 0.03 + c) * 14 + Math.sin(x * 0.08 + a) * 4) * rugged : x;
+    const t = clamp(xw / this.width, 0, 1) * n;
     const i = Math.min(n - 1, Math.floor(t));
     const u = t - i;
     const s = u * u * (3 - 2 * u);
     const m = f[i] + (f[i + 1] - f[i]) * s;
-    const [a, b, c] = this.shape;
     return m * PX_PER_M + (Math.sin(x * 0.0041 + a) * 28 + Math.sin(x * 0.0113 + b) * 12 + Math.sin(x * 0.029 + c) * 5) * (this.def.calm ?? 1);
   }
 
@@ -756,6 +758,15 @@ export class World {
         this.deco.push({ kind, x, y, size: rand(r, 0.7, 1.4), phase: r() * 10, tint: r(), push: kind === 'coral' ? this.floorSlope(x) : 0, pushV: 0 });
       }
     };
+    this.def.vents?.forEach((v, i) => {
+      const g = mulberry32(this.index * 7001 + i * 223 + 29);
+      const step = (v.x1 - v.x0) / v.count;
+      for (let j = 0; j < v.count; j++) {
+        const x = v.x0 + (j + 0.5) * step + rand(g, -step * 0.3, step * 0.3);
+        if (Math.abs(this.floorSlope(x)) > 0.25 || Math.abs(this.floorSlope(x - 40)) > 0.25 || Math.abs(this.floorSlope(x + 40)) > 0.25) continue;
+        this.deco.push({ kind: 'vent', x, y: this.floorAt(x), size: rand(g, 0.9, 1.5), phase: 0, tint: g(), push: 0, pushV: 0 });
+      }
+    });
     add('rock', this.def.rocks, Infinity);
     add('kelp', this.def.kelp, 260);
     add('coral', this.def.coral ?? 0, 170);

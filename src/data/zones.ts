@@ -59,6 +59,10 @@ export interface ZoneDef {
   floor: number[];
   /** Scales the small waves in the sea floor; below 1 makes it flatter. */
   calm?: number;
+  /** Roughens steep stretches of the sea floor by wobbling them sideways; 1 is bumpy. */
+  rugged?: number;
+  /** Hydrothermal vents spaced along the sea floor from x0 to x1, giving off light. */
+  vents?: { x0: number; x1: number; count: number }[];
   sky: [string, string];
   water: [string, string];
   ground: [string, string];
@@ -107,9 +111,12 @@ const smooth = (x: number, from: number, to: number) => {
   return u * u * (3 - 2 * u);
 };
 
-/** Moana Deep: an open sea floor around 1500 m with a wide trench at each end, one about 3300 m deep and one about 4700 m. */
-const MOANA_FLOOR = Array.from({ length: 36 }, (_, i) => {
-  const x = i * 300;
+/** Abyssal Plains: an open sea floor around 1500 m with a wide trench at each end, one about 3300 m deep and one about 4700 m. The middle stretch (original x 2400 to 7800) is spread over 1.5 times the width, so the zone is 13200 px and the east trench sits 2700 px further east than it was. */
+const ABYSSAL_SHIFT = 2700;
+const ABYSSAL_FLOOR = Array.from({ length: 45 }, (_, k) => {
+  const nx = k * 300;
+  const x = nx <= 2400 ? nx : nx <= 2400 + 8100 ? 2400 + (nx - 2400) / 1.5 : nx - ABYSSAL_SHIFT;
+  const i = x / 300;
   const hills = 1500 + 12 * Math.sin(i * 1.7) + 8 * Math.sin(i * 0.63 + 1);
   const left = 1 - smooth(x, 1500, 2400);
   const right = smooth(x, 7800, 8700);
@@ -130,6 +137,10 @@ const FROZEN_FLOOR = Array.from({ length: 59 }, (_, k) => {
   const x = k * 500;
   return frozenFloorAt(x <= 11000 ? x : x >= 24500 ? x - 9000 : 11000 + (x - 11000) / 3);
 });
+
+/** The trench is 16500 px wide, one and a half times its original 11000: the sea floor keeps its original slope down to the first deep point (index 45), then runs flat at the bottom for 28 more steps before the original climb back up, so every sample stays 11000 / 56 px apart. */
+const TRENCH_FLOOR_ORIGINAL = [230, 245, 260, 275, 290, 308, 325, 342, 360, 382, 405, 428, 450, 482, 515, 548, 580, 605, 630, 655, 680, 670, 660, 650, 640, 615, 590, 565, 540, 570, 600, 1000, 1480, 1480, 1480, 1480, 1480, 1750, 1750, 1750, 2250, 2250, 2800, 3270, 3270, 3270, 2800, 2300, 2300, 1500, 900, 560, 430, 370, 320, 270, 230];
+const TRENCH_FLOOR = [...TRENCH_FLOOR_ORIGINAL.slice(0, 46), ...Array<number>(28).fill(TRENCH_FLOOR_ORIGINAL[45]), ...TRENCH_FLOOR_ORIGINAL.slice(46)];
 
 // How the zones connect is in routes.ts.
 export const ZONES: ZoneDef[] = [
@@ -359,7 +370,9 @@ export const ZONES: ZoneDef[] = [
         { pts: [[3290, 322], [3100, 340], [2800, 372], [2500, 400]], r: 190 },
         { pts: [[2500, 400], [2300, 372], [2050, 340], [1800, 322]], r: 180 },
         { pts: [[2050, 292]], r: 200, loot: 1 },
+        { pts: [[2050, 340], [2050, 292]], r: 95 },
         { pts: [[1950, 385]], r: 170 },
+        { pts: [[2050, 340], [2000, 370], [1950, 385]], r: 95 },
         { pts: [[1700, 322]], r: 260, loot: 1 },
         { pts: [[2500, 400], [2450, 470], [2650, 540], [2900, 600]], r: 190 },
         { pts: [[2900, 600], [3200, 640], [3450, 680], [3650, 690]], r: 190 },
@@ -391,83 +404,106 @@ export const ZONES: ZoneDef[] = [
     islandWidth: 1,
     diveZoom: 0.6,
     map: { x: 175, y: 150 },
-    width: 11000,
-    floor: [70, 160, 300, 450, 580, 680, 640, 540, 660, 780, 740, 600, 420, 240, 110],
+    width: 16500,
+    floor: TRENCH_FLOOR,
     sky: ['#F49B7A', '#FFE2B8'],
     water: ['#2A86BE', '#081233'],
     ground: ['#9F94B8', '#2A2D4D'],
     darkness: [20, 380],
-    items: 45,
-    trash: 12,
+    items: 68,
+    trash: 18,
     creatures: [
-      { kind: 'fish', count: 8, minDepth: 5, maxDepth: 200 },
-      { kind: 'jelly', count: 12, minDepth: 60, maxDepth: 700 },
-      { kind: 'hammerhead', count: 3, minDepth: 25, maxDepth: 350 },
-      { kind: 'shark', count: 3, minDepth: 40, maxDepth: 350 },
-      { kind: 'squid', count: 6, minDepth: 220, maxDepth: 700 },
-      { kind: 'manta', count: 2, minDepth: 80, maxDepth: 500 },
-      { kind: 'bluewhale', count: 2, minDepth: 25, maxDepth: 160 },
+      { kind: 'fish', count: 12, minDepth: 5, maxDepth: 200 },
+      { kind: 'jelly', count: 18, minDepth: 60, maxDepth: 700 },
+      { kind: 'hammerhead', count: 4, minDepth: 25, maxDepth: 350 },
+      { kind: 'shark', count: 4, minDepth: 40, maxDepth: 350 },
+      { kind: 'squid', count: 9, minDepth: 220, maxDepth: 700 },
+      { kind: 'manta', count: 3, minDepth: 80, maxDepth: 500 },
+      { kind: 'bluewhale', count: 3, minDepth: 25, maxDepth: 160 },
     ],
-    islands: [{ x: 650, name: 'Last Light Atoll' }],
+    islands: [{ x: 1650, name: 'Last Light Atoll' }],
     wrecks: [
       { x: 5300, kind: 'galleon' },
-      { x: 9200, kind: 'galleon' },
     ],
     kelp: 40,
     coral: 10,
-    rocks: 80,
+    rocks: 120,
+    rugged: 1,
+    vents: [{ x0: 8450, x1: 8850, count: 4 }, { x0: 7900, x1: 8010, count: 1 }, { x0: 9270, x1: 9390, count: 2 }, { x0: 10000, x1: 11200, count: 3 }, { x0: 11800, x1: 13000, count: 3 }, { x0: 13200, x1: 14200, count: 2 }],
+    caves: [{
+      name: 'Trench Hollows',
+      stones: 10,
+      x0: 4000,
+      x1: 8000,
+      hill: { x: 7690, half: 0, ramp: 1, height: 0 },
+      passages: [
+        { pts: [[7690, 1900], [7300, 1900], [6950, 1930], [6600, 1950]], r: 190 },
+        { pts: [[6600, 1950], [6350, 1880], [6050, 1820], [5700, 1800]], r: 190 },
+        { pts: [[6600, 1950], [6450, 2030], [6150, 2090], [5750, 2110]], r: 190 },
+        { pts: [[5700, 1800], [5450, 1830], [5200, 1930], [5000, 1970]], r: 190 },
+        { pts: [[5750, 2110], [5450, 2090], [5200, 2000], [5000, 1970]], r: 190 },
+        { pts: [[5700, 1800], [5720, 1950], [5750, 2110]], r: 95 },
+        { pts: [[5000, 1970], [4700, 1960], [4450, 1905]], r: 190 },
+        { pts: [[6050, 1820], [6050, 1700], [5950, 1650]], r: 95 },
+        { pts: [[6150, 2090], [6150, 2200], [6000, 2265]], r: 95 },
+        { pts: [[7690, 1900]], r: 260 },
+        { pts: [[4400, 1905]], r: 300, loot: 1, kinds: ['diamond'] },
+        { pts: [[5950, 1640]], r: 250 },
+        { pts: [[6000, 2270]], r: 280 },
+      ],
+    }],
   },
   {
-    name: 'Moana Deep',
+    name: 'Abyssal Plains',
     islandWidth: 1,
     diveZoom: 0.5,
     map: { x: 255, y: 110 },
-    width: 10500,
-    floor: MOANA_FLOOR,
+    width: 13200,
+    floor: ABYSSAL_FLOOR,
     sky: ['#9FB8E6', '#E6EEFF'],
     water: ['#3E8FD0', '#0A1E4A'],
     ground: ['#B7C6E0', '#3A4468'],
     darkness: [20, 360],
     items: 0,
     creatures: [
-      { kind: 'fish', count: 2, minDepth: 20, maxDepth: 400 },
-      { kind: 'jelly', count: 5, minDepth: 300, maxDepth: 1300 },
-      { kind: 'squid', count: 3, minDepth: 500, maxDepth: 1300 },
-      { kind: 'angler', count: 8, minDepth: 1000, maxDepth: 2500 },
-      { kind: 'whale', count: 2, minDepth: 400, maxDepth: 1100 },
-      { kind: 'mobydick', count: 1, minDepth: 400, maxDepth: 1100 },
-      { kind: 'orca', count: 3, minDepth: 60, maxDepth: 450 },
-      { kind: 'orcacalf', count: 2, minDepth: 60, maxDepth: 450 },
-      { kind: 'manta', count: 2, minDepth: 100, maxDepth: 800 },
-      { kind: 'bluewhale', count: 2, minDepth: 25, maxDepth: 160 },
-      { kind: 'colossal', count: 2, minDepth: 1000, maxDepth: 1450 },
-      { kind: 'bigfin', count: 3, minDepth: 1050, maxDepth: 1300 },
+      { kind: 'fish', count: 3, minDepth: 20, maxDepth: 400 },
+      { kind: 'jelly', count: 8, minDepth: 300, maxDepth: 1300 },
+      { kind: 'squid', count: 5, minDepth: 500, maxDepth: 1300 },
+      { kind: 'angler', count: 12, minDepth: 1000, maxDepth: 2500 },
+      { kind: 'whale', count: 3, minDepth: 400, maxDepth: 1100 },
+      { kind: 'mobydick', count: 2, minDepth: 400, maxDepth: 1100 },
+      { kind: 'orca', count: 5, minDepth: 60, maxDepth: 450 },
+      { kind: 'orcacalf', count: 3, minDepth: 60, maxDepth: 450 },
+      { kind: 'manta', count: 3, minDepth: 100, maxDepth: 800 },
+      { kind: 'bluewhale', count: 3, minDepth: 25, maxDepth: 160 },
+      { kind: 'colossal', count: 3, minDepth: 1000, maxDepth: 1450 },
+      { kind: 'bigfin', count: 5, minDepth: 1050, maxDepth: 1300 },
     ],
     islands: [
       { x: 700, name: 'Palm Atoll', gear: ['electrolysis'] },
-      { x: 6200, name: 'Trench Pier', weights: true },
+      { x: 8100, name: 'Trench Pier', weights: true },
     ],
     wrecks: [],
-    portalStone: { x: 9600 },
+    portalStone: { x: 12300 },
     caves: [{
       name: 'Trench Pocket',
       stones: 6,
-      x0: 5000,
-      x1: 8400,
-      hill: { x: 8250, half: 0, ramp: 1, height: 0 },
+      x0: 7700,
+      x1: 11100,
+      hill: { x: 10950, half: 0, ramp: 1, height: 0 },
       passages: [
-        { pts: [[8250, 3100], [7800, 3095], [7300, 3105], [6800, 3095], [6300, 3105], [5800, 3100]], r: 190 },
-        { pts: [[5800, 3102]], r: 330, loot: 1, kinds: ['pearl'] },
-        { pts: [[6800, 3095], [6800, 3150], [6600, 3190], [6600, 3240]], r: 190 },
-        { pts: [[6600, 3245]], r: 270 },
-        { pts: [[5800, 3100], [5700, 3150], [5500, 3180]], r: 190 },
-        { pts: [[5500, 3185]], r: 260, loot: 1, kinds: ['gem'] },
-        { pts: [[7300, 3105], [7300, 3060], [7150, 3020], [7150, 2990]], r: 190 },
-        { pts: [[7150, 2985]], r: 250 },
+        { pts: [[10950, 3100], [10500, 3095], [10000, 3105], [9500, 3095], [9000, 3105], [8500, 3100]], r: 190 },
+        { pts: [[8500, 3102]], r: 330, loot: 1, kinds: ['pearl'] },
+        { pts: [[9500, 3095], [9500, 3150], [9300, 3190], [9300, 3240]], r: 190 },
+        { pts: [[9300, 3245]], r: 270 },
+        { pts: [[8500, 3100], [8400, 3150], [8200, 3180]], r: 190 },
+        { pts: [[8200, 3185]], r: 260, loot: 1, kinds: ['gem'] },
+        { pts: [[10000, 3105], [10000, 3060], [9850, 3020], [9850, 2990]], r: 190 },
+        { pts: [[9850, 2985]], r: 250 },
       ],
     }],
     kelp: 0,
-    rocks: 60,
+    rocks: 90,
   },
   {
     name: 'Frozen Expanse',

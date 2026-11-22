@@ -132,6 +132,7 @@ export const LAMP_AIM_RATE = 0.7;
 
 /** Battery spent per second while the sub holds its depth. */
 export const DEPTH_HOLD_DRAIN = 5;
+export const HOLD_COAST_M = 10;
 /** Propeller sound level while the sub holds its depth, as a fraction of its driving volume. */
 export const HOLD_MOTOR_VOLUME = 0.5;
 /** Extra engine volume at full boost, as a fraction of the normal level (ship and sub). */

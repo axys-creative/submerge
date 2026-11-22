@@ -1884,7 +1884,7 @@ textarea:focus {
 }
 
 .dm-scale {
-  height: 12000px;
+  height: calc(12000 * var(--ppm));
 }
 
 .dm-scale::after {
