@@ -1614,16 +1614,19 @@ export class UI {
         </div>
         <details class="acc">
           <summary>How to play</summary>
-          <h4 class="howto-title">Ship</h4>
-          <ul class="howto">
+          <details class="subacc" open>
+            <summary>Ship</summary>
+            <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>"} to sail the ship.</li>
             <li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while sailing to boost.</li>
             <li>${this.touch ? "Tap <b>Dive</b>" : "Press <kbd>Space</kbd>"} to drop the sub. Drive back up to the ship to dock, recharge and repair.</li>
             <li>Sail next to an island and ${this.touch ? "tap <b>Shop</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to sell your haul and buy upgrades.</li>
             <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
-          </ul>
-          <h4 class="howto-title">Submarine</h4>
-          <ul class="howto">
+            </ul>
+          </details>
+          <details class="subacc" open>
+            <summary>Submarine</summary>
+            <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>"} to steer. The spotlight follows where you head.</li>
             <li>${this.touch ? "Tap <b>Grab</b>" : "Press <kbd>Space</kbd>"} to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
             <li>Below about 5 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>?</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
@@ -1634,7 +1637,8 @@ export class UI {
             <li>Surface anywhere to refill your air.</li>
             <li>When the battery runs out, ${this.touch ? "tap the <b>U</b> and <b>I</b> buttons" : "press <kbd class=\"tap\">U</kbd> and <kbd class=\"tap tap-b\">I</kbd>"} back and forth to hand-crank.</li>
             <li>${this.touch ? "Tap <b>Menu</b>" : "Press <kbd>Esc</kbd> or <kbd>P</kbd>"} to pause.</li>
-          </ul>
+            </ul>
+          </details>
         </details>
                 <details class="acc">
           <summary>Achievements</summary>

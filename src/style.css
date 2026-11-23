@@ -2918,6 +2918,7 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
 
 .subacc {
   margin-top: 12px;
+  margin-left: 12px;
 }
 
 .subacc > summary {
