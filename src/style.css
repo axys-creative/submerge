@@ -24,6 +24,8 @@
 
 html,
 body {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   height: 100%;
   margin: 0;
   overflow: hidden;
@@ -3183,4 +3185,56 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
 .is-touch #ui.map-unpinned .minimap-tab {
   translate: 0 75px;
   transition: opacity 0.4s, transform 0.5s ease, translate 0.35s ease;
+}
+
+.segs {
+  display: contents;
+}
+
+/* Phones in landscape: light and sonar sit to the right of the vitals, and the minimap moves to the bottom middle */
+@media (orientation: landscape) and (max-height: 520px) {
+  body.is-touch .vitals:has(.seg:not([hidden], .away)) {
+    width: auto;
+    grid-template-columns: 112px auto;
+    grid-template-rows: auto 1fr;
+    column-gap: 8px;
+  }
+  body.is-touch .vitals:has(.seg:not([hidden], .away)) > .vitals-top,
+  body.is-touch .vitals:has(.seg:not([hidden], .away)) > .dials {
+    grid-column: 1;
+  }
+  body.is-touch .vitals:has(.seg:not([hidden], .away)) > .segs {
+    display: grid;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-content: start;
+    gap: 6px;
+    min-width: 96px;
+  }
+  body.is-touch .minimap,
+  body.is-touch .minimap-tab {
+    left: 50%;
+    margin-left: -75px;
+    transform-origin: center bottom;
+  }
+  .is-touch #ui .minimap-tab {
+    transform-origin: center calc(100% + 75px);
+  }
+}
+
+/* Settings menu text on touch screens: descriptions sit a few pixels under the accordion labels */
+body.is-touch .card.menu :is(.muted, .error, p:not(.key)) {
+  font-size: 12px;
+}
+body.is-touch .card.menu .ach li {
+  font-size: 13px;
+}
+body.is-touch .card.menu .ach span,
+body.is-touch .card.menu .upg-sum span,
+body.is-touch .card.menu .skin-row span {
+  font-size: 11px;
+}
+body.is-touch .card.menu .skin-row {
+  font-size: 13px;
+  padding: 8px 10px;
 }

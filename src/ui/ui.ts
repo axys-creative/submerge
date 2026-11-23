@@ -123,13 +123,15 @@ export class UI {
             <div class="dial-col"><div class="dial air" id="hud-air">${RING}${ICON.air}</div><span class="pct" id="pct-air">100%</span><div class="dial-pop" id="pop-air"></div></div>
             <div class="dial-col"><div class="dial batt" id="hud-batt">${RING}${ICON.bolt}</div><span class="pct" id="pct-batt">100%</span><div class="dial-pop" id="pop-batt"></div></div>
           </div>
-          <div class="seg away" id="lamp-seg" data-switch="lamp" role="group" aria-label="Spotlight" hidden>
-            <span>Light</span><i class="seg-thumb"></i>
-            <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
-          </div>
-          <div class="seg away" id="sonar-seg" data-switch="sonar" role="group" aria-label="Sonar" hidden>
-            <span>Sonar</span><i class="seg-thumb"></i>
-            <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
+          <div class="segs">
+            <div class="seg away" id="lamp-seg" data-switch="lamp" role="group" aria-label="Spotlight" hidden>
+              <span>Light</span><i class="seg-thumb"></i>
+              <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
+            </div>
+            <div class="seg away" id="sonar-seg" data-switch="sonar" role="group" aria-label="Sonar" hidden>
+              <span>Sonar</span><i class="seg-thumb"></i>
+              <button tabindex="-1" data-mode="off">off</button><button tabindex="-1" data-mode="on">on</button><button tabindex="-1" data-mode="auto">auto</button>
+            </div>
           </div>
           <div class="dial-pop" id="pop-lamp"><h4>Spotlight</h4><p>Press <kbd>L</kbd> to switch between off, on and auto.</p></div>
           <div class="dial-pop" id="pop-sonar"><h4>Sonar</h4><p>Press <kbd>O</kbd> to switch between off, on and auto.</p></div>
