@@ -8,7 +8,7 @@ import { drawLostSub, LOST_WRECK_SCALE } from './lostSub';
 import { CRANE_TIP, SHIP_LAMPS } from './shipMounts';
 import { drawIronShip } from './ironShip';
 
-export type DecoKind = 'kelp' | 'giantkelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
+export type DecoKind = 'kelp' | 'giantkelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'barrel' | 'lungsub' | 'gem' | 'vent' | BoneKind;
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, a: number) {
   ctx.save();
@@ -1951,6 +1951,62 @@ function drawPlank(ctx: CanvasRenderingContext2D, size: number, tint: number, le
   ctx.restore();
 }
 
+function drawBarrel(ctx: CanvasRenderingContext2D, size: number, tint: number, slope: number) {
+  const L = 58 * size;
+  const H = 40 * size;
+  const rx = 7 * size;
+  ctx.save();
+  ctx.rotate(slope * 0.5);
+  if (tint > 0.5) ctx.scale(-1, 1);
+  ctx.translate(0, -H / 2 + 3 * size);
+  ctx.lineJoin = 'round';
+  ctx.fillStyle = '#7B4A3E';
+  ctx.strokeStyle = '#2A1A16';
+  ctx.lineWidth = 1.6 * size;
+  ctx.beginPath();
+  ctx.moveTo(-L / 2, -H / 2);
+  ctx.lineTo(L / 2 - 3 * size, -H / 2 - 1.5 * size);
+  ctx.quadraticCurveTo(L / 2 + rx * 0.4, 0, L / 2 - 3 * size, H / 2 + 1.5 * size);
+  ctx.lineTo(-L / 2, H / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,170,140,0.18)';
+  ctx.fillRect(-L / 2 + rx, -H / 2 + 2 * size, L - rx * 2, H * 0.2);
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillRect(-L / 2 + rx, H / 2 - H * 0.22, L - rx * 2 - 2 * size, H * 0.2 - 1.5 * size);
+  ctx.strokeStyle = '#8F574A';
+  ctx.lineWidth = 3.2 * size;
+  for (const bx of [-L * 0.2, L * 0.2]) {
+    ctx.beginPath();
+    ctx.ellipse(bx, 0, 3 * size, H / 2 - 1 * size, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#B5651D';
+  const rust: [number, number, number, number][] = [[-0.05, -0.2, 9, 6], [0.28, 0.12, 7, 9], [-0.3, 0.2, 6, 5], [0.1, 0.3, 5, 4]];
+  for (const [fx, fy, rw, rh] of rust) {
+    ctx.beginPath();
+    ctx.ellipse(fx * L, fy * H, rw * size, rh * size, fx * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#6A3E34';
+  ctx.beginPath();
+  ctx.ellipse(-L / 2, 0, rx, H / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2A1A16';
+  ctx.lineWidth = 1.6 * size;
+  ctx.stroke();
+  ctx.fillStyle = '#3A2420';
+  ctx.beginPath();
+  ctx.ellipse(-L / 2, 0, rx * 0.72, H / 2 - 4 * size, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#B5651D';
+  ctx.beginPath();
+  ctx.ellipse(-L / 2 - 1 * size, -H * 0.12, 3 * size, 7 * size, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawStarfish(ctx: CanvasRenderingContext2D, size: number, tint: number) {
   const color = STARFISH[Math.floor(frac(tint * 8.7) * STARFISH.length)];
   const arms = STAR_ARMS[Math.floor(frac(tint * 31.3) * STAR_ARMS.length)];
@@ -2170,6 +2226,10 @@ export function drawDeco(ctx: CanvasRenderingContext2D, kind: DecoKind, size: nu
   }
   if (kind === 'plank') {
     drawPlank(ctx, size, tint, push);
+    return;
+  }
+  if (kind === 'barrel') {
+    drawBarrel(ctx, size, tint, push);
     return;
   }
   if (kind === 'coral') {

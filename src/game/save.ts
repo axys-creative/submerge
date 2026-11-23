@@ -3,6 +3,8 @@ import { GEAR, TRASH_GIFTS, UPGRADES, UPGRADE_ORDER, type Loadout, type UpgradeI
 import { SKINS, type SkinId } from '../data/skins';
 import { ITEM_KINDS, type ItemKind } from '../data/items';
 import { ZONES } from '../data/zones';
+import { BESTIARY } from '../data/bestiary';
+import type { CreatureKind } from '../data/creatures';
 import { PORTALS } from '../data/routes';
 import { START_DAY } from '../render/daylight';
 import type { Salvage } from './world';
@@ -62,6 +64,8 @@ export interface SaveData {
   visited: number[];
   /** Earned achievement ids, such as 'trash-0'. */
   achievements: string[];
+  /** Animals seen so far, in the order they were first spotted. */
+  seen: CreatureKind[];
   /** Zones whose free oxygen candle, a thank-you for clearing the trash, has been taken from a shop. */
   candleClaimed: number[];
   /** The ship radio, a thank-you for cleaning up Coral Gardens: it calls the ship to a surfaced sub. */
@@ -120,6 +124,7 @@ export function newSave(): SaveData {
     visited: [0],
     monsterWoke: false,
     achievements: [],
+    seen: [],
     candleClaimed: [],
     radio: false,
     gearOff: {},
@@ -204,8 +209,9 @@ export function sanitize(raw: any): SaveData | null {
   if (!s.visited.includes(s.zone)) s.visited.push(s.zone);
   s.monsterWoke = raw.monsterWoke === true || (!Array.isArray(raw.visited) && PORTALS.some((p) => p.chase && p.zone === s.zone));
   if (Array.isArray(raw.achievements)) {
-    s.achievements = raw.achievements.filter((a: unknown) => typeof a === 'string' && (a === 'upgraded' || (/^trash-\d+$/.test(a) && Number(a.slice(6)) < ZONES.length)));
+    s.achievements = raw.achievements.filter((a: unknown) => typeof a === 'string' && (a === 'upgraded' || a === 'bestiary' || (/^trash-\d+$/.test(a) && Number(a.slice(6)) < ZONES.length)));
   }
+  if (Array.isArray(raw.seen)) s.seen = [...new Set<CreatureKind>(raw.seen.filter((k: unknown): k is CreatureKind => BESTIARY.includes(k as CreatureKind)))];
   s.candleClaimed = Array.isArray(raw.candleClaimed)
     ? [...new Set<number>(raw.candleClaimed.map((n: unknown) => Math.floor(num(n, -1, 99, -1))).filter((n: number) => TRASH_GIFTS[n] === 'candle'))]
     : [0, 2].filter((z) => s.achievements.includes(`trash-${z}`) && s.candles >= z + 1);

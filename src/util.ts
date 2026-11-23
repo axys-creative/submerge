@@ -43,3 +43,25 @@ export function mixColor(a: string, b: string, t: number) {
   const [r2, g2, b2] = toRgb(b);
   return `rgb(${Math.round(lerp(r1, r2, t))},${Math.round(lerp(g1, g2, t))},${Math.round(lerp(b1, b2, t))})`;
 }
+
+export const BUBBLE_CHARS = 40;
+
+/** Breaks a speech bubble's text at spaces once a line passes about 40 characters; a `{K}` key counts as 3. */
+export function wrapBubble(text: string): string[] {
+  const lines: string[] = [];
+  let line = '';
+  let len = 0;
+  for (const word of text.split(' ')) {
+    const wl = word.replace(/\{[^}]+\}/g, 'xxx').length;
+    if (line && len + 1 + wl > BUBBLE_CHARS) {
+      lines.push(line);
+      line = word;
+      len = wl;
+    } else {
+      line = line ? `${line} ${word}` : word;
+      len += (line === word ? 0 : 1) + wl;
+    }
+  }
+  lines.push(line);
+  return lines;
+}

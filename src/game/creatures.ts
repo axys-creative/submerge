@@ -66,6 +66,7 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
       else wander(c.speed, 1.5);
       break;
     case 'jelly':
+    case 'moonjelly':
       steer(c, Math.sin(c.phase * 0.3 + c.tint * 9) * 10, Math.sin(c.phase * 1.4) * 24 + (c.homeY - c.y) * 0.15, 2, dt);
       break;
     case 'hammerhead':
@@ -190,6 +191,9 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
     }
     case 'bigfin':
       steer(c, Math.sin(c.phase * 0.15 + c.tint * 9) * 7, Math.sin(c.phase * 0.45) * 9 + (c.homeY - c.y) * 0.2, 1, dt);
+      break;
+    case 'whaleshark':
+      cruise(48, 700, 20, 36, 0.15, 10, 0.2, 0.5);
       break;
     case 'bluewhale':
       cruise(30, 900, 40, 50, 0.12, 8, 0.1, 0.35);

@@ -3,6 +3,7 @@ import { MONSTER_SCALE } from "../config";
 export type CreatureKind =
   | "fish"
   | "jelly"
+  | "moonjelly"
   | "shark"
   | "hammerhead"
   | "squid"
@@ -17,6 +18,7 @@ export type CreatureKind =
   | "giant"
   | "turtle"
   | "bluewhale"
+  | "whaleshark"
   | "bigfin"
   | "leviathan";
 
@@ -41,6 +43,12 @@ export const TURTLE_SCALES = [0.75, 0.85, 0.95];
 export const turtleScale = (tint: number) => TURTLE_SCALES[Math.floor(tint * 3) % 3];
 const TURTLE_MAX = TURTLE_SCALES[TURTLE_SCALES.length - 1];
 export const JELLY_SCALE = 0.5;
+/** How much bigger the whale shark is drawn than its 460 px design. */
+export const WHALE_SHARK_SCALE = 1.25;
+/** Moon jellies come in three sizes, the smallest one and a half times as big as the jellyfish, picked by the same third of the tint. */
+export const MOON_JELLY_SIZES = [1.5, 1.8, 2.1];
+export const moonJellyScale = (tint: number) => JELLY_SCALE * MOON_JELLY_SIZES[Math.floor(tint * 3) % 3];
+const MOON_JELLY_MAX = JELLY_SCALE * MOON_JELLY_SIZES[MOON_JELLY_SIZES.length - 1];
 /** Manta rays come in three sizes, the largest as they were before, picked by the same third of the tint as their color. */
 export const MANTA_SCALES = [0.8, 0.9, 1].map((s) => s * 0.75);
 export const STINGRAY_SCALE = 0.5;
@@ -90,6 +98,7 @@ export const BACKGROUND_KINDS: CreatureKind[] = ["bluewhale"];
 export const CREATURES: Record<CreatureKind, CreatureDef> = {
   fish: { name: "Fish", radius: 10, harmful: false },
   jelly: { name: "Jellyfish", radius: 16 * JELLY_SCALE, harmful: false },
+  moonjelly: { name: "Moon Jelly", radius: 18 * MOON_JELLY_MAX, harmful: false },
   shark: { name: "Great White Shark", radius: 30 * SHARK_SCALE * GREAT_WHITE_MAX, harmful: true },
   hammerhead: { name: "Hammerhead Shark", radius: 32 * SHARK_SCALE * HAMMERHEAD_SCALE, harmful: true },
   squid: { name: "Squid", radius: 32 * SQUID_SCALE, harmful: true },
@@ -98,6 +107,7 @@ export const CREATURES: Record<CreatureKind, CreatureDef> = {
   manta: { name: "Manta Ray", radius: 62 * 0.75, harmful: false },
   turtle: { name: "Sea Turtle", radius: 26 * TURTLE_MAX, harmful: false },
   bluewhale: { name: "Blue Whale", radius: 110, harmful: false },
+  whaleshark: { name: "Whale Shark", radius: 70 * WHALE_SHARK_SCALE, harmful: false },
   bigfin: { name: "Bigfin Squid", radius: 26 * BIGFIN_SCALE, harmful: false },
   leviathan: { name: "Leviathan", radius: 95 * MONSTER_SCALE, harmful: true },
   colossal: { name: "Colossal Squid", radius: 38.5 * COLOSSAL_SCALE, harmful: true },
@@ -148,6 +158,7 @@ export const CREATURES: Record<CreatureKind, CreatureDef> = {
 export const CREATURE_EXTENT: Record<CreatureKind, number> = {
   fish: 36,
   jelly: 70 * JELLY_SCALE,
+  moonjelly: 110 * MOON_JELLY_MAX,
   shark: 110 * SHARK_LENGTH * SHARK_SCALE * GREAT_WHITE_MAX,
   hammerhead: 110 * SHARK_LENGTH * SHARK_SCALE * HAMMERHEAD_SCALE,
   squid: 140 * SQUID_SCALE,
@@ -160,6 +171,7 @@ export const CREATURE_EXTENT: Record<CreatureKind, number> = {
   manta: 170 * 0.75,
   turtle: 70 * TURTLE_MAX,
   bluewhale: 360 * BLUE_WHALE_SCALE,
+  whaleshark: 240 * WHALE_SHARK_SCALE,
   bigfin: 1000 * BIGFIN_SCALE,
   leviathan: 2700,
   colossal: 138.5 * COLOSSAL_SCALE,
@@ -180,7 +192,9 @@ export const whalePitch = (c: { vx: number; vy: number }) =>
 export const creatureRadius = (c: { kind: CreatureKind; tint: number }) =>
   c.kind === "turtle"
     ? 26 * turtleScale(c.tint)
-    : c.kind === "shark"
+    : c.kind === "moonjelly"
+      ? 18 * moonJellyScale(c.tint)
+      : c.kind === "shark"
       ? 30 * SHARK_SCALE * greatWhiteScale(c.tint)
       : c.kind === "manta"
         ? 62 * mantaScale(c.tint)

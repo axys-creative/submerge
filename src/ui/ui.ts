@@ -37,10 +37,17 @@ import { ROUTES, PORTAL_LINK, FROZEN, frozenOpen, routesFrom, type Endpoint, typ
 import { ITEMS, ITEM_KINDS, type ItemKind } from "../data/items";
 import { drawSub } from "../art/sub";
 import { drawItem } from "../art/items";
+import { drawCreature } from "../art/creatures";
+import { BEHAVIOR, BESTIARY, BESTIARY_ZONES } from "../data/bestiary";
+import { CREATURES, CREATURE_EXTENT, type CreatureKind } from "../data/creatures";
 import { money, mixColor } from "../util";
 import { shelfPolygon } from "../art/polar";
 
 const ICON = {
+  fullscreen:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>',
+  exitFullscreen:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>',
   hull: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>',
   air: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="14" r="6"/><circle cx="17.5" cy="6.5" r="3.5"/></svg>',
   bolt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>',
@@ -137,7 +144,10 @@ export class UI {
           </div>
         </div>
         <div class="panel purse" id="purse" role="button" tabindex="-1" aria-label="Open inventory"><div class="money" id="hud-money">$0</div><div class="cargo" id="hud-cargo">Hold empty</div><div class="trash" id="hud-trash" hidden></div></div>
-        <button class="icon-btn" id="btn-menu" aria-label="Menu">${ICON.menu}</button>
+        <div class="hud-btns">
+          <button class="icon-btn" id="btn-full" aria-label="Full screen" hidden>${ICON.fullscreen}</button>
+          <button class="icon-btn" id="btn-menu" aria-label="Menu">${ICON.menu}</button>
+        </div>
       </div>
       <div class="prompt" id="prompt" hidden></div>
       <div class="ctl-hint" id="ctl-hint" hidden><div class="ctl-panel"><div class="ctl-msg" id="ctl-msg"></div><div class="ctl-rows" id="ctl-body"></div></div><button class="ctl-btn" type="button" aria-label="Controls">${infoIcon}</button></div>
@@ -149,10 +159,12 @@ export class UI {
           <button class="round-btn crank" data-act="crankJ" hidden>U</button>
           <button class="round-btn crank" data-act="crankK" hidden>I</button>
           <button class="round-btn secondary" id="btn-drop" data-act="drop" hidden>Drop</button>
-<button class="round-btn secondary" id="btn-boost" data-act="boost" data-hold hidden>Boost</button>
           <button class="round-btn secondary" id="btn-radio" data-act="radio" hidden>Radio</button>
           <button class="round-btn secondary" id="btn-spot" data-act="action" hidden>Shop</button>
-          <button class="round-btn primary" id="btn-dive" data-act="dive" hidden>Dive</button>
+          <div class="btn-stack">
+            <button class="round-btn secondary" id="btn-boost" data-act="boost" data-hold hidden>Boost</button>
+            <button class="round-btn primary" id="btn-dive" data-act="dive" hidden>Dive</button>
+          </div>
         </div>
       </div>
       <div class="depth-meter away" id="depth-meter">
@@ -1069,6 +1081,36 @@ export class UI {
 
   // ---- Touch controls ----------------------------------------------------
 
+  private setupFullscreen() {
+    const doc = document as Document & {
+      webkitFullscreenElement?: Element | null;
+      webkitFullscreenEnabled?: boolean;
+      webkitExitFullscreen?: () => Promise<void>;
+    };
+    const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+    const supported = doc.fullscreenEnabled || doc.webkitFullscreenEnabled;
+    const installed =
+      matchMedia("(display-mode: standalone)").matches ||
+      matchMedia("(display-mode: fullscreen)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    const btn = $(this.root, "#btn-full");
+    if (!supported || installed) return;
+    const active = () => !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+    const sync = () => {
+      btn.innerHTML = active() ? ICON.exitFullscreen : ICON.fullscreen;
+      btn.setAttribute("aria-label", active() ? "Exit full screen" : "Full screen");
+    };
+    btn.hidden = false;
+    btn.addEventListener("click", () => {
+      const done = active()
+        ? (doc.exitFullscreen ?? doc.webkitExitFullscreen)?.call(doc)
+        : (el.requestFullscreen ?? el.webkitRequestFullscreen)?.call(el);
+      done?.catch(() => {});
+    });
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+  }
+
   private setupTouch() {
     const enable = () => {
       if (this.touch) return;
@@ -1076,6 +1118,7 @@ export class UI {
       document.body.classList.add("is-touch");
       $(this.root, "#touch").hidden = false;
       this.cache.clear();
+      this.setupFullscreen();
     };
     if (matchMedia("(pointer: coarse)").matches) enable();
     addEventListener("touchstart", enable, { passive: true });
@@ -1534,6 +1577,28 @@ export class UI {
     }).join("");
   }
 
+  private bestiaryList() {
+    const seen = this.game.save.seen;
+    return BESTIARY.map((kind) => {
+      if (!seen.includes(kind)) return `<li class="unseen"><i>?</i><div><b>???</b><span>Not seen yet</span></div></li>`;
+      const zones = (BESTIARY_ZONES[kind] ?? []).map((z) => ZONES[z].name).join(", ");
+      const harmful = CREATURES[kind].harmful;
+      return `<li><canvas data-kind="${kind}" width="192" height="128"></canvas><div><b><span class="dot ${harmful ? "bad" : "ok"}" title="${harmful ? "Dangerous" : "Harmless"}"></span>${esc(CREATURES[kind].name)}</b><span>${esc(zones)}</span><em>${esc(BEHAVIOR[kind as keyof typeof BEHAVIOR])}</em></div></li>`;
+    }).join("");
+  }
+
+  private drawCreatureThumb(canvas: HTMLCanvasElement) {
+    const kind = canvas.dataset.kind as CreatureKind;
+    const ctx = canvas.getContext("2d")!;
+    const tall = ["squid", "colossal", "giant", "bigfin", "jelly", "moonjelly"].includes(kind);
+    const scale = Math.min(1.5, (tall ? 29 : 44) / CREATURE_EXTENT[kind]) * 2;
+    ctx.setTransform(scale, 0, 0, scale, canvas.width / 2, canvas.height / 2);
+    drawCreature(ctx, {
+      kind, x: 0, y: 0, vx: 0, vy: 0, facing: 1, heading: 1, angle: -Math.PI / 2, homeY: 0, minY: 0, maxY: 1e9,
+      speed: 0, state: "idle", dying: 0, timer: 0, phase: 0, tint: 0.5, nextDive: 0, plan: null,
+    });
+  }
+
   openMenu() {
     if (this.modalKind === "title") return;
     const g = this.game;
@@ -1586,6 +1651,9 @@ export class UI {
             .join("")}${(() => {
             const done = g.save.achievements.includes("upgraded");
             return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Fully Loaded</b><span>Max out every upgrade and own all the gear, including the oxygen candles and dive weights</span></li>`;
+          })()}${(() => {
+            const done = g.save.achievements.includes("bestiary");
+            return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Marine Biologist</b><span>Spot every animal and fill the catalog${done ? "" : ` · ${g.save.seen.length}/${BESTIARY.length}`}</span></li>`;
           })()}</ul>
         </details>
         <details class="acc">
@@ -1594,11 +1662,20 @@ export class UI {
           <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}" style="--p:${Math.round(g.audio.volume * 100)}%"></label>
           <label class="sound-row">Music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}" style="--p:${Math.round(g.audio.musicVolume * 100)}%"></label>
         </details>
-        <details class="acc" id="upgrades-acc">
-          <summary>Upgrades</summary>
-          <p class="muted">Collect treasure on your dives, then sell it at island shops to earn money. Spend it there on upgrades for your sub. Different shops stock different upgrades, so visit more than one.</p>
-          <ul class="upg-sum" id="upg-list" style="--pips:${Math.max(...UPGRADE_ORDER.map((id) => UPGRADES[id].levels.length))}">${this.upgradeList()}</ul>
-          <p class="muted" id="upg-msg">Hover a light to see that level; click one you own to wear it. Click gear, or each candle, to switch it off or on. Lights past your latest purchase are not bought yet.</p>
+        <details class="acc" id="catalog-acc">
+          <summary>Catalog</summary>
+          <details class="subacc" id="upgrades-acc">
+            <summary>Upgrades</summary>
+            <p class="muted">Collect treasure on your dives, then sell it at island shops to earn money. Spend it there on upgrades for your sub. Different shops stock different upgrades, so visit more than one.</p>
+            <ul class="upg-sum" id="upg-list" style="--pips:${Math.max(...UPGRADE_ORDER.map((id) => UPGRADES[id].levels.length))}">${this.upgradeList()}</ul>
+            <p class="muted" id="upg-msg">Hover a light to see that level; click one you own to wear it. Click gear, or each candle, to switch it off or on. Lights past your latest purchase are not bought yet.</p>
+          </details>
+          <details class="subacc" id="creatures-acc">
+            <summary>Creatures <span class="drain-badge">${g.save.seen.length}/${BESTIARY.length}</span></summary>
+            <p class="muted">Every animal you spot on a dive is added here. In dark water you have to catch it in your spotlight.</p>
+            <p class="key"><span class="dot ok"></span>Harmless <span class="dot bad"></span>Dangerous</p>
+            <ul class="bestiary">${this.bestiaryList()}</ul>
+          </details>
         </details>
         <details class="acc" id="skins-acc">
           <summary>Skins</summary>
@@ -1635,11 +1712,13 @@ export class UI {
       </div>`,
     );
     const skinsAcc = $<HTMLDetailsElement>(this.modal, "#skins-acc");
+    const catalogAcc = $<HTMLDetailsElement>(this.modal, "#catalog-acc");
     const upgradesAcc = $<HTMLDetailsElement>(this.modal, "#upgrades-acc");
-    this.modal.querySelectorAll<HTMLDetailsElement>("details.acc").forEach((d) =>
+    this.modal.querySelectorAll<HTMLCanvasElement>("canvas[data-kind]").forEach((c) => this.drawCreatureThumb(c));
+    this.modal.querySelectorAll<HTMLDetailsElement>("details.acc, details.subacc").forEach((d) =>
       d.addEventListener("toggle", () => {
-        if (d.open) for (const o of [skinsAcc, upgradesAcc]) if (o !== d) o.open = false;
-        const preview = skinsAcc.open || upgradesAcc.open;
+        if (d.open && d.classList.contains("acc")) for (const o of [skinsAcc, catalogAcc]) if (o !== d) o.open = false;
+        const preview = skinsAcc.open || (catalogAcc.open && upgradesAcc.open);
         this.modal.classList.toggle("skins-open", preview);
         this.game.skinPreview = preview;
       }),

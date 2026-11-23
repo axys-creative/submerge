@@ -9,13 +9,16 @@ import { buoyLabel, routesFrom, PORTALS } from '../data/routes';
 import { ULYSSES_DOME, ULYSSES_LIGHT_RGB, ULYSSES_GLOW_X, ULYSSES_GLOW_R, drawUlyssesLamps, drawUlyssesCage, clipOutUlyssesFront } from '../art/ulysses';
 import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, drawGlassCracks, runningLights, sternStretch, anchorFor, lampFor, rearLampFor, challengerBoomTips, challengerViewport, CAPSULE_SIDE_VIEWPORT, COCKPIT, REAR_LAMP } from '../art/sub';
 import { drawIslandGulls } from '../art/gulls';
+import { propWake, SHIP_PROP_WAKE } from '../art/sub';
+import { drawBoostSwirl } from '../art/swirl';
+import { ULYSSES_SCALE } from '../art/ulysses';
 import { drawShip, drawIsland, dockPoles, drawCloud, cloudShape, drawBuoy, drawPortal, drawPortalStone, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
 import { BACKGROUND_KINDS, CREATURE_EXTENT, anglerRelSize } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
 import { drawRainFall, drawRainRipples, drawSnowFall } from './weather';
 import { drawPolarSky, drawPolarUnder, drawPolarFloes, drawPolarGiant, clipToGiant, drawShelf, drawShelfFar, clipOutsideShelf, drawShelfSplash } from '../art/polar';
-import { waveY, mixColor, lerp, clamp } from '../util';
+import { waveY, mixColor, lerp, clamp, wrapBubble } from '../util';
 import { BACK_LAYERS } from '../game/world';
 import { daylight, STARS } from './daylight';
 import { lightCover, type Light } from './lighting';
@@ -581,7 +584,7 @@ export function renderScene(g: Game) {
       drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, buried ? 0 : d.push, space));
       ctx.restore();
     }
-    for (const it of world.items) if (it.alive && inView(it.x) && !inRock(it.x, it.y)) drawItemAt(it);
+    for (const it of world.items) if (it.alive && !ITEMS[it.kind].cargo && inView(it.x) && !inRock(it.x, it.y)) drawItemAt(it);
 
     const ground = ctx.createLinearGradient(0, 0, 0, world.floorMax);
     ground.addColorStop(0, def.ground[0]);
@@ -647,7 +650,7 @@ export function renderScene(g: Game) {
       ctx.restore();
     }
 
-    for (const it of world.items) if (it.alive && inView(it.x) && inRock(it.x, it.y) && world.caveShown(it.x, it.y)) drawItemAt(it);
+    for (const it of world.items) if (it.alive && inView(it.x) && (ITEMS[it.kind].cargo ? !inRock(it.x, it.y) || world.caveShown(it.x, it.y) : inRock(it.x, it.y) && world.caveShown(it.x, it.y))) drawItemAt(it);
   }
 
   for (const h of world.hulks) {
@@ -764,6 +767,7 @@ export function renderScene(g: Game) {
   ctx.translate(g.ship.x, bob);
   ctx.scale(g.ship.facing, 1);
   ctx.rotate(Math.sin(t * 0.9) * 0.02 + g.shipPitch);
+  { const w = SHIP_PROP_WAKE(g.up.propeller); drawBoostSwirl(ctx, t, g.boost, w.x, w.h, 1, w.y); }
   drawShip(ctx, t, g.ship.facing, lampNight, Math.min(g.owned.plating, g.owned.oxygen), g.owned.oxygen, g.treasureAlert, g.shipProp, g.up.propeller, g.save.skin);
   ctx.restore();
 
@@ -787,6 +791,79 @@ export function renderScene(g: Game) {
     ctx.restore();
   }
 
+  const claw = g.clawState();
+  if (claw) {
+    const bob = g.surfaceBob;
+    const px = claw.px;
+    const py = claw.py + bob;
+    const tx = claw.tx;
+    const ty = claw.ty + bob;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const OUTLINE = '#2B303B';
+    const base = Math.atan2(claw.dirY, claw.dirX);
+    const ease = (u: number) => u * u * (3 - 2 * u);
+    const SEGMENTS = [
+      { w: 9, fill: '#5E6674', shine: '#A9B2C0' },
+      { w: 6.5, fill: '#6F7886', shine: '#B7C0CD' },
+      { w: 4, fill: '#818B9B', shine: '#C4CCD8' },
+    ];
+    const segLen = claw.reach / SEGMENTS.length;
+    const along = (d: number): [number, number] => [px + claw.dirX * d, py + claw.dirY * d];
+    ctx.lineCap = 'butt';
+    for (let k = SEGMENTS.length - 1; k >= 0; k--) {
+      const reach = ease(Math.min(1, Math.max(0, claw.ext * SEGMENTS.length - k)));
+      if (reach <= 0) continue;
+      const [x0, y0] = along(k * segLen - (k ? 5 : 0));
+      const [x1, y1] = along((k + reach) * segLen);
+      const [sx, sy] = along(k * segLen + 1);
+      for (const [color, width, fromX, fromY] of [
+        [OUTLINE, SEGMENTS[k].w + 1.2, x0, y0],
+        [SEGMENTS[k].fill, SEGMENTS[k].w, x0, y0],
+        [SEGMENTS[k].shine, SEGMENTS[k].w * 0.35, sx, sy],
+      ] as const) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      }
+    }
+    ctx.lineCap = 'round';
+    for (const l of claw.load) {
+      ctx.save();
+      ctx.translate(l.x, l.y + bob);
+      drawItem(ctx, l.kind, t, 0);
+      ctx.restore();
+    }
+    for (const pass of [0, 1]) {
+      const grow = pass ? 0 : 1.2;
+      ctx.fillStyle = pass ? '#4A505E' : OUTLINE;
+      ctx.beginPath();
+      ctx.arc(px, py, 5 + grow / 2, 0, Math.PI * 2);
+      ctx.fill();
+      if (claw.ext <= 0) continue;
+      ctx.strokeStyle = pass ? '#8A93A3' : OUTLINE;
+      ctx.lineWidth = 4 + grow;
+      for (const side of [-1, 1]) {
+        const a1 = base + side * (0.25 + claw.open * 0.7);
+        const mx = tx + Math.cos(a1) * 14;
+        const my = ty + Math.sin(a1) * 14;
+        const a2 = base - side * (0.2 + claw.open * 0.1);
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(mx, my);
+        ctx.lineTo(mx + Math.cos(a2) * 10, my + Math.sin(a2) * 10);
+        ctx.stroke();
+      }
+      ctx.fillStyle = pass ? '#6C7482' : OUTLINE;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 4 + grow / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   const blink = s.invuln > 0 && Math.floor(t * 12) % 2 === 0;
   const im = g.implode;
   const crush = im ? Math.min(1, im.t / IMPLODE_COLLAPSE) : 0;
@@ -801,6 +878,14 @@ export function renderScene(g: Game) {
     crumple(ctx);
     if (blink) ctx.globalAlpha = 0.4;
     if (g.swallow) ctx.globalAlpha *= 1 - clamp((g.swallow.t - SWALLOW_CLOSE + 0.6) / 0.5, 0, 1);
+    if (!im) { const k = g.save.skin === 'ulysses' ? ULYSSES_SCALE : 1; const w = propWake(g.up.propeller, g.up.cargo, g.save.skin); const sp = Math.hypot(s.vx, s.vy);
+      const kv = clamp(sp / 80, 0, 1);
+      const fx = -s.vx * s.facing;
+      const dx = fx * Math.cos(s.tilt) + -s.vy * Math.sin(s.tilt);
+      const dy = -fx * Math.sin(s.tilt) + -s.vy * Math.cos(s.tilt);
+      const turn = Math.atan2(kv * (dy / (sp || 1)), -(1 - kv) + kv * (dx / (sp || 1)));
+      drawBoostSwirl(ctx, t, g.subSwirl, w.x * k, w.h, k, 0, turn - Math.PI, (kv * s.vy) / (sp || 1));
+    }
     drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, rack: g.gear.candles > 0, scrubbers: g.gear.scrubbers, electrolysis: g.gear.electrolysis, radio: g.gear.radio }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut);
     if (g.crack !== null) drawGlassCracks(ctx, Math.min(1, g.crack / CRACK_TIME), g.save.skin);
     ctx.restore();
@@ -863,51 +948,6 @@ export function renderScene(g: Game) {
       }
     }
     ctx.restore();
-  }
-
-  const claw = g.clawState();
-  if (claw && g.mode === 'diving') {
-    const bob = g.surfaceBob;
-    const px = claw.px;
-    const py = claw.py + bob;
-    const tx = claw.tx;
-    const ty = claw.ty + bob;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#5E6674';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(px, py);
-    ctx.lineTo(tx, ty);
-    ctx.stroke();
-    ctx.strokeStyle = '#A9B2C0';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(px, py);
-    ctx.lineTo(px + (tx - px) * 0.7, py + (ty - py) * 0.7);
-    ctx.stroke();
-    ctx.fillStyle = '#4A505E';
-    ctx.beginPath();
-    ctx.arc(px, py, 5, 0, Math.PI * 2);
-    ctx.fill();
-    const base = Math.atan2(claw.dirY, claw.dirX);
-    ctx.strokeStyle = '#8A93A3';
-    ctx.lineWidth = 4;
-    for (const side of [-1, 1]) {
-      const a1 = base + side * (0.25 + claw.open * 0.7);
-      const mx = tx + Math.cos(a1) * 14;
-      const my = ty + Math.sin(a1) * 14;
-      const a2 = base - side * (0.2 + claw.open * 0.1);
-      ctx.beginPath();
-      ctx.moveTo(tx, ty);
-      ctx.lineTo(mx, my);
-      ctx.lineTo(mx + Math.cos(a2) * 10, my + Math.sin(a2) * 10);
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#6C7482';
-    ctx.beginPath();
-    ctx.arc(tx, ty, 4, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   if (g.dust.length) {
@@ -1127,6 +1167,8 @@ export function renderScene(g: Game) {
       if (glow > 0) lights.push({ x: l.x, y: l.y, r: 22 * anglerRelSize(c.tint) * (0.4 + 0.6 * glow), a: glow });
     } else if (c.kind === 'jelly') {
       lights.push({ x: c.x, y: c.y, r: 50 });
+    } else if (c.kind === 'moonjelly') {
+      lights.push({ x: c.x, y: c.y, r: 90 });
     } else if (c.kind === 'leviathan') {
       for (const gl of leviathanGlows(c)) {
         if (!inView(gl.x)) continue;
@@ -1134,6 +1176,28 @@ export function renderScene(g: Game) {
         lights.push({ x: gl.x, y: gl.y, r: gl.r, a: 0.35 * gl.power });
       }
     }
+  }
+  g.inSight.clear();
+  {
+    const litFrom = lerp(startPx, 30, night);
+    const span = deepPx + 16;
+    const dim = (y: number) => {
+      const u = clamp((y + 16) / span, 0, 1);
+      const s = clamp((litFrom + 16) / span, 0, 1);
+      return u < s ? (0.55 * night * u) / (s || 1) : 0.55 * night + (1 - 0.55 * night) * ((u - s) / (1 - s || 1));
+    };
+    for (const c of world.creatures) {
+      if (c.kind === 'leviathan' || c.state === 'dead' || g.inSight.has(c.kind)) continue;
+      const e = Math.min(CREATURE_EXTENT[c.kind], 400) * 0.4;
+      for (const x of [c.x - e, c.x, c.x + e]) {
+        if (x < left || x > right || c.y < top || c.y > bottom) continue;
+        if (dim(c.y) < 0.6 || lightCover(lights, x, c.y) > 0.5) {
+          g.inSight.add(c.kind);
+          break;
+        }
+      }
+    }
+    for (const kind of g.inSight) g.noteSeen(kind);
   }
   if (bottom > lerp(startPx, 0, night) && !g.debugFast) {
     g.lighting.render(ctx, { k, ox, oy, left, top, w: W, h: H }, startPx, deepPx, lights, night, space ? '22,2,5' : '3,7,24');
@@ -1345,6 +1409,9 @@ export function renderScene(g: Game) {
       if (!inView(h.x, 400)) continue;
       ctx.strokeText(h.sub, h.x, h.y + 22 / view.zoom);
       ctx.fillText(h.sub, h.x, h.y + 22 / view.zoom);
+      if (!h.found) continue;
+      ctx.strokeText(h.found, h.x, h.y + 42 / view.zoom);
+      ctx.fillText(h.found, h.x, h.y + 42 / view.zoom);
     }
     ctx.font = `700 ${18 / view.zoom}px Fredoka, Nunito, sans-serif`;
   }
@@ -1431,16 +1498,19 @@ export function renderScene(g: Game) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
+    let stack = 0;
     g.speech.forEach((b, i) => {
       const pop = Math.min(1, b.age / 0.2);
       ctx.globalAlpha = Math.min(pop, b.life / 0.4);
-      const w = richWidth(ctx, b.text, u) + 62 * u;
-      const h = 54 * u;
+      const lines = wrapBubble(b.text);
+      const w = Math.max(...lines.map((l) => richWidth(ctx, l, u))) + 62 * u;
+      const h = (54 + (lines.length - 1) * 20) * u;
       const r = 14 * u;
       const face = diving ? s.facing : g.ship.facing;
       const shift = face * (w / 2 - r + 14 * u);
       const cx = Math.min(cw - w / 2 - 8 * u, Math.max(w / 2 + 8 * u, baseX + shift));
-      const cy = baseY - (56 + i * 64) * u;
+      const cy = baseY - 29 * u - stack - h / 2;
+      stack += h + 10 * u;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(0.8 + 0.2 * pop, 0.8 + 0.2 * pop);
@@ -1478,7 +1548,7 @@ export function renderScene(g: Game) {
       ctx.arc(x0 + 28 * u, 0, 5 * u, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = mixColor('#14245A', '#E8EEFF', g.uiDark);
-      drawRich(ctx, b.text, 8 * u, 1 * u, u, t, ctx.fillStyle as string, { press: true });
+      lines.forEach((l, li) => drawRich(ctx, l, 8 * u - (w - 62 * u) / 2 + richWidth(ctx, l, u) / 2, (1 + (li - (lines.length - 1) / 2) * 20) * u, u, t, ctx.fillStyle as string, { press: true }));
       ctx.restore();
     });
     ctx.globalAlpha = 1;

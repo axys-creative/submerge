@@ -11,6 +11,14 @@ import type { WreckFx } from '../art/scenery';
 import type { Loadout } from '../data/upgrades';
 import type { SkinId } from '../data/skins';
 
+/** The numbers of the map zones whose creature lists include any of these kinds, joined with " | ", or "all map zones" when every zone with creatures has one. */
+function foundIn(kinds: CreatureKind[]) {
+  const spawning = ZONES.map((z, i) => ({ n: i + 1, kinds: (z.creatures ?? []).map((s) => s.kind) })).filter((z) => z.kinds.length);
+  const has = spawning.filter((z) => z.kinds.some((k) => kinds.includes(k)));
+  if (!has.length) return '';
+  return has.length === spawning.length ? 'all map zones' : has.map((z) => z.n).join(' | ');
+}
+
 /** The sea floor never rises above this depth in px, so kelp, creatures and the ship stay clear of the surface. */
 const MIN_FLOOR = 15 * PX_PER_M;
 /** How gently the floor eases into MIN_FLOOR instead of flattening abruptly. */
@@ -37,6 +45,10 @@ const TRASH_SINK_SPEED = 6;
 const TRASH_SPIN = (Math.PI * 2) / 60;
 const WRECK_TRASH_SPACING = 70;
 const FREIGHTER_TRASH = 9;
+const FREIGHTER_BOXES = 9;
+const CONTAINER_BOXES = 4;
+const BOX_SINK = 7;
+const restY = (kind: ItemKind, floor: number) => floor - ITEMS[kind].size * 0.45 + (ITEMS[kind].cargo ? BOX_SINK : 0);
 const NAV_CELL = 120;
 const NAV_CLEAR = 130;
 
@@ -200,7 +212,7 @@ export interface Creature {
 }
 
 export interface Deco {
-  kind: 'kelp' | 'giantkelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'lungsub' | 'gem' | 'vent' | BoneKind;
+  kind: 'kelp' | 'giantkelp' | 'coral' | 'rock' | 'stone' | 'starfish' | 'plank' | 'barrel' | 'lungsub' | 'gem' | 'vent' | BoneKind;
   x: number;
   y: number;
   size: number;
@@ -228,7 +240,7 @@ export class World {
   /** Name tags drawn in the world, used by the catalog zone. */
   readonly labels: { x: number; y: number; text: string }[] = [];
   /** Catalog column headings, drawn larger than the name tags. */
-  readonly headers: { x: number; y: number; text: string; sub: string }[] = [];
+  readonly headers: { x: number; y: number; text: string; sub: string; found: string }[] = [];
   private readonly shape: number[];
   readonly caveBlobs: CaveBlob[] = [];
   private readonly rng: Rng;
@@ -301,7 +313,7 @@ export class World {
       const kinds: ItemKind[] =
         w.kind === 'sloop' ? [this.lootRng() < 0.5 ? 'wheel' : 'anchor', 'coin']
         : w.kind === 'galleon' ? ['wheel', 'anchor', 'chest']
-        : ['chest'];
+        : [];
       const reach = w.kind === 'galleon' ? 280 : w.kind === 'sloop' ? 120 : 0;
       const stern = w.kind === 'galleon' ? -250 : -110;
       const rest: ItemKind[] = kinds.filter((k) => k !== 'wheel');
@@ -767,6 +779,12 @@ export class World {
         this.deco.push({ kind: 'vent', x, y: this.floorAt(x), size: rand(g, 0.9, 1.5), phase: 0, tint: g(), push: 0, pushV: 0 });
       }
     });
+    const barrels = mulberry32(this.index * 6007 + 53);
+    for (let i = 0; i < scaled(this.def.barrels ?? 0); i++) {
+      const x = rand(barrels, 100, this.width - 100);
+      if (Math.abs(this.floorSlope(x)) > 0.35) continue;
+      this.deco.push({ kind: 'barrel', x, y: this.floorAt(x), size: rand(barrels, 0.8, 1.3), phase: 0, tint: barrels(), push: this.floorSlope(x), pushV: 0 });
+    }
     add('rock', this.def.rocks, Infinity);
     add('kelp', this.def.kelp, 260);
     add('coral', this.def.coral ?? 0, 170);
@@ -877,7 +895,7 @@ export class World {
   /** Lays the zone's junk at the same spots every time, skipping the ones already cleared. */
   private placeTrash(cleared: number[]) {
     const r = mulberry32(this.index * 6007 + 31);
-    const kinds = ITEM_KINDS.filter((k) => ITEMS[k].trash);
+    const kinds = ITEM_KINDS.filter((k) => ITEMS[k].trash && !ITEMS[k].cargo);
     const xs: number[] = [];
     let meadowTires = 0;
     for (let i = 0; i < (this.def.trash ?? 0); i++) {
@@ -904,27 +922,36 @@ export class World {
       }
     }
     for (const w of this.def.wrecks) {
-      if (w.kind !== 'freighter') continue;
-      for (let i = 0, placed = 0; placed < FREIGHTER_TRASH && i < FREIGHTER_TRASH * 40; i++) {
-        const x = w.x + rand(r, -250, 3050);
-        const floor = this.floorAt(x);
-        if (x < 150 || x > this.width - 150 || this.atMouth(x, floor) || xs.some((o) => Math.abs(o - x) < WRECK_TRASH_SPACING)) continue;
-        const kind = kinds[placed % kinds.length];
-        const it = this.blankItem();
-        it.kind = kind;
-        it.x = x;
-        this.dropTrash(it, floor, r);
-        it.trash = this.trashTotal++;
-        it.alive = !cleared.includes(it.trash);
-        this.items.push(it);
-        xs.push(x);
-        placed++;
+      const batches: { count: number; kind: (placed: number) => ItemKind }[] =
+        w.kind === 'freighter'
+          ? [
+              { count: FREIGHTER_TRASH, kind: (n) => kinds[n % kinds.length] },
+              { count: FREIGHTER_BOXES, kind: (n) => (n % 3 === 2 ? 'openbox' : 'box') },
+            ]
+          : w.kind === 'containers'
+            ? [{ count: CONTAINER_BOXES, kind: (n) => (n % 3 === 2 ? 'openbox' : 'box') }]
+            : [];
+      for (const batch of batches) {
+        for (let i = 0, placed = 0; placed < batch.count && i < batch.count * 40; i++) {
+          const x = w.kind === 'freighter' ? w.x + rand(r, -250, 3050) : w.x + rand(r, -330, 300);
+          const floor = this.floorAt(x);
+          if (x < 150 || x > this.width - 150 || this.atMouth(x, floor) || xs.some((o) => Math.abs(o - x) < WRECK_TRASH_SPACING)) continue;
+          const it = this.blankItem();
+          it.kind = batch.kind(placed);
+          it.x = x;
+          this.dropTrash(it, floor, r);
+          it.trash = this.trashTotal++;
+          it.alive = !cleared.includes(it.trash);
+          this.items.push(it);
+          xs.push(x);
+          placed++;
+        }
       }
     }
   }
 
   private dropTrash(it: ItemInst, floor: number, r: () => number) {
-    const rest = floor - ITEMS[it.kind].size * 0.45;
+    const rest = restY(it.kind, floor);
     if (it.kind === 'sack') {
       const lo = 60;
       it.y = rand(r, lo, Math.max(lo + 20, floor - 110));
@@ -953,7 +980,7 @@ export class World {
     for (const it of this.items) {
       if (!it.sinking || !it.alive) continue;
       it.spin = (it.spin ?? it.phase) + TRASH_SPIN * dt;
-      const rest = this.floorAt(it.x) - ITEMS[it.kind].size * 0.45;
+      const rest = restY(it.kind, this.floorAt(it.x));
       it.y = Math.min(rest, it.y + TRASH_SINK_SPEED * dt);
       if (it.y >= rest) it.sinking = false;
     }
@@ -1066,7 +1093,7 @@ export class World {
         const it = this.blankItem();
         it.kind = e.item;
         it.x = e.x;
-        it.y = y - ITEMS[e.item].size * 0.45;
+        it.y = restY(e.item, y);
         this.items.push(it);
       }
       for (const kind of e.floating ?? []) {
@@ -1079,7 +1106,7 @@ export class World {
       }
       this.labels.push({ x: e.x, y: y + 34, text: e.label });
     }
-    for (const col of CATALOG.columns) this.headers.push({ x: col.x, y: CATALOG.headerY, text: col.label, sub: col.zones });
+    for (const col of CATALOG.columns) this.headers.push({ x: col.x, y: CATALOG.headerY, text: col.label, sub: col.zones, found: foundIn(col.kinds) });
     for (const e of CATALOG.creatures) {
       const y = e.y;
       for (let i = 0; i < (e.kind === 'fish' ? 5 : 1); i++) {

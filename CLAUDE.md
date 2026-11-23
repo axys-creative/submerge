@@ -23,6 +23,10 @@ Air gear is set by `gear` on the island in `src/data/zones.ts`, and the dive wei
 
 The last zone, Catalog, is a test zone reached with the zone stepper in the test panel (hidden from the route map). It is always daytime with no creature movement. Next to the ship it lays out every plant, rock, bone, item and wreck on a shallow floor, then every animal in open water, each with a name tag. The layout is in `src/data/catalog.ts`; new creatures, items and scenery kinds should be added there so they show up.
 
+## Creature catalog
+
+The Catalog section of the pause menu holds the Upgrades list and a Creatures list. `BESTIARY` in `src/data/bestiary.ts` is every animal that spawns in a zone's `creatures` (the leviathan is left out), in order of first appearance, so new spawns are tracked automatically. `save.seen` records them. In `renderScene` (`src/render/scene.ts`) an animal counts as seen once it is on screen and either in water still bright from the sun or inside the sub's own lights (the spotlight, not the sonar); `noteSeen` in `src/game/game.ts` toasts and awards Marine Biologist (`'bestiary'` in `save.achievements`, not required for the portal stone) when all are seen. The Catalog test zone never records sightings. Unseen entries show as "?".
+
 ## Design guidelines
 
 - Caves should feel open, big and majestic, never confined. Follow Echo Caverns in Sunny Shallows (`cave` in `src/data/zones.ts`): tunnels around 190 px in radius as listed (drawn at that size; `TUNNEL_WIDEN` in `src/game/world.ts` scales them, 1.5 before they were trimmed by a third), some side tunnels half that at 95 px, chambers 250 px or more, no tight squeezes.

@@ -3,7 +3,7 @@ import { MONSTER_SCALE as MS, MONSTER_TRAIL } from '../config';
 import { leviathanSpine } from '../data/leviathan';
 import { mulberry32 } from '../util';
 import { WHALE_REAR_TOP, WHALE_REAR_BOTTOM, WHALE_TAIL } from './whaleShapes';
-import { FISH_FULL_SPEED, BIGFIN_SCALE, SQUID_SCALE, BLUE_WHALE_SCALE, MOBY_DICK_SCALE, COLOSSAL_SCALE, GIANT_SCALE, GIANT_TENTACLE, SHARK_LENGTH, SHARK_SCALE, greatWhiteScale, anglerScale, mantaScale, ORCA_SCALE, ORCA_CALF_SCALE, ORCA_TILT, STINGRAY_SCALE, HAMMERHEAD_SCALE, turtleScale, JELLY_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
+import { FISH_FULL_SPEED, BIGFIN_SCALE, SQUID_SCALE, BLUE_WHALE_SCALE, MOBY_DICK_SCALE, COLOSSAL_SCALE, GIANT_SCALE, GIANT_TENTACLE, SHARK_LENGTH, SHARK_SCALE, greatWhiteScale, anglerScale, mantaScale, ORCA_SCALE, ORCA_CALF_SCALE, ORCA_TILT, STINGRAY_SCALE, HAMMERHEAD_SCALE, turtleScale, JELLY_SCALE, moonJellyScale, WHALE_SHARK_SCALE, WHALE_SCALE, whalePitch } from '../data/creatures';
 
 const FISH = ['#FFB547', '#FF7A6B', '#7BDFF2', '#B9F18C'];
 
@@ -105,6 +105,10 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
       ctx.scale(JELLY_SCALE, JELLY_SCALE);
       jelly(ctx, c);
       break;
+    case 'moonjelly':
+      ctx.scale(moonJellyScale(c.tint), moonJellyScale(c.tint));
+      moonJelly(ctx, c);
+      break;
     case 'shark':
     case 'hammerhead':
       ctx.scale(c.facing, 1);
@@ -153,6 +157,11 @@ export function drawCreature(ctx: CanvasRenderingContext2D, c: Creature, part: L
       ctx.scale(c.facing * BLUE_WHALE_SCALE, BLUE_WHALE_SCALE);
       ctx.rotate(Math.max(-0.12, Math.min(0.12, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 30)))));
       blueWhale(ctx, c);
+      break;
+    case 'whaleshark':
+      ctx.scale(c.facing * WHALE_SHARK_SCALE, WHALE_SHARK_SCALE);
+      ctx.rotate(Math.max(-0.1, Math.min(0.1, Math.atan2(c.vy, Math.max(Math.abs(c.vx), 30)))));
+      whaleShark(ctx, c);
       break;
     case 'turtle': {
       ctx.scale(c.facing, 1);
@@ -1131,22 +1140,69 @@ function turtle(ctx: CanvasRenderingContext2D, c: Creature) {
 
 function fish(ctx: CanvasRenderingContext2D, c: Creature) {
   const color = FISH[Math.floor(c.tint * FISH.length)];
-  swimTail(ctx, [-10, 0], c.phase, tailSwing(c, 12, FISH_FULL_SPEED), [[0, 0], [-5, -3.5], [-10, -7], [-10, 7], [-5, 3.5]], color, (p) => {
+  swimTail(ctx, [-9, 0], c.phase, tailSwing(c, 12, FISH_FULL_SPEED), [[1, -1.5], [-3, -5], [-8, -8], [-5.5, 0], [-8, 8], [-3, 5], [1, 1.5]], color, (p) => {
     ctx.beginPath();
     p.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
     ctx.closePath();
   });
+  const shade = 'rgba(0,0,0,0.18)';
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.ellipse(0, 0, 13, 8, 0, 0, Math.PI * 2);
+  ctx.moveTo(4, -6.5);
+  ctx.quadraticCurveTo(2, -12, -3, -12.5);
+  ctx.quadraticCurveTo(-3.5, -9, -6, -6);
+  ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.fillStyle = shade;
+  ctx.fill();
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.ellipse(1, -3, 7, 2.5, 0, 0, Math.PI * 2);
+  ctx.moveTo(-3, 6.5);
+  ctx.quadraticCurveTo(-3, 10.5, -8, 11.5);
+  ctx.quadraticCurveTo(-7.5, 8, -8, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = shade;
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(14, 0.5);
+  ctx.bezierCurveTo(11, -5, 5, -8.5, -1, -8);
+  ctx.bezierCurveTo(-5, -7.5, -8, -3, -9.5, -1.5);
+  ctx.lineTo(-9.5, 1.5);
+  ctx.bezierCurveTo(-8, 3, -5, 7.5, -1, 8);
+  ctx.bezierCurveTo(5, 8.5, 11, 5, 14, 0.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = shade;
+  ctx.beginPath();
+  ctx.moveTo(14, 0.5);
+  ctx.bezierCurveTo(11, 5, 5, 8.5, -1, 8);
+  ctx.bezierCurveTo(-5, 7.5, -8, 3, -9.5, 1.5);
+  ctx.lineTo(-9.5, 0.5);
+  ctx.bezierCurveTo(-3, 1.5, 6, 1.5, 14, 0.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(6, -6.5);
+  ctx.quadraticCurveTo(3.5, 0, 6, 6);
+  ctx.stroke();
+  ctx.fillStyle = shade;
+  ctx.beginPath();
+  ctx.moveTo(1, 1.5);
+  ctx.quadraticCurveTo(2.5, -1.5, -2.5, -0.5);
+  ctx.quadraticCurveTo(-4, 1.5, -1.5, 4);
+  ctx.quadraticCurveTo(0.5, 4, 1, 1.5);
+  ctx.fill();
+  ctx.fillStyle = '#FFF6E0';
+  ctx.beginPath();
+  ctx.arc(9, -1.5, 2.4, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#1B2238';
   ctx.beginPath();
-  ctx.arc(6, -1.5, 2, 0, Math.PI * 2);
+  ctx.arc(9, -1.5, 1.4, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -1194,6 +1250,72 @@ function glassJelly(ctx: CanvasRenderingContext2D, c: Creature, look: (typeof GL
   ctx.restore();
 }
 
+/** A moon jelly in the same design units as the jellyfish: a glossy blue bell with a darker scalloped rim, ruffled pale oral arms and long fine filaments. */
+function moonJelly(ctx: CanvasRenderingContext2D, c: Creature) {
+  const t = c.phase;
+  const pulse = 1 + Math.sin(t * 2.2) * 0.07;
+  ctx.strokeStyle = 'rgba(196,220,250,0.7)';
+  ctx.lineWidth = 0.9;
+  for (let i = -3; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 5.5, 6);
+    for (let s = 1; s <= 9; s++) ctx.lineTo(i * 5.5 + Math.sin(t * 2.4 + s * 0.6 + i) * s * 0.9 - i * s * 0.5, 6 + s * (9 + (i % 2 ? 2 : 0)));
+    ctx.stroke();
+  }
+  for (const [ox, ph] of [[-4, 0], [4, 2.1]] as const) {
+    const left: [number, number][] = [];
+    const right: [number, number][] = [];
+    for (let s = 0; s <= 10; s++) {
+      const x = ox + Math.sin(t * 2 + s * 0.6 + ph) * (1 + s * 0.45);
+      const w = (4.5 - s * 0.28) + Math.sin(s * 2.3 + ph) * 1.1;
+      const y = 6 + s * 6.2;
+      left.push([x - w, y]);
+      right.push([x + w, y]);
+    }
+    ctx.beginPath();
+    left.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    right.reverse().forEach(([x, y]) => ctx.lineTo(x, y));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(160,196,240,0.5)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(210,230,255,0.55)';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+  }
+  ctx.save();
+  ctx.scale(pulse, 1 / pulse);
+  const bell = () => {
+    ctx.beginPath();
+    ctx.moveTo(-21, 5);
+    ctx.bezierCurveTo(-23, -10, -12, -18, 0, -18);
+    ctx.bezierCurveTo(12, -18, 23, -10, 21, 5);
+    for (let i = 0; i < 6; i++) ctx.quadraticCurveTo(21 - i * 7 - 3.5, 9.5, 21 - (i + 1) * 7, 5.5);
+    ctx.closePath();
+  };
+  const g = ctx.createLinearGradient(-14, -18, 12, 8);
+  g.addColorStop(0, '#5AA4F0');
+  g.addColorStop(0.6, '#2E78DA');
+  g.addColorStop(1, '#2458B8');
+  bell();
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.save();
+  bell();
+  ctx.clip();
+  ctx.fillStyle = 'rgba(20,50,150,0.45)';
+  ctx.fillRect(-24, 1, 48, 10);
+  ctx.fillStyle = 'rgba(190,225,255,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(0, 6, 17, 3, 0, 0, Math.PI);
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.beginPath();
+  ctx.ellipse(-8, -11, 7, 3.2, -0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function jelly(ctx: CanvasRenderingContext2D, c: Creature) {
   if (c.tint >= 1 / 3) return glassJelly(ctx, c, GLASS_JELLIES[c.tint >= 2 / 3 ? 1 : 0]);
   const pulse = 1 + Math.sin(c.phase * 2.8) * 0.08;
@@ -1217,6 +1339,210 @@ function jelly(ctx: CanvasRenderingContext2D, c: Creature) {
   ctx.ellipse(-5, -5, 6, 3, -0.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
+
+const WHALE_SHARK_TOP = [225, -3, 221, -6.1, 217, -7.7, 209, -10.0, 201, -12.2, 193, -14.6, 185, -17.0, 177, -19.3, 169, -21.5, 161, -23.6, 153, -25.6, 144, -27.3, 136, -28.7, 128, -29.9, 120, -30.8, 112, -31.5, 104, -32.0, 96, -32.4, 88, -32.5, 80, -32.5, 72, -32.3, 63, -32.2, 55, -32.2, 47, -32.4, 39, -33.1, 31, -33, 23, -37, 15, -43, 7, -48, -1, -53, -9, -55, -18, -54, -26, -23, -34, -18, -42, -18.1, -50, -17.4, -58, -17.7, -66, -19.3, -74, -20, -82, -27, -90, -14, -99, -8, -107, -7.4, -115, -5.6, -123, -4.7, -132, -3];
+const WHALE_SHARK_BOTTOM = [225, 5, 221, 10.0, 217, 12.5, 209, 15.7, 201, 18.9, 193, 22.0, 185, 25.0, 177, 27.7, 169, 30.1, 161, 32.0, 153, 33.5, 144, 34.5, 136, 35.1, 128, 35.1, 120, 34.7, 104, 33.9, 88, 32.9, 72, 31.7, 63, 30.6, 55, 29.7, 47, 29.1, 39, 28.7, 31, 28.8, 23, 29.1, 15, 30.1, 7, 30, -1, 35, -9, 38, -18, 33, -26, 27, -34, 25.0, -42, 22.5, -50, 21.0, -58, 20.3, -66, 20.4, -74, 21.4, -82, 22, -90, 26, -99, 21, -107, 17.1, -115, 13.7, -123, 11.6, -132, 9];
+const WHALE_SHARK_TAIL: [number, number][] = [[-98, -80], [-95, -73], [-92, -67], [-88, -60], [-84, -54], [-79, -47], [-75, -41], [-70, -34], [-65, -28], [-60, -21], [-55, -15], [-50, -8], [-46, -2], [-43, 4], [-41, 11], [-40, 17], [-39, 24], [-40, 30], [-41, 37], [-42, 43], [-43, 50], [-43, 56], [-42, 63], [-40, 63], [-34, 56], [-30, 50], [-27, 43], [-23, 37], [-18, 30], [-14, 24], [-12, 17], [-6, 11], [0, 4], [0, -2], [-4, -8], [-14, -15], [-21, -21], [-27, -28], [-34, -34], [-42, -41], [-50, -47], [-57, -54], [-64, -60], [-71, -67], [-79, -73], [-89, -80]];
+/** The pectoral fin, which overlaps the body: its base sits on the side above the belly, then the leading edge sweeps down to the tip and the trailing edge back up. */
+const WHALE_SHARK_PECTORAL: [number, number][] = [[136, 14], [128, 32], [117, 52], [106, 66], [96, 75], [96, 62], [92, 48], [86, 34], [80, 22], [96, 14], [118, 11]];
+
+type Spot = { x: number; y: number; rx: number; ry: number; angle: number };
+const hash = (a: number, b: number) => {
+  const h = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return h - Math.floor(h);
+};
+function spotColumns(xFrom: number, xTo: number, gap: number, yFrom: number, yTo: number, topY: number, bottomY: number, small: number, big: number): Spot[] {
+  const out: Spot[] = [];
+  for (let col = 0, cx = xFrom; cx > xTo; col++, cx -= gap) {
+    for (let y = yFrom + (col % 2) * 3.5; y < yTo; y += 7) {
+      const r = hash(cx, y);
+      if (r < 0.25) continue;
+      const size = small + (big - small) * Math.min(1, Math.max(0, (y - topY) / (bottomY - topY)));
+      out.push({ x: cx + (r - 0.6) * 4, y: y + (r - 0.5) * 4, rx: size * (0.9 + r * 0.5), ry: size * (0.6 + r * 0.3), angle: (r - 0.5) * 1.2 });
+    }
+  }
+  return out;
+}
+const WHALE_SHARK_BEAT = 1.4;
+const BODY_COLUMN_GAP = 22;
+const topAt = (x: number) => {
+  for (let i = 2; i < WHALE_SHARK_TOP.length; i += 2) {
+    if (x >= WHALE_SHARK_TOP[i]) {
+      const [x0, y0, x1, y1] = [WHALE_SHARK_TOP[i - 2], WHALE_SHARK_TOP[i - 1], WHALE_SHARK_TOP[i], WHALE_SHARK_TOP[i + 1]];
+      return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
+    }
+  }
+  return WHALE_SHARK_TOP[WHALE_SHARK_TOP.length - 1];
+};
+const TOP_BAND = 12;
+const WHALE_SHARK_SPOTS: Spot[] = spotColumns(150, -115, BODY_COLUMN_GAP, -30, 24, -32, 24, 0.6, 2.5).filter((d) => d.y > topAt(d.x) + TOP_BAND);
+for (let x = 205; x > -112; x -= 5) {
+  for (const [row, offset] of [[0, 4], [1, 9]]) {
+    const r = hash(x + row * 3.1, 11);
+    if (r < 0.15) continue;
+    const size = 0.5 + r * 0.7 - row * 0.1;
+    WHALE_SHARK_SPOTS.push({ x: x + (r - 0.5) * 3, y: topAt(x) + offset + (r - 0.5) * 3, rx: size * 1.2, ry: size * 0.8, angle: (r - 0.5) * 1.2 });
+  }
+}
+const WHALE_SHARK_TAIL_SPOTS: [number, number][] = [
+  [-78, -66], [-70, -58], [-64, -49], [-58, -42], [-52, -34], [-46, -26], [-39, -19], [-73, -50], [-60, -32], [-48, -14], [-34, 22], [-29, 31], [-35, 42], [-33, 52], [-38, 58],
+];
+const WHALE_SHARK_FIN_SPOTS = spotColumns(136, 82, 15, 14, 72, 10, 70, 0.6, 2.1);
+const WHALE_SHARK_STRIPES: { x: number; width: number; bow: number; lean: number }[] = [];
+for (let x = 150 - BODY_COLUMN_GAP / 2; x > -115; x -= BODY_COLUMN_GAP) {
+  const r = hash(x, 7);
+  WHALE_SHARK_STRIPES.push({ x, width: 2 + r * 5, bow: (hash(x, 3) - 0.5) * 8, lean: 3 + hash(x, 5) * 5 });
+}
+
+/** A whale shark about 460 px long before its scale, facing right, its outline traced from a reference: a broad flat head, a tall swept-back first dorsal fin, a big pectoral fin, and a tall crescent tail that flips like the other sharks'. Dark on top, pale below, in a dark outline. */
+function whaleShark(ctx: CanvasRenderingContext2D, c: Creature) {
+  const swing = tailSwing(c, WHALE_SHARK_BEAT, 60);
+  const sway = (x: number) => {
+    const d = Math.min(1, Math.max(0, (60 - x) / 260));
+    return REDUCED_MOTION ? 0 : Math.sin(c.phase * WHALE_SHARK_BEAT - d * TAIL_PHASE_STEP) * d * d * 22;
+  };
+  const P = (x: number, y: number): [number, number] => [x, y + sway(x)];
+  const pairs = (flat: number[]) => flat.reduce<[number, number][]>((out, v, i) => (i % 2 ? out : [...out, [v, flat[i + 1]]]), []);
+  const top = pairs(WHALE_SHARK_TOP);
+  const bottom = pairs(WHALE_SHARK_BOTTOM);
+  const ring = [...top.slice().reverse(), ...bottom].map(([x, y]) => P(x, y));
+  const bellyY = (x: number) => {
+    for (let i = 1; i < bottom.length; i++) {
+      if (x >= bottom[i][0]) return bottom[i - 1][1] + ((bottom[i][1] - bottom[i - 1][1]) * (x - bottom[i - 1][0])) / (bottom[i][0] - bottom[i - 1][0]) - 17;
+    }
+    return bottom[bottom.length - 1][1] - 17;
+  };
+  const mid = (a: [number, number], b: [number, number]): [number, number] => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const smoothClosed = (pts: [number, number][]) => {
+    ctx.beginPath();
+    ctx.moveTo(...mid(pts[pts.length - 1], pts[0]));
+    pts.forEach((q, i) => ctx.quadraticCurveTo(q[0], q[1], ...mid(q, pts[(i + 1) % pts.length])));
+    ctx.closePath();
+  };
+  const smoothOpen = (pts: [number, number][]) => {
+    ctx.beginPath();
+    ctx.moveTo(...pts[0]);
+    for (let i = 1; i < pts.length - 1; i++) ctx.quadraticCurveTo(pts[i][0], pts[i][1], ...mid(pts[i], pts[i + 1]));
+    ctx.lineTo(...pts[pts.length - 1]);
+  };
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = '#1F1A17';
+
+  swimTail(
+    ctx,
+    P(-130, 2),
+    c.phase,
+    swing,
+    WHALE_SHARK_TAIL,
+    '#5A514B',
+    (p) => {
+      ctx.beginPath();
+      p.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+    },
+    () => {
+      ctx.beginPath();
+      tailPoints(WHALE_SHARK_TAIL, c.phase, swing).forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      ctx.stroke();
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = 'rgba(241,242,238,0.7)';
+      tailPoints(WHALE_SHARK_TAIL_SPOTS, c.phase, swing, 98).forEach(([x, y], i) => {
+        const r = hash(i, 5);
+        ctx.beginPath();
+        ctx.ellipse(x, y, 1.1 + r * 0.9, 0.8 + r * 0.5, (r - 0.5) * 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    },
+  );
+
+  const [pivotX, pivotY] = [110, 20];
+  const [cos, sin] = [Math.cos(0.22), Math.sin(0.22)];
+  const far = WHALE_SHARK_PECTORAL.map(([x, y]) => P(pivotX + (x - pivotX) * cos - (y - pivotY) * sin - 12, pivotY + (x - pivotX) * sin + (y - pivotY) * cos - 2));
+  smoothClosed(far);
+  ctx.fillStyle = '#8C817A';
+  ctx.fill();
+  ctx.stroke();
+
+  const shade = ctx.createLinearGradient(0, -55, 0, 45);
+  shade.addColorStop(0, '#4A4541');
+  shade.addColorStop(0.5, '#6A6663');
+  shade.addColorStop(0.78, '#B7B5B2');
+  shade.addColorStop(1, '#D8D7D4');
+  smoothClosed(ring);
+  ctx.fillStyle = shade;
+  ctx.fill();
+  ctx.save();
+  smoothClosed(ring);
+  ctx.clip();
+  const ridges: [number, number][][] = [
+    [[142, 0], [118, -3], [90, -5], [50, -5], [10, -2], [-40, 2], [-90, 3], [-125, 2]],
+    [[120, -13], [95, -15], [65, -15], [35, -14], [5, -12], [-20, -10], [-50, -8], [-75, -6]],
+    [[100, -24], [75, -25], [50, -25], [25, -24], [0, -22]],
+  ];
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#1F1A17';
+  for (const ridge of ridges) {
+    for (const [width, alpha, drop] of [[5, 0.05, 3], [3.5, 0.07, 2.5], [2.2, 0.09, 2], [1.1, 0.12, 1.5]]) {
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = width;
+      smoothOpen(ridge.map(([x, y]) => P(x, y + drop)));
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.lineCap = 'butt';
+  for (const st of WHALE_SHARK_STRIPES) {
+    const [x0, y0] = P(st.x, -34);
+    const [x1, y1] = P(st.x + st.lean, bellyY(st.x + st.lean));
+    const fade = ctx.createLinearGradient(0, y0, 0, y1);
+    fade.addColorStop(0, 'rgba(241,242,238,0)');
+    fade.addColorStop(0.4, 'rgba(241,242,238,0.2)');
+    fade.addColorStop(1, 'rgba(241,242,238,0.14)');
+    ctx.strokeStyle = fade;
+    for (const width of [st.width, st.width * 0.5]) {
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.quadraticCurveTo(st.x + st.bow, (y0 + y1) / 2, x1, y1);
+      ctx.stroke();
+    }
+  }
+  const dots = (spots: Spot[]) => {
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = '#F1F2EE';
+    for (const d of spots) {
+      ctx.beginPath();
+      ctx.ellipse(d.x, P(d.x, d.y)[1], d.rx, d.ry, d.angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  dots(WHALE_SHARK_SPOTS.filter((d) => d.y < bellyY(d.x)));
+  ctx.restore();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = '#1F1A17';
+  smoothOpen(ring);
+  ctx.stroke();
+
+  const fin = WHALE_SHARK_PECTORAL.map(([x, y]) => P(x, y));
+  smoothClosed(fin);
+  ctx.fillStyle = '#64564E';
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  dots(WHALE_SHARK_FIN_SPOTS);
+  ctx.restore();
+  smoothClosed(fin);
+  ctx.stroke();
+
+  ctx.fillStyle = '#0C0A08';
+  ctx.beginPath();
+  ctx.arc(...P(209, 3), 1.3, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 /** An orca about 330 px long, facing right, its body arched down toward a thick tail stock and broad flukes that swing up and down like the other whales'. Black with a white chin, eye patch, belly patch and a pale saddle behind the tall dorsal fin. */

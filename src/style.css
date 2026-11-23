@@ -479,9 +479,14 @@ kbd.tap-b {
   white-space: nowrap;
 }
 
+.hud-btns {
+  grid-area: menu;
+  display: flex;
+  gap: 10px;
+}
+
 .icon-btn {
   transition: background 0.6s, color 0.6s, box-shadow 0.6s, transform 0.06s;
-  grid-area: menu;
   pointer-events: auto;
   width: 46px;
   height: 46px;
@@ -667,6 +672,13 @@ kbd.tap-b {
   bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
   display: flex;
   align-items: flex-end;
+  gap: 12px;
+}
+
+.btn-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 12px;
 }
 
@@ -1553,6 +1565,11 @@ textarea:focus {
 .overlay.skins-open > .card.menu {
   scale: 0.85;
   translate: calc((0.85 * 100% - 100vw) / 2 + 16px) 0;
+  transition: translate 0.4s cubic-bezier(0.3, 0, 0.2, 1) 0.5s, scale 0.4s cubic-bezier(0.3, 0, 0.2, 1) 0.5s;
+}
+
+.overlay.skins-open:has(> .card.menu) {
+  transition: background-color 0.4s cubic-bezier(0.3, 0, 0.2, 1) 0.5s;
 }
 
 .card:is(.menu, .shop).closing {
@@ -1560,7 +1577,7 @@ textarea:focus {
 }
 
 .overlay:has(> .card:is(.menu, .shop)) {
-  animation: backdrop-in 0.2s ease-out both;
+  animation: backdrop-in 0.2s ease-out backwards;
 }
 
 .overlay:has(> .card:is(.menu, .shop).closing) {
@@ -2114,7 +2131,8 @@ body:not(.is-touch) #ui .depth-meter {
   box-shadow: 0 0 0 2px var(--line), 0 4px 0 var(--line);
 }
 
-#ui.ui-dark .card.menu .skin-row {
+#ui.ui-dark .card.menu .skin-row,
+#ui.ui-dark .card.menu .bestiary li {
   background: #16224a;
 }
 
@@ -2896,4 +2914,159 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
 
 #ui.ui-dim:has(.minimap:hover, .minimap-tab:hover) :is(.minimap, .minimap-tab) {
   opacity: 1;
+}
+
+.subacc {
+  margin-top: 12px;
+}
+
+.subacc > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.subacc > summary::-webkit-details-marker {
+  display: none;
+}
+
+.subacc > summary::after {
+  content: '';
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.15s;
+}
+
+.subacc[open] > summary::after {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.subacc > summary .drain-badge {
+  margin-top: 0;
+}
+
+.subacc > summary ~ * {
+  margin-top: 10px;
+}
+
+.acc > .subacc {
+  margin-top: 18px;
+}
+
+.acc > .subacc ~ .subacc {
+  margin-top: 14px;
+}
+
+.subacc {
+  interpolate-size: allow-keywords;
+}
+
+.subacc::details-content {
+  block-size: 0;
+  overflow: clip;
+  display: flow-root;
+  margin-inline: -4px;
+  padding-inline: 4px;
+  transition: block-size 0.5s ease, content-visibility 0.5s allow-discrete;
+}
+
+.subacc[open]::details-content {
+  block-size: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subacc::details-content {
+    transition: none;
+  }
+}
+
+.bestiary {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.bestiary li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #eef3fb;
+}
+
+.bestiary canvas,
+.bestiary i {
+  flex: none;
+  width: 96px;
+  height: 64px;
+}
+
+.bestiary i {
+  display: grid;
+  place-items: center;
+  font: 600 28px var(--display);
+  font-style: normal;
+  color: var(--ink-soft);
+}
+
+.bestiary li div {
+  display: grid;
+  gap: 2px;
+}
+
+.bestiary span {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.bestiary .unseen {
+  opacity: 0.6;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: baseline;
+}
+
+.dot.ok {
+  background: #3fbf7f;
+}
+
+.dot.bad {
+  background: #e5484d;
+}
+
+.key {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.key .dot:not(:first-child) {
+  margin-left: 14px;
+}
+
+.bestiary em {
+  font-size: 13px;
+  color: var(--ink-soft);
 }

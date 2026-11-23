@@ -11,6 +11,8 @@ export const SAVE_KEY = 'submerge.save.v1';
 export const FLICKER_TIME = 0.5;
 /** Seconds a speech bubble stays over the sub. */
 export const SPEECH_TIME = 4;
+/** Extra seconds a speech bubble stays when its text wraps onto a new line. */
+export const SPEECH_WRAP_EXTRA = 2;
 /** Dimmest the cockpit and viewport lights get when the battery is dead. */
 export const COCKPIT_MIN = 0.12;
 /** Seconds the sub can hold its breath after the air runs out. */

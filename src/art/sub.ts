@@ -685,6 +685,14 @@ const PROP_SIZE = [
   { w: 24, h: 42, color: '#22252C', line: 'rgba(242,140,40,0.4)' },
 ];
 
+/** Where the propeller's rear edge is and how tall it is, which sets where the wake swirl starts and how wide. Skins without the stock propeller get a middling one at the stern. */
+export function propWake(level: number, cargo: number, skin: SkinId) {
+  const h = PROP_SIZE[level]?.h ?? 36;
+  if (skin !== 'standard' && skin !== 'capsule') return { x: -72, h: 30 };
+  return { x: -60 - (PROP_SIZE[level]?.w ?? 20) - STERN_STRETCH[cargo], h };
+}
+export const SHIP_PROP_WAKE = (level: number) => ({ x: -152 - (PROP_SIZE[level]?.w ?? 20), y: 30, h: PROP_SIZE[level]?.h ?? 36 });
+
 /** An outboard motor clamped to the ship's stern, with the sub's propeller at the foot of its leg. */
 export function drawShipPropeller(ctx: CanvasRenderingContext2D, prop: number, level: number, body: string, accent: string) {
   ctx.save();

@@ -13,10 +13,11 @@ import { allAchievementsEarned, fullyUpgraded, loadSave, newSave, writeSave, typ
 import { GEAR, TRASH_GIFTS, STATS, UPGRADES, UPGRADE_ORDER, WEIGHTS, stockAt, type GearId, type Loadout, type UpgradeId } from "../data/upgrades";
 import { ULYSSES_REACH, ULYSSES_TAIL, ULYSSES_WEIGHTS } from "../art/ulysses";
 import { weightMounts, WEIGHT_Y, GATE_THRUSTER_BUBBLES, challengerBase, challengerWeights } from "../art/sub";
-import { ITEMS, ITEM_KINDS, REGROW_KINDS } from "../data/items";
+import { ITEMS, ITEM_KINDS, REGROW_KINDS, type ItemKind } from "../data/items";
 import { ZONES, type WreckKind } from "../data/zones";
 import { SKINS, CAPSULE_DEATHS, ULYSSES_ZONE, ULYSSES_DIVE_ZOOM, ULYSSES_DEPTH_RATING, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
 import { CREATURES, CREATURE_EXTENT, ORCA_TILT, creatureRadius, whalePitch, type CreatureKind } from "../data/creatures";
+import { BESTIARY } from "../data/bestiary";
 import { leviathanSpine } from "../data/leviathan";
 import { routesFrom, PORTALS, type Portal, type Endpoint, type Side } from "../data/routes";
 import {
@@ -76,6 +77,7 @@ import {
   MAX_CANVAS_PIXELS,
   MAX_FPS,
   SPEECH_TIME,
+  SPEECH_WRAP_EXTRA,
   PX_PER_M,
   SUB_DOCK_OFFSET,
   DOCK_RANGE,
@@ -90,7 +92,7 @@ HOIST_RELEASE,
   VALUABLE_TREASURE,
   VIEW_AREA,
 } from "../config";
-import { clamp, damp, money, waveY } from "../util";
+import { clamp, damp, money, waveY, wrapBubble } from "../util";
 import { Lighting } from "../render/lighting";
 import { SonarOutline, SonarShape, type ShapeSprite } from "../render/sonarOutline";
 import { renderScene } from "../render/scene";
@@ -187,10 +189,18 @@ export type DockSpot =
   | { kind: "portal"; portal: Portal }
   | null;
 
+/** How long a bubble stays up: longer when its text wraps onto more lines. */
+const speechLife = (text: string) => SPEECH_TIME + (wrapBubble(text).length > 1 ? SPEECH_WRAP_EXTRA : 0);
+
 const SPOT_NOTES: Partial<Record<CreatureKind, { key: string; text: string; color: string }>> = {
   bluewhale: {
     key: "bluewhale",
     text: "Wow, a blue whale! These gentle giants won't hurt us.",
+    color: "#6CC5F0",
+  },
+  whaleshark: {
+    key: "whaleshark",
+    text: "A whale shark! Gentle giants, and harmless to us.",
     color: "#6CC5F0",
   },
   bigfin: {
@@ -198,8 +208,8 @@ const SPOT_NOTES: Partial<Record<CreatureKind, { key: string; text: string; colo
     text: "A bigfin squid! Those long arms are harmless.",
     color: "#6CC5F0",
   },
-  shark: { key: "shark", text: "Watch out for sharks", color: "#E5484D" },
-  hammerhead: { key: "shark", text: "Watch out for sharks", color: "#E5484D" },
+  shark: { key: "shark", text: "A great white! It's aggressive and will give chase. Keep your distance.", color: "#E5484D" },
+  hammerhead: { key: "hammerhead", text: "A hammerhead! It patrols its patch, so steer around it.", color: "#E5484D" },
   whale: {
     key: "whale",
     text: "A sperm whale! Steer clear and don't make contact.",
@@ -242,11 +252,15 @@ const SHIP_HALF_LENGTH = 150;
 /** How far from an iceberg's edge the ship stops, in px. */
 const ICE_STOP = 175;
 const CLAW_REACH = 50;
-const CLAW_EXTEND = 0.35;
-const CLAW_GRAB = 0.15;
-const CLAW_RETRACT = 0.4;
+const CLAW_EXTEND = 0.45;
+const CLAW_GRAB = 0.3;
+const CLAW_RETRACT = 0.45;
 const CLAW_RADIUS = 36;
-const CLAW_MOUNT = { x: 2, y: 22 };
+/** Seconds the jaws take to pull a grabbed item into their grip. */
+const CLAW_HOLD = 0.12;
+/** How far through the grab the jaws are fully open and take what is in reach; they pinch shut for the rest if it was nothing. */
+const CLAW_OPEN_AT = 0.3;
+const CLAW_MOUNT = { x: 2, y: 24 };
 /** Seagulls are heard within three island widths (an island is about 500 px across). */
 const GULL_EARSHOT = 1500;
 const SINK_START = 5;
@@ -326,7 +340,7 @@ export class Game {
   private airLow = false;
   private holdingBreath = false;
   /** The grabber arm: t is seconds since it was fired (-1 when stowed), dir is its world direction. */
-  claw = { t: -1, dirX: 0, dirY: 1, grabbed: false };
+  claw: { t: number; dirX: number; dirY: number; grabbed: boolean; load: { kind: ItemKind; dx: number; dy: number }[] } = { t: -1, dirX: 0, dirY: 1, grabbed: false, load: [] };
   dust: Dust[] = [];
   /** 0 for the light HUD theme, 1 for dark: night, or deep water by day. Eases between the two. */
   uiDark = 0;
@@ -387,9 +401,13 @@ export class Game {
   /** How far the ship's bow is lifted (negative) or dipped, in radians. */
   shipPitch = 0;
   /** How far the ship's boost is engaged, 0 to 1, which also widens the camera. */
-  private boost = 0;
+  boost = 0;
   /** How far the submarine's boost is engaged, 0 to 1. */
-  private subBoost = 0;
+  subBoost = 0;
+  /** How strong the sub's wake swirl is, 0 to 1: faint while driving, full while boosting. */
+  subSwirl = 0;
+  private bubbleTime = 0;
+  private bubbleDist = 0;
   /** How far the crane hook is reeled up, 0 (down at the sub's mount) to 1 (up under the crane tip). */
   reel = 0;
   /** How far the crane has lifted the docked sub out of the water, 0 (at the waterline) to 1. */
@@ -441,6 +459,8 @@ export class Game {
   }[] = [];
   private electrolysisOn = false;
   private spotted = new Set<string>();
+  /** Kinds of animal the player can actually see this frame, worked out when the scene is drawn. */
+  readonly inSight = new Set<CreatureKind>();
   /** Remarks made once per game session, not once per dive. */
   private said = new Set<string>();
   /** The Crimson Sea monster: it wakes deep in the cavern, then rises from below and chases. */
@@ -936,6 +956,18 @@ export class Game {
     this.save.skins.push(skin);
     this.persist();
     return true;
+  }
+
+  /** Logs an animal in the catalog the first time the player really sees it. */
+  noteSeen(kind: CreatureKind) {
+    if (this.save.seen.includes(kind) || !BESTIARY.includes(kind)) return;
+    this.save.seen.push(kind);
+    this.ui.toast(`New creature: ${CREATURES[kind].name} · ${this.save.seen.length}/${BESTIARY.length} in the catalog`);
+    if (this.save.seen.length >= BESTIARY.length && !this.save.achievements.includes("bestiary")) {
+      this.save.achievements.push("bestiary");
+      setTimeout(() => this.ui.showAchievement("Achievement unlocked: Marine Biologist", "Every animal spotted and added to the catalog."), 2500);
+    }
+    this.persist();
   }
 
   setWeights(on: boolean) {
@@ -1721,8 +1753,16 @@ export class Game {
     const spin =
       moving && s.battery > 0 ? 0.6 + sp * 0.012 : this.depthHeld ? 0.08 : cranks ? 0.4 : 0;
     s.prop += spin * dt * 10;
-    if (moving && s.battery > 0 && Math.random() < dt * 14) this.emitPropBubbles(1, 8);
-    else if (this.depthHeld && Math.random() < dt * 1.2) this.emitPropBubbles(1, 8);
+    if (airborne) this.bubbleTime = this.bubbleDist = 0;
+    else {
+      this.bubbleTime += dt;
+      this.bubbleDist += Math.hypot(s.vx, s.vy) * dt;
+    }
+    const bubbleFade = 1 - clamp(Math.max(this.bubbleTime / 10, this.bubbleDist / (200 * PX_PER_M)), 0, 1);
+    if (moving && s.battery > 0 && Math.random() < dt * 14 * bubbleFade) this.emitPropBubbles(1, 8);
+    else if (this.depthHeld && Math.random() < dt * 1.2 * bubbleFade) this.emitPropBubbles(1, 8);
+    const swirlTarget = moving && s.battery > 0 && !airborne ? 0.3 + 0.7 * this.subBoost : 0;
+    this.subSwirl += (swirlTarget - this.subSwirl) * damp(3, dt);
 
     this.driving = moving && s.battery > 0;
     const wasSurfaced = this.atSurface;
@@ -1904,13 +1944,13 @@ export class Game {
   }
 
   private say(text: string, color: string) {
-    this.speech.unshift({ text, color, life: SPEECH_TIME, age: 0 });
+    this.speech.unshift({ text, color, life: speechLife(text), age: 0 });
   }
 
   /** Posts a message the first time `frac` drops to `level`; returns the new "already said" flag. */
   private sayAtLevel(frac: number, level: number, said: boolean, text: string, color: string) {
     if (frac > level) return false;
-    if (!said) this.speech.unshift({ text, color, life: SPEECH_TIME, age: 0 });
+    if (!said) this.speech.unshift({ text, color, life: speechLife(text), age: 0 });
     return true;
   }
 
@@ -1939,37 +1979,57 @@ export class Game {
     let y = strong ? aim.y : 1;
     y = Math.max(y, 0.3);
     const m = Math.hypot(x, y);
-    this.claw = { t: 0, dirX: x / m, dirY: y / m, grabbed: false };
+    this.claw = { t: 0, dirX: x / m, dirY: y / m, grabbed: false, load: [] };
     this.audio.play("clawHydraulic");
   }
 
-  /** Where the claw's mount and tip are in the world, and how open its jaws are (1 open, 0 shut). */
+  /** Where the claw's mount and tip are in the world, how far its arm is out (0 to 1) and how open its jaws are (1 open, 0 shut). Idle, only the mount shows. */
   clawState() {
     const c = this.claw;
-    if (c.t < 0) return null;
     const s = this.sub;
     const cos = Math.cos(s.tilt);
     const sin = Math.sin(s.tilt);
     const px = s.x + s.facing * (CLAW_MOUNT.x * cos - CLAW_MOUNT.y * sin);
     const py = s.y + CLAW_MOUNT.x * sin + CLAW_MOUNT.y * cos;
-    const ease = (u: number) => u * u * (3 - 2 * u);
     const grabEnd = CLAW_EXTEND + CLAW_GRAB;
-    let len = CLAW_REACH;
-    let open = 1;
-    if (c.t < CLAW_EXTEND) len = CLAW_REACH * ease(c.t / CLAW_EXTEND);
-    else if (c.t < grabEnd) open = 1 - (c.t - CLAW_EXTEND) / CLAW_GRAB;
-    else {
-      open = 0;
-      len = CLAW_REACH * (1 - ease(Math.min(1, (c.t - grabEnd) / CLAW_RETRACT)));
+    const idle = c.t < 0;
+    let ext = idle ? 0 : 1;
+    let open = 0;
+    if (!idle && c.t < CLAW_EXTEND) ext = c.t / CLAW_EXTEND;
+    else if (!idle && c.t < grabEnd) {
+      const u = (c.t - CLAW_EXTEND) / CLAW_GRAB;
+      open = u < CLAW_OPEN_AT || c.load.length ? Math.min(1, u / CLAW_OPEN_AT) : 1 - (u - CLAW_OPEN_AT) / (1 - CLAW_OPEN_AT);
+    } else if (!idle) {
+      ext = 1 - Math.min(1, (c.t - grabEnd) / CLAW_RETRACT);
+      open = c.load.length ? 1 : 0;
     }
+    const len = CLAW_REACH * ext;
+    const dirX = idle ? s.facing : c.dirX;
+    const dirY = idle ? 0 : c.dirY;
+    const tx = px + dirX * len;
+    const ty = py + dirY * len;
+    const hold = Math.min(1, Math.max(0, (c.t - CLAW_EXTEND - CLAW_GRAB * CLAW_OPEN_AT) / CLAW_HOLD));
+    const n = c.load.length;
+    const gap = n > 1 ? Math.min(11, 26 / (n - 1)) : 0;
+    const load = c.load.map((l, i) => {
+      const side = (i - (n - 1) / 2) * gap;
+      return {
+        kind: l.kind,
+        x: tx + l.dx * (1 - hold) + (dirX * 6 - dirY * side) * hold,
+        y: ty + l.dy * (1 - hold) + (dirY * 6 + dirX * side) * hold,
+      };
+    });
     return {
       px,
       py,
-      tx: px + c.dirX * len,
-      ty: py + c.dirY * len,
-      dirX: c.dirX,
-      dirY: c.dirY,
+      tx,
+      ty,
+      dirX,
+      dirY,
       open,
+      ext,
+      reach: CLAW_REACH,
+      load,
     };
   }
 
@@ -1977,7 +2037,7 @@ export class Game {
     const c = this.claw;
     if (c.t < 0) return;
     c.t += dt;
-    if (!c.grabbed && c.t >= CLAW_EXTEND + CLAW_GRAB * 0.6) {
+    if (!c.grabbed && c.t >= CLAW_EXTEND + CLAW_GRAB * CLAW_OPEN_AT) {
       c.grabbed = true;
       const st = this.clawState()!;
       let got = false;
@@ -1985,12 +2045,18 @@ export class Game {
         if (!it.alive) continue;
         const r = CLAW_RADIUS + ITEMS[it.kind].size * 0.5;
         if ((it.x - st.tx) ** 2 + (it.y - st.ty) ** 2 < r * r) {
-          if (this.collect(it)) got = true;
+          if (this.collect(it)) {
+            got = true;
+            c.load.push({ kind: it.kind, dx: it.x - st.tx, dy: it.y - st.ty });
+          }
         }
       }
       this.audio.hit(got ? 0.4 : 0.25);
     }
-    if (c.t >= CLAW_EXTEND + CLAW_GRAB + CLAW_RETRACT) c.t = -1;
+    if (c.t >= CLAW_EXTEND + CLAW_GRAB + CLAW_RETRACT) {
+      c.t = -1;
+      c.load = [];
+    }
   }
 
   /** Puffs of grit away from a surface (normal nx, ny) the sub just hit. */
@@ -2137,14 +2203,7 @@ export class Game {
     for (const c of this.world.creatures) {
       const note = SPOT_NOTES[c.kind];
       if (!note || c.state === "dead" || this.spotted.has(note.key)) continue;
-      const reach = CREATURE_EXTENT[c.kind];
-      const halfW = this.view.w / 2;
-      const halfH = this.view.h / 2;
-      if (
-        Math.abs(c.x - this.cam.x) > halfW - Math.min(reach, halfW * 0.9) ||
-        Math.abs(c.y - this.cam.y) > halfH - Math.min(reach * 0.4, halfH * 0.9)
-      )
-        continue;
+      if (!this.inSight.has(c.kind)) continue;
       this.spotted.add(note.key);
       this.say(note.text, note.color);
     }
@@ -2312,12 +2371,14 @@ export class Game {
       manta: "",
       turtle: "",
       bluewhale: "",
+      whaleshark: "",
       bigfin: "",
       leviathan: "Swallowed whole!",
       colossal: "Caught by a colossal squid!",
       giant: "Caught by a giant squid!",
       fish: "Bonked by a fish!",
       jelly: "Stung!",
+      moonjelly: "Stung!",
       pressure: "Hull crushed!",
       oxygen: "Ran out of oxygen!",
     };
@@ -2331,6 +2392,7 @@ export class Game {
       manta: "",
       turtle: "",
       bluewhale: "",
+      whaleshark: "",
       bigfin: "",
       leviathan:
         "Something enormous lives at the bottom of the Crimson Sea. When it shows itself, run for the surface.",
@@ -2343,6 +2405,7 @@ export class Game {
       orcacalf: "",
       fish: "",
       jelly: "",
+      moonjelly: "",
       pressure: `Your plating is only safe to ${this.depthRating} m. Upgrade it to go deeper.`,
       oxygen:
         "A sealed sub has no endless air. Once the oxygen runs out, carbon dioxide (CO₂) builds up to toxic levels and the cabin becomes unbreathable. Head back up to refill your air.",

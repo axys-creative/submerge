@@ -8,6 +8,8 @@ export type ItemKind =
   | 'jug'
   | 'canister'
   | 'tire'
+  | 'box'
+  | 'openbox'
   | 'coin'
   | 'anchor'
   | 'wheel'
@@ -31,6 +33,8 @@ export interface ItemDef {
   treasure: boolean;
   /** Junk placed at fixed spots that never respawns while you are in the zone, counted by the zone's clean-up achievement. */
   trash?: boolean;
+  /** Cargo junk: only laid around the container and freighter wrecks, drawn in front of the floor and set into it a little. */
+  cargo?: boolean;
   /** Never found in caves, which were once dry land: only things from ships belong in the open sea. */
   wreckOnly?: boolean;
   /** Spawn chance inside caves, ignoring depth, instead of `weight`. */
@@ -47,13 +51,15 @@ export const ITEMS: Record<ItemKind, ItemDef> = {
   jug: { name: 'Cleaner Jug', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 22.5, treasure: false, trash: true },
   canister: { name: 'Gas Can', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 30, treasure: false, trash: true },
   tire: { name: 'Old Tire', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 32, treasure: false, trash: true },
+  box: { name: 'Cardboard Box', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 35, treasure: false, trash: true, cargo: true },
+  openbox: { name: 'Torn Cardboard Box', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 35, treasure: false, trash: true, cargo: true },
   coin: { name: 'Gold Coins', value: 25, minDepth: 20, maxDepth: 900, weight: 7, size: 12, treasure: true },
   anchor: { name: 'Anchor', value: 60, minDepth: 40, maxDepth: 900, weight: 4, size: 34, treasure: true, wreckOnly: true },
   wheel: { name: 'Ship Wheel', value: 90, minDepth: 80, maxDepth: 900, weight: 3, size: 27, treasure: true, wreckOnly: true },
   pearl: { name: 'Pearl Clam', value: 140, minDepth: 120, maxDepth: 900, weight: 3, size: 14, treasure: true },
   goldbar: { name: 'Gold Bars', value: 220, minDepth: 180, maxDepth: 900, weight: 2.5, size: 30, treasure: true, wreckOnly: true },
-  gem: { name: 'Sea Sapphire', value: 450, minDepth: 300, maxDepth: 900, weight: 1.5, size: 26, treasure: true },
-  diamond: { name: 'Diamond', value: 1200, minDepth: 0, maxDepth: 0, weight: 0, size: 24, treasure: true },
+  gem: { name: 'Sea Sapphire', value: 450, minDepth: 300, maxDepth: 900, weight: 1.5, size: 13, treasure: true },
+  diamond: { name: 'Diamond', value: 1200, minDepth: 0, maxDepth: 0, weight: 0, size: 18, treasure: true },
   idol: { name: 'Sunken Idol', value: 900, minDepth: 450, maxDepth: 900, weight: 1, size: 34, treasure: true, wreckOnly: true },
   chest: { name: 'Treasure Chest', value: 350, minDepth: 0, maxDepth: 0, weight: 0, size: 38, treasure: true, caveWeight: 2 },
 };

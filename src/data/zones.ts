@@ -102,6 +102,8 @@ export interface ZoneDef {
   meadows?: { x0: number; x1: number; kelp: number }[];
   /** Kelp forests: `count` kelp plants spread over x0 to x1; `giant` is the share that are tall giant kelp (default 0.7). */
   forests?: { x0: number; x1: number; count: number; giant?: number }[];
+  /** Rusted steel barrels lying on their sides across the sea floor. */
+  barrels?: number;
   /** Extra rocks, coral and kelp placed at random between x0 and x1. */
   beds?: { x0: number; x1: number; rocks?: number; coral?: number; kelp?: number }[];
 }
@@ -257,7 +259,9 @@ export const ZONES: ZoneDef[] = [
       { kind: 'jelly', count: 4, minDepth: 40, maxDepth: 220 },
       { kind: 'hammerhead', count: 3, minDepth: 25, maxDepth: 220 },
       { kind: 'shark', count: 1, minDepth: 40, maxDepth: 220 },
+      { kind: 'stingray', count: 2, minDepth: 10, maxDepth: 100 },
       { kind: 'turtle', count: 3, minDepth: 8, maxDepth: 150 },
+      { kind: 'whaleshark', count: 1, minDepth: 30, maxDepth: 180 },
     ],
     islands: [{ x: 5000, name: 'Pearl Atoll' }],
     wrecks: [{ x: 2800, kind: 'sloop' }],
@@ -353,7 +357,9 @@ export const ZONES: ZoneDef[] = [
       { kind: 'shark', count: 2, minDepth: 40, maxDepth: 320 },
       { kind: 'squid', count: 3, minDepth: 180, maxDepth: 420 },
       { kind: 'jelly', count: 8, minDepth: 450, maxDepth: 880 },
+      { kind: 'moonjelly', count: 3, minDepth: 100, maxDepth: 600 },
       { kind: 'manta', count: 2, minDepth: 60, maxDepth: 300 },
+      { kind: 'whaleshark', count: 2, minDepth: 30, maxDepth: 300 },
     ],
     islands: [
       { x: 600, name: 'Driftwood Dock', gear: ['scrubbers'] },
@@ -398,6 +404,7 @@ export const ZONES: ZoneDef[] = [
     beds: [{ x0: 3050, x1: 4000, rocks: 16, coral: 3, kelp: 4 }],
     coral: 25,
     rocks: 60,
+    barrels: 10,
   },
   {
     name: 'Midnight Trench',
@@ -415,11 +422,15 @@ export const ZONES: ZoneDef[] = [
     creatures: [
       { kind: 'fish', count: 12, minDepth: 5, maxDepth: 200 },
       { kind: 'jelly', count: 18, minDepth: 60, maxDepth: 700 },
+      { kind: 'moonjelly', count: 5, minDepth: 100, maxDepth: 700 },
       { kind: 'hammerhead', count: 4, minDepth: 25, maxDepth: 350 },
       { kind: 'shark', count: 4, minDepth: 40, maxDepth: 350 },
       { kind: 'squid', count: 9, minDepth: 220, maxDepth: 700 },
       { kind: 'manta', count: 3, minDepth: 80, maxDepth: 500 },
-      { kind: 'bluewhale', count: 3, minDepth: 25, maxDepth: 160 },
+      { kind: 'angler', count: 4, minDepth: 400, maxDepth: 700 },
+      { kind: 'whaleshark', count: 2, minDepth: 30, maxDepth: 300 },
+      { kind: 'bluewhale', count: 3, minDepth: 25, maxDepth: 300 },
+      { kind: 'giant', count: 1, minDepth: 450, maxDepth: 700 },
     ],
     islands: [{ x: 1650, name: 'Last Light Atoll' }],
     wrecks: [
@@ -468,6 +479,7 @@ export const ZONES: ZoneDef[] = [
     creatures: [
       { kind: 'fish', count: 3, minDepth: 20, maxDepth: 400 },
       { kind: 'jelly', count: 8, minDepth: 300, maxDepth: 1300 },
+      { kind: 'moonjelly', count: 3, minDepth: 300, maxDepth: 1300 },
       { kind: 'squid', count: 5, minDepth: 500, maxDepth: 1300 },
       { kind: 'angler', count: 12, minDepth: 1000, maxDepth: 2500 },
       { kind: 'whale', count: 3, minDepth: 400, maxDepth: 1100 },
@@ -475,7 +487,7 @@ export const ZONES: ZoneDef[] = [
       { kind: 'orca', count: 5, minDepth: 60, maxDepth: 450 },
       { kind: 'orcacalf', count: 3, minDepth: 60, maxDepth: 450 },
       { kind: 'manta', count: 3, minDepth: 100, maxDepth: 800 },
-      { kind: 'bluewhale', count: 3, minDepth: 25, maxDepth: 160 },
+      { kind: 'bluewhale', count: 3, minDepth: 25, maxDepth: 300 },
       { kind: 'colossal', count: 3, minDepth: 1000, maxDepth: 1450 },
       { kind: 'bigfin', count: 5, minDepth: 1050, maxDepth: 1300 },
     ],
@@ -521,6 +533,7 @@ export const ZONES: ZoneDef[] = [
     creatures: [
       { kind: 'orca', count: 4, minDepth: 90, maxDepth: 400 },
       { kind: 'orcacalf', count: 2, minDepth: 90, maxDepth: 400 },
+      { kind: 'bluewhale', count: 2, minDepth: 25, maxDepth: 300 },
     ],
     islands: [],
     wrecks: [],
