@@ -205,13 +205,12 @@ export class AudioManager {
         this.musicVolume = Math.min(1, Math.max(0, saved.musicVolume));
       this.muted = saved.muted === true;
     } catch {}
-    const unlock = () => {
-      removeEventListener("pointerdown", unlock);
-      removeEventListener("keydown", unlock);
-      this.unlock();
+    const wake = () => {
+      if (!this.ctx) void this.unlock();
+      else if (this.ctx.state !== "running") void this.ctx.resume().catch(() => {});
     };
-    addEventListener("pointerdown", unlock);
-    addEventListener("keydown", unlock);
+    for (const type of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) addEventListener(type, wake, true);
+    document.addEventListener("visibilitychange", () => !document.hidden && this.ctx && wake());
   }
 
   setScene(scene: Scene) {
@@ -611,6 +610,8 @@ export class AudioManager {
 
   private async unlock() {
     try {
+      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+      if (session) session.type = "playback";
       this.ctx = new AudioContext();
       this.out = this.ctx.createGain();
       this.out.connect(this.ctx.destination);

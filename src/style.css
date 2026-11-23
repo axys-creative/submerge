@@ -1792,7 +1792,11 @@ textarea:focus {
 /* ---- Touch screens: smaller gauges and map, no upgrade tester ---- */
 
 .is-touch .debug-upgrades {
-  display: none;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  bottom: auto;
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+  touch-action: pan-y;
 }
 
 .is-touch .pct {
@@ -2057,6 +2061,7 @@ textarea:focus {
 
 .is-touch #ui .minimap-tab {
   transform-origin: left calc(100% + 75px);
+  pointer-events: auto;
 }
 
 #ui.ui-docked .minimap,
@@ -2725,16 +2730,12 @@ body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
 /* ---- Minimap that can be unpinned: slides out of view and rises under the mouse ---- */
 
 .map-pin {
-  display: none;
+  display: inline-block;
   flex: none;
 }
 
 .map-hot {
   display: none;
-}
-
-body:not(.is-touch) .map-pin {
-  display: inline-block;
 }
 
 body:not(.is-touch) #ui.map-unpinned .map-hot {
@@ -3070,4 +3071,116 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
 .bestiary em {
   font-size: 13px;
   color: var(--ink-soft);
+}
+
+/* Short touch screens (phones in landscape): shrink the UI about 20% */
+@media (max-height: 520px) {
+  body.is-touch .hud {
+    gap: 8px;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+  }
+  body.is-touch .panel {
+    padding: 6px 10px;
+    border-radius: 13px;
+  }
+  body.is-touch .zen-player {
+    width: 168px;
+  }
+  body.is-touch .cargo {
+    font-size: 10px;
+  }
+  body.is-touch .money {
+    font-size: 19px;
+  }
+  body.is-touch .hud-btns {
+    gap: 8px;
+  }
+  body.is-touch .icon-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+  body.is-touch .icon-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  body.is-touch .touch-buttons {
+    gap: 9px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  }
+  body.is-touch .btn-stack {
+    gap: 9px;
+  }
+  body.is-touch .round-btn {
+    width: 62px;
+    height: 62px;
+    font-size: 15px;
+    box-shadow: 0 4px 0 var(--mint-dark);
+  }
+  body.is-touch .round-btn.secondary {
+    width: 54px;
+    height: 54px;
+    font-size: 12px;
+    box-shadow: 0 4px 0 var(--sea-dark);
+  }
+  body.is-touch .round-btn.crank {
+    width: 56px;
+    height: 56px;
+    font-size: 20px;
+    box-shadow: 0 4px 0 var(--sun-dark);
+  }
+  body.is-touch .dm-tag {
+    font-size: 9px;
+    padding: 3px 8px;
+  }
+  body.is-touch .prompt {
+    top: calc(env(safe-area-inset-top, 0px) + 90px);
+    padding: 7px 14px;
+    font-size: 11px;
+  }
+  body.is-touch .toast {
+    top: calc(env(safe-area-inset-top, 0px) + 78px);
+    padding: 7px 14px;
+    font-size: 12px;
+  }
+  body.is-touch .overlay {
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) max(12px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 10px) max(12px, env(safe-area-inset-left, 0px));
+  }
+  body.is-touch .card {
+    padding: 16px;
+    border-radius: 18px;
+    font-size: 13px;
+  }
+  body.is-touch .card.menu {
+    max-height: 100%;
+  }
+  body.is-touch .card h2 {
+    font-size: 22px;
+  }
+  body.is-touch .card h3,
+  body.is-touch .acc > summary {
+    font-size: 15px;
+  }
+  body.is-touch .howto-title,
+  body.is-touch .eyebrow {
+    font-size: 12px;
+  }
+  body.is-touch .card section {
+    padding-top: 12px;
+    margin-top: 12px;
+  }
+  body.is-touch .acc {
+    padding-top: 10px;
+    margin-top: 10px;
+  }
+}
+
+.is-touch #ui.map-unpinned .minimap {
+  translate: 0 90px;
+  transition: opacity 0.4s, transform 0.5s ease, translate 0.35s ease;
+}
+
+.is-touch #ui.map-unpinned .minimap-tab {
+  translate: 0 75px;
+  transition: opacity 0.4s, transform 0.5s ease, translate 0.35s ease;
 }

@@ -320,9 +320,10 @@ export class UI {
     };
     setPinned(pinned);
     pin.addEventListener("mousedown", (e) => e.preventDefault());
-    pin.addEventListener("click", () => {
+    $(this.root, ".minimap-tab").addEventListener("click", (e) => {
+      if (!this.touch && !(e.target as Element).closest("#map-pin")) return;
       setPinned(!pinned);
-      this.toast(pinned ? "Minimap pinned" : "Minimap unpinned: hover to reveal it");
+      this.toast(pinned ? "Minimap pinned" : this.touch ? "Minimap hidden: tap its label to show it" : "Minimap unpinned: hover to reveal it");
     });
     this.setupTouch();
     this.showTitle();
