@@ -893,6 +893,135 @@ textarea:focus {
   text-shadow: 0 1px 4px rgba(10, 18, 50, 0.6);
 }
 
+.title-overlay {
+  animation: title-in 0.7s ease-out both;
+}
+
+.title-save {
+  margin: -4px 0 0;
+  font-size: 14px;
+  font-weight: 800;
+  opacity: 0.85;
+  text-shadow: 0 1px 4px rgba(10, 18, 50, 0.6);
+}
+
+.title-link {
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: #fff;
+  font: 800 14px var(--body);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  opacity: 0.85;
+  cursor: pointer;
+}
+
+.title-link:hover,
+.title-link:focus-visible {
+  opacity: 1;
+}
+
+.title-credit {
+  display: block;
+  width: 110px;
+  margin-top: 16px;
+  opacity: 0.6;
+}
+
+.splash-logo {
+  display: block;
+  width: min(440px, 78vw);
+  filter: drop-shadow(0 0 24px rgba(42, 166, 201, 0.5));
+}
+
+.splash-overlay {
+  background: radial-gradient(ellipse at 50% 100%, #14407a, #060d24 70%);
+  overflow: hidden;
+  transition: opacity 1s ease 0.1s;
+}
+
+.splash-overlay.leaving {
+  opacity: 0;
+}
+
+.splash-overlay.leaving .splash {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.bubbles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bubble {
+  position: absolute;
+  bottom: -40px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.04) 60%);
+  opacity: 0;
+  animation: bubble-rise var(--d) ease-in var(--delay) both;
+}
+
+.splash {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  color: #fff;
+  animation: splash-rise 1.6s ease-out 1.2s backwards;
+}
+
+.splash-sub {
+  font: 600 clamp(12px, 3vw, 16px) var(--display);
+  letter-spacing: 0.4em;
+  padding-left: 0.4em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+@keyframes splash-rise {
+  from { opacity: 0; transform: translateY(18px); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes bubble-rise {
+  0% { opacity: 0; transform: translate(0, 0); }
+  12% { opacity: 0.85; }
+  85% { opacity: 0.7; }
+  100% { opacity: 0; transform: translate(var(--sway), -118vh); }
+}
+
+#ui.on-title > :not(.overlay) {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+#ui > :not(.overlay) {
+  transition: opacity 0.6s ease;
+}
+
+@keyframes title-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash,
+  .title-overlay {
+    animation: none;
+  }
+
+  .bubble {
+    display: none;
+  }
+}
+
 /* Message */
 
 .message {

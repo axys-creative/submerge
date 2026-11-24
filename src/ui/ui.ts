@@ -73,7 +73,9 @@ const devModeOn = () => {
   return ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 };
 
-type ModalKind = "title" | "shop" | "menu" | "message" | "map" | "inventory";
+const LOGO = `${import.meta.env.BASE_URL}axys-logo.svg`;
+
+type ModalKind ="title" | "shop" | "menu" | "message" | "map" | "inventory";
 
 const $ = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) =>
   root.querySelector(sel) as T;
@@ -328,7 +330,7 @@ export class UI {
       this.toast(pinned ? "Minimap pinned" : this.touch ? "Minimap hidden: tap its label to show it" : "Minimap unpinned: hover to reveal it");
     });
     this.setupTouch();
-    this.showTitle();
+    this.showSplash();
   }
 
   private dim = false;
@@ -1192,6 +1194,8 @@ export class UI {
     clearTimeout(this.closeTimer);
     this.modalKind = kind;
     this.game.paused = true;
+    this.game.intro = kind === "title";
+    this.root.classList.toggle("on-title", kind === "title");
     this.modal.className = `overlay ${cls}`;
     this.modal.innerHTML = html;
     this.modal.hidden = false;
@@ -1289,6 +1293,8 @@ export class UI {
         : null;
     this.modalKind = null;
     this.game.paused = false;
+    this.game.intro = false;
+    this.root.classList.remove("on-title");
     this.cache.clear();
     if (!menu) return this.hideModal();
     menu.classList.add("closing");
@@ -1307,9 +1313,55 @@ export class UI {
     else this.openMenu();
   }
 
+  private splashSeen = false;
+
+  private bubbleBurst(host: HTMLElement, n: number, spread: number) {
+    for (let i = 0; i < n; i++) {
+      const b = document.createElement("span");
+      const size = 6 + Math.random() * 22;
+      b.className = "bubble";
+      b.style.cssText = `left:${Math.random() * 100}%;width:${size}px;height:${size}px;--sway:${(Math.random() - 0.5) * 70}px;--d:${2.4 + Math.random() * 1.8}s;--delay:${Math.random() * spread}s`;
+      host.append(b);
+      setTimeout(() => b.remove(), (spread + 4.4) * 1000);
+    }
+  }
+
+  private showSplash() {
+    if (this.splashSeen) return this.showTitle();
+    this.splashSeen = true;
+    this.open(
+      "title",
+      `<div class="bubbles"></div><div class="splash"><img class="splash-logo" src="${LOGO}" alt="Axys Creative" /><div class="splash-sub">presents</div></div>`,
+      "splash-overlay",
+    );
+    const bubbles = $(this.modal, ".bubbles");
+    this.bubbleBurst(bubbles, 34, 1.4);
+    let done = false;
+    const next = () => {
+      if (done) return;
+      done = true;
+      window.removeEventListener("keydown", next, true);
+      this.modal.classList.add("leaving");
+      this.bubbleBurst(bubbles, 26, 0.6);
+      setTimeout(() => this.showTitle(), 1100);
+    };
+    window.addEventListener("keydown", next, true);
+    this.modal.addEventListener("pointerdown", next, { once: true });
+    setTimeout(next, 4600);
+  }
+
+  private saveSummary() {
+    const s = this.game.save;
+    const ups = UPGRADE_ORDER.reduce((n, id) => n + s.upgrades[id], 0);
+    return `${esc(ZONES[s.zone].name)} · $${s.money.toLocaleString()} · ${ups} upgrade${ups === 1 ? "" : "s"}`;
+  }
+
   showTitle() {
     const g = this.game;
     const has = g.hasSave;
+    const controls = this.touch
+      ? "Drag on the left side to steer. Buttons on the right."
+      : "Arrow keys or WASD to move · Space to dive · Enter or E to use shops · Esc for the menu";
     this.open(
       "title",
       `<div class="title-screen">
@@ -1323,11 +1375,14 @@ export class UI {
               : `<button class="btn big" data-act="start" data-autofocus>Start diving</button>`
           }
         </div>
+        ${has ? `<p class="title-save">${this.saveSummary()}</p>` : ""}
         <div class="confirm" hidden>
           <p>Start over? This erases your saved sub, money and upgrades.</p>
           <div class="row"><button class="btn danger" data-act="erase">Erase and start over</button><button class="btn ghost" data-act="cancel">Keep my game</button></div>
         </div>
-        <p class="title-hint">${this.touch ? "Drag on the left side to steer. Buttons on the right." : "Arrow keys or WASD to move · Space to dive · Enter or E to use shops · Esc for the menu"}</p>
+        <button class="title-link" data-act="howto" aria-expanded="false">How to play</button>
+        <p class="title-hint" hidden>${controls}</p>
+        <img class="title-credit" src="${LOGO}" alt="Axys Creative" />
       </div>`,
       "title-overlay",
     );
@@ -1342,6 +1397,11 @@ export class UI {
           `${this.touch ? "Tap Dive" : "Press <kbd>Space</kbd>"} to dive. Grab treasure, then sell it at an island shop.`,
           true,
         );
+      }
+      if (act === "howto") {
+        const hint = $(this.modal, ".title-hint");
+        hint.hidden = !hint.hidden;
+        (e.target as HTMLElement).setAttribute("aria-expanded", String(!hint.hidden));
       }
       if (act === "new") $(this.modal, ".confirm").hidden = false;
       if (act === "cancel") $(this.modal, ".confirm").hidden = true;

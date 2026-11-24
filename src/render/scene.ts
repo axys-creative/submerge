@@ -1,5 +1,6 @@
 import type { Game } from '../game/game';
 import { allAchievementsEarned } from '../game/save';
+import { ZONES } from '../data/zones';
 import type { WreckKind } from '../data/zones';
 import { RADIO_FX_SWITCH, SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE, CRACK_TIME, HOOK_DROP } from '../config';
 import { STATS } from '../data/upgrades';
@@ -274,9 +275,13 @@ function drawFarShip(ctx: CanvasRenderingContext2D, x: number, haze: (c: string)
 const SHIP_BEAM_RANGE = 190;
 const SHIP_BEAM_SPREAD = 0.5;
 
+const INTRO_DEF = { ...ZONES[4], islands: [], wrecks: [], caves: [], polar: undefined, farScenery: undefined, space: undefined, catalog: undefined };
+const INTRO_DAY = 0.38;
+
 export function renderScene(g: Game) {
   const { ctx, view, cam, world, t } = g;
-  const def = world.def;
+  const intro = g.intro;
+  const def = intro ? INTRO_DEF : world.def;
   const k = view.scale * view.dpr;
   const W = view.w;
   const H = view.h;
@@ -288,11 +293,11 @@ export function renderScene(g: Game) {
   const sy = g.shake > 0 ? (Math.random() - 0.5) * g.shake * 24 : 0;
   const ox = (-left + sx) * k;
   const oy = (-top + sy) * k;
-  const inView = (x: number, m = 150) => x > left - m && x < right + m;
+  const inView = (x: number, m = 150) => !intro && x > left - m && x < right + m;
 
   const space = !!def.space;
-  const { night, warm, sunAngle } = space ? { night: 0, warm: 0, sunAngle: 0 } : daylight(g.day);
-  const rain = space ? 0 : g.rain;
+  const { night, warm, sunAngle } = space ? { night: 0, warm: 0, sunAngle: 0 } : daylight(intro ? INTRO_DAY : g.day);
+  const rain = space || intro ? 0 : g.rain;
   const clear = 1 - rain * 0.85;
   /** Lights on the ship: at night, and always on a moon. */
   const lampNight = space ? 1 : night;
@@ -467,7 +472,7 @@ export function renderScene(g: Game) {
   if (def.polar && top < 900) drawPolarUnder(ctx, left, right, cam.x, t, water1, night, def.polar.bergs);
 
   // Parallax mountains sit behind everything else, including the islands' underwater peaks.
-  if (bottom > 200) {
+  if (bottom > 200 && !intro) {
     const ridgeFade = fadeIn(def.polar?.ridges, cam.x);
     BACK_LAYERS.forEach((layer, i) => {
       if (ridgeFade <= 0.01) return;
@@ -551,7 +556,7 @@ export function renderScene(g: Game) {
   }
 
   // Sea floor
-  if (bottom > 200) {
+  if (bottom > 200 && !intro) {
     def.wrecks.forEach((w, wi) => {
       if (!inView(w.x, 1700)) return;
       ctx.save();
@@ -730,7 +735,7 @@ export function renderScene(g: Game) {
   const bob = g.shipBob;
   const s = g.sub;
   const subY = s.y + g.surfaceBob;
-  {
+  if (!intro) {
     const lean = Math.sin(t * 0.9) * 0.02 + g.shipPitch;
     const tipX = g.ship.x + g.ship.facing * (CRANE_TIP.x * Math.cos(lean) - CRANE_TIP.y * Math.sin(lean));
     const tipY = bob + CRANE_TIP.x * Math.sin(lean) + CRANE_TIP.y * Math.cos(lean);
@@ -763,13 +768,15 @@ export function renderScene(g: Game) {
     ctx.arc(hx + 6, hy + 11, 6, Math.PI, -Math.PI * 0.3, true);
     ctx.stroke();
   }
-  ctx.save();
-  ctx.translate(g.ship.x, bob);
-  ctx.scale(g.ship.facing, 1);
-  ctx.rotate(Math.sin(t * 0.9) * 0.02 + g.shipPitch);
-  { const w = SHIP_PROP_WAKE(g.up.propeller); drawBoostSwirl(ctx, t, g.boost, w.x, w.h, 1, w.y); }
-  drawShip(ctx, t, g.ship.facing, lampNight, Math.min(g.owned.plating, g.owned.oxygen), g.owned.oxygen, g.treasureAlert, g.shipProp, g.up.propeller, g.save.skin);
-  ctx.restore();
+  if (!intro) {
+    ctx.save();
+    ctx.translate(g.ship.x, bob);
+    ctx.scale(g.ship.facing, 1);
+    ctx.rotate(Math.sin(t * 0.9) * 0.02 + g.shipPitch);
+    { const w = SHIP_PROP_WAKE(g.up.propeller); drawBoostSwirl(ctx, t, g.boost, w.x, w.h, 1, w.y); }
+    drawShip(ctx, t, g.ship.facing, lampNight, Math.min(g.owned.plating, g.owned.oxygen), g.owned.oxygen, g.treasureAlert, g.shipProp, g.up.propeller, g.save.skin);
+    ctx.restore();
+  }
 
   if (g.foam.length) {
     const tone = Math.round(255 - night * 90);
@@ -791,7 +798,7 @@ export function renderScene(g: Game) {
     ctx.restore();
   }
 
-  const claw = g.clawState();
+  const claw = intro ? null : g.clawState();
   if (claw) {
     const bob = g.surfaceBob;
     const px = claw.px;
@@ -873,7 +880,7 @@ export function renderScene(g: Game) {
     c.scale(s.facing, 1);
     c.rotate(s.tilt);
   };
-  if (!im || crush < 1) {
+  if (!intro && (!im || crush < 1)) {
     ctx.save();
     crumple(ctx);
     if (blink) ctx.globalAlpha = 0.4;
@@ -1392,7 +1399,7 @@ export function renderScene(g: Game) {
   ctx.font = `700 ${18 / view.zoom}px Fredoka, Nunito, sans-serif`;
   ctx.textAlign = 'center';
   ctx.lineJoin = 'round';
-  if (world.headers.length) {
+  if (world.headers.length && !intro) {
     ctx.font = `700 ${17 / view.zoom}px Fredoka, Nunito, sans-serif`;
     ctx.lineWidth = 4 / view.zoom;
     ctx.strokeStyle = 'rgba(20,36,90,0.9)';

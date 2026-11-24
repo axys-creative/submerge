@@ -258,8 +258,11 @@ const CLAW_RETRACT = 0.45;
 const CLAW_RADIUS = 36;
 /** Seconds the jaws take to pull a grabbed item into their grip. */
 const CLAW_HOLD = 0.12;
-/** How far through the grab the jaws are fully open and take what is in reach; they pinch shut for the rest if it was nothing. */
+/** How far through the grab the jaws take what is in reach; if it was nothing they pinch shut and reopen for the rest. */
 const CLAW_OPEN_AT = 0.3;
+/** How far through the extension (0 to 1) the jaws start opening and are fully open. */
+const CLAW_OPEN_FROM = 0.35;
+const CLAW_OPEN_TO = 0.8;
 const CLAW_MOUNT = { x: 2, y: 24 };
 /** Seagulls are heard within three island widths (an island is about 500 px across). */
 const GULL_EARSHOT = 1500;
@@ -393,6 +396,8 @@ export class Game {
   private growWait = 0;
   t = 0;
   paused = true;
+  /** True while the splash and title screen are up: a bare sky and sea with no ship, sub or islands. */
+  intro = true;
   /** True while the skins list is open in the menu: the camera drifts left so the sub and ship sit clear of the menu. */
   skinPreview = false;
   private previewShift = 0;
@@ -960,7 +965,7 @@ export class Game {
 
   /** Logs an animal in the catalog the first time the player really sees it. */
   noteSeen(kind: CreatureKind) {
-    if (this.save.seen.includes(kind) || !BESTIARY.includes(kind)) return;
+    if (this.mode !== "diving" || this.save.seen.includes(kind) || !BESTIARY.includes(kind)) return;
     this.save.seen.push(kind);
     this.ui.toast(`New creature: ${CREATURES[kind].name} · ${this.save.seen.length}/${BESTIARY.length} in the catalog`);
     if (this.save.seen.length >= BESTIARY.length && !this.save.achievements.includes("bestiary")) {
@@ -1995,13 +2000,17 @@ export class Game {
     const idle = c.t < 0;
     let ext = idle ? 0 : 1;
     let open = 0;
-    if (!idle && c.t < CLAW_EXTEND) ext = c.t / CLAW_EXTEND;
-    else if (!idle && c.t < grabEnd) {
+    if (!idle && c.t < CLAW_EXTEND) {
+      ext = c.t / CLAW_EXTEND;
+      const v = Math.min(1, Math.max(0, (ext - CLAW_OPEN_FROM) / (CLAW_OPEN_TO - CLAW_OPEN_FROM)));
+      open = v * v * (3 - 2 * v);
+    } else if (!idle && c.t < grabEnd) {
       const u = (c.t - CLAW_EXTEND) / CLAW_GRAB;
-      open = u < CLAW_OPEN_AT || c.load.length ? Math.min(1, u / CLAW_OPEN_AT) : 1 - (u - CLAW_OPEN_AT) / (1 - CLAW_OPEN_AT);
+      open = u < CLAW_OPEN_AT || c.load.length ? 1 : 1 - Math.sin(Math.PI * ((u - CLAW_OPEN_AT) / (1 - CLAW_OPEN_AT)));
     } else if (!idle) {
-      ext = 1 - Math.min(1, (c.t - grabEnd) / CLAW_RETRACT);
-      open = c.load.length ? 1 : 0;
+      const r = Math.min(1, (c.t - grabEnd) / CLAW_RETRACT);
+      ext = 1 - r;
+      open = c.load.length ? 1 : 1 - r;
     }
     const len = CLAW_REACH * ext;
     const dirX = idle ? s.facing : c.dirX;
@@ -3026,6 +3035,7 @@ export class Game {
   }
 
   private updateCamera(dt: number) {
+    if (this.intro) return this.snapCamera();
     const docked = this.mode === "docked";
     this.previewShift += ((this.skinPreview ? 1 : 0) - this.previewShift) * damp(4, dt);
     const tx = (docked ? this.ship.x - 60 : this.sub.x) - this.view.w * 0.15 * this.previewShift;
@@ -3038,6 +3048,11 @@ export class Game {
   }
 
   private snapCamera() {
+    if (this.intro) {
+      this.cam.x = this.ship.x - 60;
+      this.cam.y = this.view.h * -0.12;
+      return;
+    }
     const docked = this.mode === "docked";
     this.cam.x = (docked ? this.ship.x - 60 : this.sub.x) - this.view.w * 0.15 * this.previewShift;
     this.cam.y = docked ? -80 : this.sub.y;
