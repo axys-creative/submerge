@@ -1,7 +1,7 @@
 import { ZONES } from './zones';
 import { CREATURES, type CreatureKind } from './creatures';
 
-const UNLISTED: CreatureKind[] = ['leviathan'];
+const UNLISTED: CreatureKind[] = ['leviathan', 'mobydick', 'orcacalf'];
 
 /** Every animal the catalog tracks, in the order they first show up across the zones. */
 export const BESTIARY: CreatureKind[] = [];

@@ -45,7 +45,7 @@ export const ITEMS: Record<ItemKind, ItemDef> = {
   seaweed: { name: 'Seaweed', value: 5, minDepth: 0, maxDepth: 160, weight: 10, size: 30, treasure: false },
   shell: { name: 'Conch Shell', value: 8, minDepth: 0, maxDepth: 220, weight: 6, size: 12, treasure: false },
   boot: { name: 'Old Boot', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 19.5, treasure: false, trash: true },
-  bottle: { name: 'Message in a Bottle', value: 0, minDepth: 0, maxDepth: 400, weight: 0, size: 19.5, treasure: false, trash: true },
+  bottle: { name: 'Message in a Bottle', value: 0, minDepth: 0, maxDepth: 550, weight: 0, size: 19.5, treasure: false, trash: true },
   can: { name: 'Bent Can', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 18, treasure: false, trash: true },
   sack: { name: 'Plastic Bag', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 30, treasure: false, trash: true },
   jug: { name: 'Cleaner Jug', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 22.5, treasure: false, trash: true },

@@ -3,7 +3,7 @@ import type { GearId } from './upgrades';
 import type { ItemKind } from './items';
 import { CATALOG } from './catalog';
 
-export type WreckKind = 'sloop' | 'galleon' | 'freighter' | 'containers';
+export type WreckKind = 'sloop' | 'galleon' | 'freighter' | 'containers' | 'titanic';
 
 export interface CreatureSpawn {
   kind: CreatureKind;
@@ -113,16 +113,18 @@ const smooth = (x: number, from: number, to: number) => {
   return u * u * (3 - 2 * u);
 };
 
-/** Abyssal Plains: an open sea floor around 1500 m with a wide trench at each end, one about 3300 m deep and one about 4700 m. The middle stretch (original x 2400 to 7800) is spread over 1.5 times the width, so the zone is 13200 px and the east trench sits 2700 px further east than it was. */
-const ABYSSAL_SHIFT = 2700;
-const ABYSSAL_FLOOR = Array.from({ length: 45 }, (_, k) => {
-  const nx = k * 300;
-  const x = nx <= 2400 ? nx : nx <= 2400 + 8100 ? 2400 + (nx - 2400) / 1.5 : nx - ABYSSAL_SHIFT;
-  const i = x / 300;
-  const hills = 1500 + 12 * Math.sin(i * 1.7) + 8 * Math.sin(i * 0.63 + 1);
-  const left = 1 - smooth(x, 1500, 2400);
-  const right = smooth(x, 7800, 8700);
-  return Math.round(hills + left * (3300 + 90 * Math.sin(i * 2.3) - 1500) + right * (4700 + 25 * Math.sin(i * 1.9 + 2) - 1500));
+/** Abyssal Plains is 39600 px wide: one big mountain (1500 m) with a small peak near the surface under the first island and the cave on its east side, a wide flat plain about 3800 m deep with the Titanic, then two bumpy trenches in the east (about 4400 m and 4900 m, the portal stone in the deeper). */
+const ABYSSAL_FLOOR = Array.from({ length: 133 }, (_, k) => {
+  const x = k * 300;
+  const i = k;
+  const shelf = smooth(x, 11500, 15000);
+  const peak = 1 - smooth(Math.abs(x - 1000), 300, 1800);
+  const trench1 = smooth(x, 30500, 32000) * (1 - smooth(x, 33500, 34800));
+  const trench2 = smooth(x, 35400, 36800) * (1 - 0.6 * smooth(x, 38500, 39600));
+  const amp = 5 + 30 * (1 - shelf) + 32 * smooth(x, 29500, 31000);
+  const bumps = amp * (0.6 * Math.sin(i * 1.9) + 0.5 * Math.sin(i * 3.1 + 1) + 0.4 * Math.sin(i * 5.3 + 2));
+  const base = 1500 + 2300 * shelf - peak * 1200 + trench1 * 600 + trench2 * 1100;
+  return Math.round(base + bumps);
 });
 
 /** The sea floor of Frozen Expanse at x px in the zone's original 20000 px layout: 5000 m deep at the west end, rising in a bumpy slope to an average of about 2000 m in the east, with ridges and dips along the way. */
@@ -362,7 +364,7 @@ export const ZONES: ZoneDef[] = [
       { kind: 'whaleshark', count: 2, minDepth: 30, maxDepth: 300 },
     ],
     islands: [
-      { x: 600, name: 'Driftwood Dock', gear: ['scrubbers'] },
+      { x: 1300, name: 'Driftwood Dock', gear: ['scrubbers'] },
       { x: 7900, name: 'Lantern Isle' },
     ],
     caves: [{
@@ -469,7 +471,7 @@ export const ZONES: ZoneDef[] = [
     islandWidth: 1,
     diveZoom: 0.5,
     map: { x: 255, y: 110 },
-    width: 13200,
+    width: 39600,
     floor: ABYSSAL_FLOOR,
     sky: ['#9FB8E6', '#E6EEFF'],
     water: ['#3E8FD0', '#0A1E4A'],
@@ -477,45 +479,46 @@ export const ZONES: ZoneDef[] = [
     darkness: [20, 360],
     items: 0,
     creatures: [
-      { kind: 'fish', count: 3, minDepth: 20, maxDepth: 400 },
-      { kind: 'jelly', count: 8, minDepth: 300, maxDepth: 1300 },
-      { kind: 'moonjelly', count: 3, minDepth: 300, maxDepth: 1300 },
-      { kind: 'squid', count: 5, minDepth: 500, maxDepth: 1300 },
-      { kind: 'angler', count: 12, minDepth: 1000, maxDepth: 2500 },
-      { kind: 'whale', count: 3, minDepth: 400, maxDepth: 1100 },
-      { kind: 'mobydick', count: 2, minDepth: 400, maxDepth: 1100 },
-      { kind: 'orca', count: 5, minDepth: 60, maxDepth: 450 },
-      { kind: 'orcacalf', count: 3, minDepth: 60, maxDepth: 450 },
-      { kind: 'manta', count: 3, minDepth: 100, maxDepth: 800 },
-      { kind: 'bluewhale', count: 3, minDepth: 25, maxDepth: 300 },
-      { kind: 'colossal', count: 3, minDepth: 1000, maxDepth: 1450 },
-      { kind: 'bigfin', count: 5, minDepth: 1050, maxDepth: 1300 },
+      { kind: 'fish', count: 9, minDepth: 20, maxDepth: 400 },
+      { kind: 'jelly', count: 24, minDepth: 300, maxDepth: 1300 },
+      { kind: 'moonjelly', count: 9, minDepth: 300, maxDepth: 1300 },
+      { kind: 'squid', count: 15, minDepth: 500, maxDepth: 1300 },
+      { kind: 'angler', count: 36, minDepth: 1000, maxDepth: 3700 },
+      { kind: 'whale', count: 9, minDepth: 400, maxDepth: 1100 },
+      { kind: 'mobydick', count: 1, minDepth: 400, maxDepth: 1100 },
+      { kind: 'orca', count: 15, minDepth: 60, maxDepth: 450 },
+      { kind: 'orcacalf', count: 9, minDepth: 60, maxDepth: 450 },
+      { kind: 'manta', count: 9, minDepth: 100, maxDepth: 800 },
+      { kind: 'bluewhale', count: 9, minDepth: 25, maxDepth: 300 },
+      { kind: 'colossal', count: 9, minDepth: 1000, maxDepth: 1450 },
+      { kind: 'bigfin', count: 15, minDepth: 1050, maxDepth: 1300 },
     ],
     islands: [
-      { x: 700, name: 'Palm Atoll', gear: ['electrolysis'] },
-      { x: 8100, name: 'Trench Pier', weights: true },
+      { x: 850, name: 'Palm Atoll', gear: ['electrolysis'] },
+      { x: 4500, name: 'Trench Pier', weights: true },
     ],
-    wrecks: [],
-    portalStone: { x: 12300 },
+    wrecks: [{ x: 20000, kind: 'titanic' }],
+    portalStone: { x: 37700 },
     caves: [{
       name: 'Trench Pocket',
       stones: 6,
-      x0: 7700,
-      x1: 11100,
-      hill: { x: 10950, half: 0, ramp: 1, height: 0 },
+      x0: 10450,
+      x1: 13850,
+      hill: { x: 13700, half: 0, ramp: 1, height: 0 },
       passages: [
-        { pts: [[10950, 3100], [10500, 3095], [10000, 3105], [9500, 3095], [9000, 3105], [8500, 3100]], r: 190 },
-        { pts: [[8500, 3102]], r: 330, loot: 1, kinds: ['pearl'] },
-        { pts: [[9500, 3095], [9500, 3150], [9300, 3190], [9300, 3240]], r: 190 },
-        { pts: [[9300, 3245]], r: 270 },
-        { pts: [[8500, 3100], [8400, 3150], [8200, 3180]], r: 190 },
-        { pts: [[8200, 3185]], r: 260, loot: 1, kinds: ['gem'] },
-        { pts: [[10000, 3105], [10000, 3060], [9850, 3020], [9850, 2990]], r: 190 },
-        { pts: [[9850, 2985]], r: 250 },
+        { pts: [[13700, 3100], [13250, 3095], [12750, 3105], [12250, 3095], [11750, 3105], [11250, 3100]], r: 190 },
+        { pts: [[11250, 3102]], r: 330, loot: 1, kinds: ['pearl'] },
+        { pts: [[12250, 3095], [12250, 3150], [12050, 3190], [12050, 3240]], r: 190 },
+        { pts: [[12050, 3245]], r: 270 },
+        { pts: [[11250, 3100], [11150, 3150], [10950, 3180]], r: 190 },
+        { pts: [[10950, 3185]], r: 260, loot: 1, kinds: ['gem'] },
+        { pts: [[12750, 3105], [12750, 3060], [12600, 3020], [12600, 2990]], r: 190 },
+        { pts: [[12600, 2985]], r: 250 },
       ],
     }],
     kelp: 0,
-    rocks: 90,
+    rocks: 270,
+    rugged: 1,
   },
   {
     name: 'Frozen Expanse',

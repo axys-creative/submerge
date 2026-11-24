@@ -1997,6 +1997,18 @@ function hammerhead(ctx: CanvasRenderingContext2D, c: Creature) {
   ctx.fill();
 }
 
+/** The hammerhead creature's own drawing as the player's skin, facing right and centered on the origin; `phase` drives the tail and `chasing` opens the mouth. */
+export function drawHammerheadSkin(ctx: CanvasRenderingContext2D, phase: number, size: number, chasing = false) {
+  const c = { kind: 'hammerhead', x: 0, y: 0, vx: 0, vy: 0, facing: 1, state: chasing ? 'chase' : 'idle', phase, tint: 0 } as Creature;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.scale(SHARK_LENGTH * SHARK_SCALE * size, SHARK_SCALE * size);
+  ctx.scale(HAMMERHEAD_SCALE, HAMMERHEAD_SCALE);
+  hammerhead(ctx, c);
+  ctx.restore();
+}
+
 interface SquidPalette {
   arm: string;
   body: string;

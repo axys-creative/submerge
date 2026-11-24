@@ -1196,8 +1196,9 @@ export function drawPortalStone(ctx: CanvasRenderingContext2D, t: number) {
   ctx.restore();
 }
 
-export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleon' | 'freighter' | 'containers', fx?: WreckFx) {
+export function drawWreck(ctx: CanvasRenderingContext2D, kind: 'sloop' | 'galleon' | 'freighter' | 'containers' | 'titanic', fx?: WreckFx) {
   if (kind === 'freighter') return drawFreighter(ctx, fx);
+  if (kind === 'titanic') return drawTitanic(ctx);
   if (kind === 'containers') return drawContainers(ctx);
   ctx.save();
   ctx.lineJoin = 'round';
@@ -1496,6 +1497,161 @@ function drawShard(ctx: CanvasRenderingContext2D, sh: GlassShard) {
   ctx.strokeStyle = 'rgba(232,242,252,0.8)';
   ctx.lineWidth = 0.7;
   ctx.stroke();
+}
+
+/** The liner broken in two on the sea floor: the upright bow on the right, the tilted stern on the left, about 2,800 px across. */
+function drawTitanic(ctx: CanvasRenderingContext2D) {
+  const rnd = mulberry32(1912);
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.scale(2, 2);
+
+  const jag = (x: number, y0: number, y1: number, dir: number) => {
+    for (let y = y0, k = 0; k < 9; k++) {
+      y = y0 + ((y1 - y0) * (k + 1)) / 9;
+      ctx.lineTo(x + dir * (k % 2 ? 4 + rnd() * 10 : 14 + rnd() * 26), y);
+    }
+  };
+  const rust = (x0: number, x1: number, y0: number, y1: number, n: number) => {
+    ctx.fillStyle = 'rgba(150,72,34,0.4)';
+    for (let i = 0; i < n; i++) {
+      ctx.beginPath();
+      ctx.ellipse(x0 + rnd() * (x1 - x0), y0 + rnd() * (y1 - y0), 6 + rnd() * 20, 2 + rnd() * 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  const portholes = (x0: number, x1: number, y: number, step: number) => {
+    for (let x = x0; x < x1; x += step) {
+      ctx.fillStyle = '#0B1016';
+      ctx.beginPath();
+      ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#8A6A3C';
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+    }
+  };
+  const decks = (x0: number, x1: number, top: number) => {
+    ctx.fillStyle = '#A7A294';
+    ctx.fillRect(x0, top, x1 - x0, 22);
+    ctx.fillStyle = '#6F6C63';
+    ctx.fillRect(x0, top + 22, x1 - x0, 4);
+    for (let row = 0; row < 2; row++) portholes(x0 + 8, x1 - 4, top + 6 + row * 11, 12);
+  };
+
+  // Bow
+  ctx.save();
+  ctx.rotate(-0.05);
+  ctx.beginPath();
+  ctx.moveTo(110, -62);
+  ctx.lineTo(610, -62);
+  ctx.quadraticCurveTo(672, -64, 706, -98);
+  ctx.quadraticCurveTo(692, -30, 650, 4);
+  ctx.quadraticCurveTo(630, 16, 600, 16);
+  ctx.lineTo(110, 16);
+  jag(110, 16, -62, -1);
+  ctx.closePath();
+  ctx.fillStyle = '#1E2229';
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = '#6E2A22';
+  ctx.fillRect(90, -2, 640, 30);
+  ctx.fillStyle = '#B9B3A4';
+  ctx.fillRect(90, -62, 640, 5);
+  rust(100, 700, -60, 12, 26);
+  ctx.restore();
+  portholes(160, 600, -42, 14);
+  portholes(160, 600, -30, 14);
+  decks(150, 420, -86);
+  decks(190, 380, -108);
+  ctx.fillStyle = '#4A4136';
+  ctx.fillRect(238, -128, 36, 20);
+  ctx.strokeStyle = '#2B2A2A';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(560, -62);
+  ctx.lineTo(548, -168);
+  ctx.moveTo(536, -168);
+  ctx.lineTo(560, -168);
+  ctx.moveTo(470, -62);
+  ctx.lineTo(500, -100);
+  ctx.lineTo(540, -100);
+  ctx.stroke();
+  ctx.fillStyle = '#3B3B3C';
+  ctx.beginPath();
+  ctx.roundRect(610, -75, 18, 8, 2);
+  ctx.fill();
+  rust(150, 420, -108, -86, 8);
+  ctx.restore();
+
+  // Stern
+  ctx.save();
+  ctx.translate(-190, 16);
+  ctx.rotate(0.2);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, -4);
+  jag(0, -4, -86, 1);
+  ctx.lineTo(-90, -86);
+  ctx.quadraticCurveTo(-330, -86, -420, -118);
+  ctx.quadraticCurveTo(-514, -78, -500, -30);
+  ctx.lineTo(-486, 4);
+  ctx.closePath();
+  ctx.fillStyle = '#1E2229';
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = '#6E2A22';
+  ctx.fillRect(-520, -14, 540, 40);
+  ctx.fillStyle = '#B9B3A4';
+  ctx.fillRect(-520, -84, 540, 5);
+  rust(-500, 0, -84, 6, 24);
+  ctx.restore();
+  portholes(-430, -20, -60, 14);
+  portholes(-430, -20, -48, 14);
+  decks(-300, -90, -108);
+  ctx.fillStyle = '#3B3B3C';
+  ctx.fillRect(-474, 4, 20, 22);
+  ctx.strokeStyle = '#3B3B3C';
+  ctx.lineWidth = 3;
+  for (const px of [-500, -484]) {
+    ctx.beginPath();
+    ctx.ellipse(px, 22, 5, 17, 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#2B2A2A';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-380, -110);
+  ctx.lineTo(-388, -170);
+  ctx.moveTo(-200, -86);
+  ctx.lineTo(-190, -138);
+  ctx.stroke();
+  ctx.restore();
+
+  // Debris between the halves
+  for (let i = 0; i < 16; i++) {
+    const x = -170 + rnd() * 280;
+    const w = 8 + rnd() * 26;
+    ctx.save();
+    ctx.translate(x, 16 - rnd() * 4);
+    ctx.rotate((rnd() - 0.5) * 0.9);
+    ctx.fillStyle = rnd() < 0.5 ? '#2A2E36' : '#6B3A24';
+    ctx.beginPath();
+    ctx.roundRect(-w / 2, -(3 + rnd() * 8), w, 3 + rnd() * 8, 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = '#5A3524';
+  ctx.beginPath();
+  ctx.ellipse(-30, 6, 26, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2B1C14';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** A modern container ship broken on the sea floor, about 2,600 px long: stern bridge and funnel on the left, bow on the right. */

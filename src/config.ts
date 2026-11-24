@@ -6,6 +6,8 @@ export const SUB_RADIUS = 28;
 export const SUB_DOCK_OFFSET = -215;
 /** How far either side of the crane the sub can be to dock, in px. */
 export const DOCK_RANGE = 25;
+/** How far the hammerhead's night vision reaches, in px. */
+export const SHARK_SONAR_RANGE = 1500;
 export const SAVE_KEY = 'submerge.save.v1';
 /** Seconds the spotlight stutters after a bump. */
 export const FLICKER_TIME = 0.5;

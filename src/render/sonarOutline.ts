@@ -10,11 +10,11 @@ const EDGE = 7;
 /** The terrain glow is soft, so it is drawn at this fraction of the screen's resolution and scaled up. */
 const RES = 0.5;
 
-/** Erases everything the submarine's own lights shine on. */
-function cutLights(c: CanvasRenderingContext2D, lights: Light[]) {
+/** Erases everything the submarine's own lights shine on, or every light's when `every` is set. */
+function cutLights(c: CanvasRenderingContext2D, lights: Light[], every = false) {
   c.globalCompositeOperation = 'destination-out';
   for (const l of lights) {
-    if (!l.sub) continue;
+    if (!l.sub && !every) continue;
     const reach = l.r * 1.1;
     const strength = Math.min(1, (l.a ?? 1) * 1.6);
     const glow = c.createRadialGradient(l.x, l.y, 0, l.x, l.y, reach);
@@ -299,6 +299,56 @@ export class SonarShape {
     main.setTransform(1, 0, 0, 1, 0, 0);
     main.globalAlpha = alpha;
     main.drawImage(sprite.canvas, sx - w / 2, sy - h / 2, w, h);
+    main.restore();
+  }
+}
+
+/** Outline thickness in world px for the hammerhead's night vision. */
+const VISION_EDGE = 3;
+
+/** Glowing outlines drawn live around whatever `draw` paints, so animals stay outlined smoothly as they move. */
+export class FishVision {
+  private shape = document.createElement('canvas');
+  private ring = document.createElement('canvas');
+  private a = this.shape.getContext('2d')!;
+  private b = this.ring.getContext('2d')!;
+
+  render(main: CanvasRenderingContext2D, tf: WorldTransform, draw: (c: CanvasRenderingContext2D) => void, alpha: number, rgb: string, lights: Light[]) {
+    const w = Math.ceil(main.canvas.width * RES);
+    const h = Math.ceil(main.canvas.height * RES);
+    for (const cv of [this.shape, this.ring]) {
+      if (cv.width !== w || cv.height !== h) {
+        cv.width = w;
+        cv.height = h;
+      }
+    }
+    const { a, b } = this;
+    a.setTransform(1, 0, 0, 1, 0, 0);
+    a.clearRect(0, 0, w, h);
+    a.setTransform(tf.k * RES, 0, 0, tf.k * RES, tf.ox * RES, tf.oy * RES);
+    draw(a);
+
+    const t = Math.max(1, VISION_EDGE * tf.k * RES);
+    b.setTransform(1, 0, 0, 1, 0, 0);
+    b.globalCompositeOperation = 'source-over';
+    b.clearRect(0, 0, w, h);
+    for (let i = 0; i < 8; i++) b.drawImage(this.shape, Math.cos((i * Math.PI) / 4) * t, Math.sin((i * Math.PI) / 4) * t);
+    b.globalCompositeOperation = 'source-in';
+    b.fillStyle = `rgb(${rgb})`;
+    b.fillRect(0, 0, w, h);
+    b.globalCompositeOperation = 'destination-out';
+    b.drawImage(this.shape, 0, 0);
+    b.setTransform(tf.k * RES, 0, 0, tf.k * RES, tf.ox * RES, tf.oy * RES);
+    cutLights(b, lights, true);
+    b.globalCompositeOperation = 'source-over';
+    b.globalAlpha = 1;
+
+    main.save();
+    main.setTransform(1, 0, 0, 1, 0, 0);
+    main.globalAlpha = alpha;
+    main.shadowColor = `rgb(${rgb})`;
+    main.shadowBlur = 10;
+    main.drawImage(this.ring, 0, 0, main.canvas.width, main.canvas.height);
     main.restore();
   }
 }

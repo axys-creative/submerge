@@ -2,7 +2,7 @@ import type { Game } from '../game/game';
 import { allAchievementsEarned } from '../game/save';
 import { ZONES } from '../data/zones';
 import type { WreckKind } from '../data/zones';
-import { RADIO_FX_SWITCH, SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SUB_DOCK_OFFSET, SWALLOW_CLOSE, CRACK_TIME, HOOK_DROP } from '../config';
+import { RADIO_FX_SWITCH, SHIP_MARGIN, ISLAND_WIDTH, COCKPIT_MIN, FLICKER_TIME, IMPLODE_COLLAPSE, PX_PER_M, SONAR_RING_SPEED, SHARK_SONAR_RANGE, SUB_DOCK_OFFSET, SWALLOW_CLOSE, CRACK_TIME, HOOK_DROP } from '../config';
 import { STATS } from '../data/upgrades';
 import { ITEMS } from '../data/items';
 import { CATALOG } from '../data/catalog';
@@ -11,6 +11,7 @@ import { ULYSSES_DOME, ULYSSES_LIGHT_RGB, ULYSSES_GLOW_X, ULYSSES_GLOW_R, drawUl
 import { batteryLights, crumplePiece, drawSub, pieceScale, drawWeight, glassGlow, drawGlassCracks, runningLights, sternStretch, anchorFor, lampFor, rearLampFor, challengerBoomTips, challengerViewport, CAPSULE_SIDE_VIEWPORT, COCKPIT, REAR_LAMP } from '../art/sub';
 import { drawIslandGulls } from '../art/gulls';
 import { propWake, SHIP_PROP_WAKE } from '../art/sub';
+import { drawSharkTankBack, drawSharkTankFront } from '../art/hammerhead';
 import { drawBoostSwirl } from '../art/swirl';
 import { ULYSSES_SCALE } from '../art/ulysses';
 import { drawShip, drawIsland, dockPoles, drawCloud, cloudShape, drawBuoy, drawPortal, drawPortalStone, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
@@ -24,7 +25,7 @@ import { BACK_LAYERS } from '../game/world';
 import { daylight, STARS } from './daylight';
 import { lightCover, type Light } from './lighting';
 
-const WRECK_EXTENT: Record<WreckKind, number> = { sloop: 220, galleon: 440, containers: 340, freighter: 1700 };
+const WRECK_EXTENT: Record<WreckKind, number> = { sloop: 220, galleon: 440, containers: 340, freighter: 1700, titanic: 1500 };
 const DIM_W = 640;
 const DIM_H = 560;
 const DIM_OX = 320;
@@ -277,6 +278,12 @@ const SHIP_BEAM_SPREAD = 0.5;
 
 const INTRO_DEF = { ...ZONES[4], islands: [], wrecks: [], caves: [], polar: undefined, farScenery: undefined, space: undefined, catalog: undefined };
 const INTRO_DAY = 0.38;
+
+/** How much of the scene still shows in the darkest water while playing as an animal. */
+const SHARK_MIN_LIGHT = 0.33;
+/** The same floor once night vision has fully kicked in, so the outlines do more of the work. */
+const SHARK_DEEP_LIGHT = 0.2;
+const SHARK_FLAT_HITS = new Array<number>(90).fill(-1);
 
 export function renderScene(g: Game) {
   const { ctx, view, cam, world, t } = g;
@@ -744,8 +751,9 @@ export function renderScene(g: Game) {
     const sin = Math.sin(s.tilt);
     const dockX = g.ship.x + SUB_DOCK_OFFSET * g.ship.facing;
     const anchor = anchorFor(g.save.skin, g.subPose, docked);
-    const subX = s.x + s.facing * (anchor.x * cos - anchor.y * sin);
-    const subHookY = s.y + anchor.x * sin + anchor.y * cos;
+    const tanked = g.save.skin === 'hammerhead' && !docked;
+    const subX = tanked ? g.dockedX() : s.x + s.facing * (anchor.x * cos - anchor.y * sin);
+    const subHookY = tanked ? g.hoistedY() + anchor.y : s.y + anchor.x * sin + anchor.y * cos;
     const spotX = dockX + g.ship.facing * anchor.x;
     const spotY = -2 + bob + anchor.y;
     const grip = docked ? 1 : g.hookGrip;
@@ -871,6 +879,14 @@ export function renderScene(g: Game) {
     }
   }
 
+  const tanked = !intro && g.mode === 'diving' && g.save.skin === 'hammerhead';
+  const tankAt = tanked ? { x: g.dockedX(), y: g.hoistedY() } : null;
+  if (tankAt) {
+    ctx.save();
+    ctx.translate(tankAt.x, tankAt.y);
+    drawSharkTankBack(ctx, t);
+    ctx.restore();
+  }
   const blink = s.invuln > 0 && Math.floor(t * 12) % 2 === 0;
   const im = g.implode;
   const crush = im ? Math.min(1, im.t / IMPLODE_COLLAPSE) : 0;
@@ -885,7 +901,7 @@ export function renderScene(g: Game) {
     crumple(ctx);
     if (blink) ctx.globalAlpha = 0.4;
     if (g.swallow) ctx.globalAlpha *= 1 - clamp((g.swallow.t - SWALLOW_CLOSE + 0.6) / 0.5, 0, 1);
-    if (!im) { const k = g.save.skin === 'ulysses' ? ULYSSES_SCALE : 1; const w = propWake(g.up.propeller, g.up.cargo, g.save.skin); const sp = Math.hypot(s.vx, s.vy);
+    if (!im && g.mode !== 'docked') { const k = g.save.skin === 'ulysses' ? ULYSSES_SCALE : 1; const w = propWake(g.up.propeller, g.up.cargo, g.save.skin); const sp = Math.hypot(s.vx, s.vy);
       const kv = clamp(sp / 80, 0, 1);
       const fx = -s.vx * s.facing;
       const dx = fx * Math.cos(s.tilt) + -s.vy * Math.sin(s.tilt);
@@ -893,8 +909,14 @@ export function renderScene(g: Game) {
       const turn = Math.atan2(kv * (dy / (sp || 1)), -(1 - kv) + kv * (dx / (sp || 1)));
       drawBoostSwirl(ctx, t, g.subSwirl, w.x * k, w.h, k, 0, turn - Math.PI, (kv * s.vy) / (sp || 1));
     }
-    drawSub(ctx, g.up, t, s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, rack: g.gear.candles > 0, scrubbers: g.gear.scrubbers, electrolysis: g.gear.electrolysis, radio: g.gear.radio }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut);
+    drawSub(ctx, g.up, t, g.isShark ? g.sharkPhase : s.prop, g.warning, g.weightsOn, crush, { candles: g.candlesLeft, rack: g.gear.candles > 0, scrubbers: g.gear.scrubbers, electrolysis: g.gear.electrolysis, radio: g.gear.radio }, s.facing, g.save.skin, g.subPose, g.mode === 'docked', g.boomOut, g.hatch);
     if (g.crack !== null) drawGlassCracks(ctx, Math.min(1, g.crack / CRACK_TIME), g.save.skin);
+    ctx.restore();
+  }
+  if (tankAt) {
+    ctx.save();
+    ctx.translate(tankAt.x, tankAt.y);
+    drawSharkTankFront(ctx, g.hatch);
     ctx.restore();
   }
   if (g.radioFx >= 0 && !im) {
@@ -1035,7 +1057,7 @@ export function renderScene(g: Game) {
   const startPx = def.darkness[0] * PX_PER_M;
   const lights: Light[] = [];
   const diving = g.mode === 'diving';
-  const spot = STATS.light[g.up.light];
+  const spot = g.isShark ? undefined : STATS.light[g.up.light];
   let lamp: { x: number; y: number; angle: number } | null = null;
   const boomLamps: { x: number; y: number; angle: number; power?: number }[] = [];
   let rearBeam: { x: number; y: number; angle: number; range: number; spread: number } | null = null;
@@ -1123,7 +1145,7 @@ export function renderScene(g: Game) {
         a: 0.6 * cockpitPower * alive,
         sub: true,
       });
-    } else if (g.save.skin !== 'oceangate') {
+    } else if (g.save.skin !== 'oceangate' && g.save.skin !== 'hammerhead') {
       const cos = Math.cos(s.tilt);
       const sin = Math.sin(s.tilt);
       const eye = g.save.skin === 'ulysses' ? ULYSSES_DOME : COCKPIT;
@@ -1207,7 +1229,7 @@ export function renderScene(g: Game) {
     for (const kind of g.inSight) g.noteSeen(kind);
   }
   if (bottom > lerp(startPx, 0, night) && !g.debugFast) {
-    g.lighting.render(ctx, { k, ox, oy, left, top, w: W, h: H }, startPx, deepPx, lights, night, space ? '22,2,5' : '3,7,24');
+    g.lighting.render(ctx, { k, ox, oy, left, top, w: W, h: H }, startPx, deepPx, lights, night, space ? '22,2,5' : '3,7,24', g.isShark ? 1 - lerp(SHARK_MIN_LIGHT, SHARK_DEEP_LIGHT, g.sharkVision) : 1);
   }
   if (lamp && spot) {
     ctx.save();
@@ -1268,7 +1290,7 @@ export function renderScene(g: Game) {
     crumple(ctx);
     ctx.save();
     crumplePiece(ctx, 'hull', crush);
-    if (g.save.skin !== 'oceangate' && g.save.skin !== 'sm13' && g.save.skin !== 'ulysses' && g.save.skin !== 'challenger') runningLights(ctx, t, g.warning, sternStretch(g.up.cargo), g.save.skin === 'standard');
+    if (g.save.skin !== 'oceangate' && g.save.skin !== 'sm13' && g.save.skin !== 'ulysses' && g.save.skin !== 'challenger' && g.save.skin !== 'hammerhead') runningLights(ctx, t, g.warning, sternStretch(g.up.cargo), g.save.skin === 'standard');
     if (g.save.skin === 'ulysses') drawUlyssesLamps(ctx, g.lampLevel);
     ctx.restore();
     if (g.save.skin === 'standard' || g.save.skin === 'capsule') {
@@ -1325,11 +1347,29 @@ export function renderScene(g: Game) {
     ctx.arc((g.sonarPings.at(-1) ?? s).x, (g.sonarPings.at(-1) ?? s).y, g.sonar.ring, 0, Math.PI * 2);
     ctx.stroke();
   }
-  if (diving && g.sonarDark > 0.15) {
+  if (diving && g.sharkVision > 0) {
+    const vision = g.sharkVision;
+    const tf = { k, ox, oy, left, top, w: W, h: H };
+    const here = { x: s.x, y: s.y };
+    g.sonarOutline.render(ctx, tf, world, here, SHARK_FLAT_HITS, SHARK_SONAR_RANGE, SHARK_SONAR_RANGE, SHARK_SONAR_RANGE, vision * 0.9, lights);
+    const near = (x: number, y: number, extra: number) => Math.hypot(x - s.x, y - s.y) < SHARK_SONAR_RANGE + extra && Math.abs(x - g.cam.x) < W / 2 + extra && Math.abs(y - g.cam.y) < H / 2 + extra;
+    g.fishVision.render(ctx, tf, (c) => {
+      for (const cr of world.creatures) if (cr.state !== 'dead' && near(cr.x, cr.y, 600)) drawCreature(c, cr);
+      if (!im || crush < 1) {
+        c.save();
+        c.translate(s.x, subY);
+        c.scale(s.facing, 1);
+        c.rotate(s.tilt);
+        drawSub(c, g.up, t, g.isShark ? g.sharkPhase : s.prop, false, false, crush, undefined, s.facing, g.save.skin, 0, false, 0, 0);
+        c.restore();
+      }
+    }, vision, '120,255,210', lights);
+  }
+  if (diving && !g.isShark && g.sonarDark > 0.15) {
     for (const ping of g.sonarPings) {
       const speed = ping.range * SONAR_RING_SPEED;
-      const front = Math.max(1, (g.t - ping.start) * speed);
-      g.sonarOutline.render(ctx, { k, ox, oy, left, top, w: W, h: H }, world, ping, ping.hits, front, ping.range, speed * ping.linger, g.sonarDark * 0.9, lights);
+      const front = g.isShark ? ping.range : Math.max(1, (g.t - ping.start) * speed);
+      g.sonarOutline.render(ctx, { k, ox, oy, left, top, w: W, h: H }, world, ping, ping.hits, front, ping.range, g.isShark ? ping.range : speed * ping.linger, g.sonarDark * 0.9, lights);
     }
   }
   for (const b of g.blips) {

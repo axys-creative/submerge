@@ -861,10 +861,10 @@ export class World {
       lay(x, (v) => floorBelow(v, g - 30));
       placed++;
     }
-    const WOOD: Record<string, [number, number, number]> = { sloop: [3, -212, 212], galleon: [5, -420, 420], containers: [4, -330, 300], freighter: [6, 0, 2800] };
+    const WOOD: Record<string, [number, number, number]> = { sloop: [3, -212, 212], galleon: [5, -420, 420], containers: [4, -330, 300], freighter: [6, 0, 2800], titanic: [8, -1300, 1300] };
     for (const w of this.def.wrecks) {
       const [n, from, to] = WOOD[w.kind];
-      const lootX = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 138);
+      const lootX = w.x + (w.kind === 'freighter' ? 1400 : w.kind === 'titanic' ? 0 : w.kind === 'containers' ? 200 : w.kind === 'galleon' ? 340 : 138);
       for (let i = 0; i < n; i++) {
         let x = w.x + rand(r, from, to);
         for (let tries = 0; tries < 30 && Math.abs(x - lootX) < 100; tries++) x = w.x + rand(r, from, to);
@@ -951,6 +951,7 @@ export class World {
   }
 
   private dropTrash(it: ItemInst, floor: number, r: () => number) {
+    if (it.kind === 'bottle' && floor / PX_PER_M > ITEMS.bottle.maxDepth) it.kind = 'boot';
     const rest = restY(it.kind, floor);
     if (it.kind === 'sack') {
       const lo = 60;

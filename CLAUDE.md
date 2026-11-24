@@ -17,6 +17,8 @@ Each upgrade has `stock` slots in `src/data/upgrades.ts`, one per purchasable le
 | 5 Abyssal Plains | Palm Atoll | Battery, Sonar, Electrolysis Unit |
 | 5 Abyssal Plains | Trench Pier | Plating, Bumpers, dive weights |
 
+Abyssal Plains is 39,600 px wide (the minimap scrolls): a 1500 m mountain with a small peak near the surface under Palm Atoll and the Trench Pocket cave on its east side, a wide flat plain about 3800 m deep with the Titanic wreck (`titanic`, x 20000), then two bumpy trenches in the east (about 4400 m and 4900 m), the portal stone on the floor of the deeper one. The floor is `ABYSSAL_FLOOR` in `src/data/zones.ts`.
+
 Air gear is set by `gear` on the island in `src/data/zones.ts`, and the dive weights by `weights`.
 
 ## Catalog zone
@@ -25,7 +27,7 @@ The last zone, Catalog, is a test zone reached with the zone stepper in the test
 
 ## Creature catalog
 
-The Catalog section of the pause menu holds the Upgrades list and a Creatures list. `BESTIARY` in `src/data/bestiary.ts` is every animal that spawns in a zone's `creatures` (the leviathan is left out), in order of first appearance, so new spawns are tracked automatically. `save.seen` records them. In `renderScene` (`src/render/scene.ts`) an animal counts as seen once it is on screen and either in water still bright from the sun or inside the sub's own lights (the spotlight, not the sonar); `noteSeen` in `src/game/game.ts` toasts and awards Marine Biologist (`'bestiary'` in `save.achievements`, not required for the portal stone) when all are seen. The Catalog test zone never records sightings. Unseen entries show as "?".
+The Catalog section of the pause menu holds the Upgrades list and a Creatures list. `BESTIARY` in `src/data/bestiary.ts` is every animal that spawns in a zone's `creatures` (the leviathan, Moby Dick and the orca calf are left out: Moby Dick is a lone Easter egg in Abyssal Plains), in order of first appearance, so new spawns are tracked automatically. `save.seen` records them. In `renderScene` (`src/render/scene.ts`) an animal counts as seen once it is on screen and either in water still bright from the sun or inside the sub's own lights (the spotlight, not the sonar); `noteSeen` in `src/game/game.ts` toasts and awards Marine Biologist (`'bestiary'` in `save.achievements`, not required for the portal stone) when all are seen. The Catalog test zone never records sightings. Unseen entries show as "?".
 
 ## Design guidelines
 

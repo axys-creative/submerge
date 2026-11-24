@@ -16,6 +16,7 @@ const FILES = {
   clank2: ["sound-clank-2.m4a"],
   depth1: ["sound-depth-1.m4a"],
   depth2: ["sound-depth-2.m4a"],
+  bite: ["sound-bite.m4a"],
   chime1: ["sound-chime-1.m4a"],
   chime2: ["sound-chime-2.m4a"],
   chime3: ["sound-chime-3.m4a"],
@@ -73,10 +74,11 @@ const VOLUME: Record<Sound, number> = {
   clank2: 0.8,
   depth1: 0.7,
   depth2: 0.8,
-  chime1: 0.7,
-  chime2: 0.7,
-  chime3: 0.7,
-  chime4: 0.7,
+  bite: 1.5,
+  chime1: 0.5,
+  chime2: 0.5,
+  chime3: 0.5,
+  chime4: 0.5,
   seagulls: 0.6,
   music: 0.5,
   music2: 0.5,
@@ -195,6 +197,7 @@ export class AudioManager {
   private whaleNearTimer = 0;
   volume = 0.25;
   musicVolume = 0.15;
+  subMusicVolume = 0.15;
   muted = false;
 
   constructor() {
@@ -203,6 +206,7 @@ export class AudioManager {
       if (typeof saved.volume === "number") this.volume = Math.min(1, Math.max(0, saved.volume));
       if (typeof saved.musicVolume === "number")
         this.musicVolume = Math.min(1, Math.max(0, saved.musicVolume));
+      this.subMusicVolume = typeof saved.subMusicVolume === "number" ? Math.min(1, Math.max(0, saved.subMusicVolume)) : this.musicVolume;
       this.muted = saved.muted === true;
     } catch {}
     const wake = () => {
@@ -283,7 +287,7 @@ export class AudioManager {
     clearTimeout(this.zenStop);
     const playing = this.zenPlaying;
     this.zenBus.gain.setTargetAtTime(
-      playing ? this.musicVolume * ZEN_VOLUME : 0,
+      playing ? this.subMusicVolume * ZEN_VOLUME : 0,
       this.ctx.currentTime,
       playing ? 1.2 : 0.4,
     );
@@ -508,6 +512,12 @@ export class AudioManager {
     this.persist();
   }
 
+  setSubMusicVolume(v: number) {
+    this.subMusicVolume = Math.min(1, Math.max(0, v));
+    this.applyMaster();
+    this.persist();
+  }
+
   /** Muffles the music the deeper the sub is: a low-pass sweep plus a fade. */
   musicTick(dt: number, depthM: number) {
     if (!this.musicFilter || !this.musicDepth) return;
@@ -527,7 +537,7 @@ export class AudioManager {
     try {
       localStorage.setItem(
         KEY,
-        JSON.stringify({ volume: this.volume, musicVolume: this.musicVolume, muted: this.muted }),
+        JSON.stringify({ volume: this.volume, musicVolume: this.musicVolume, subMusicVolume: this.subMusicVolume, muted: this.muted }),
       );
     } catch {}
   }
@@ -537,7 +547,7 @@ export class AudioManager {
     if (this.master) this.master.gain.value = this.volume;
     if (this.musicBus)
       this.musicBus.gain.value = this.musicOff || this.zenPlaying ? 0 : this.musicVolume * VOLUME.music;
-    if (this.zenBus) this.zenBus.gain.value = this.zenPlaying ? this.musicVolume * ZEN_VOLUME : 0;
+    if (this.zenBus) this.zenBus.gain.value = this.zenPlaying ? this.subMusicVolume * ZEN_VOLUME : 0;
   }
 
   private voices = new Map<Sound, Set<AudioBufferSourceNode>>();

@@ -15,9 +15,10 @@ import { ULYSSES_REACH, ULYSSES_TAIL, ULYSSES_WEIGHTS } from "../art/ulysses";
 import { weightMounts, WEIGHT_Y, GATE_THRUSTER_BUBBLES, challengerBase, challengerWeights } from "../art/sub";
 import { ITEMS, ITEM_KINDS, REGROW_KINDS, type ItemKind } from "../data/items";
 import { ZONES, type WreckKind } from "../data/zones";
-import { SKINS, CAPSULE_DEATHS, ULYSSES_ZONE, ULYSSES_DIVE_ZOOM, ULYSSES_DEPTH_RATING, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
+import { SKINS, SHARK_DEPTH_RATING, CAPSULE_DEATHS, ULYSSES_ZONE, ULYSSES_DIVE_ZOOM, ULYSSES_DEPTH_RATING, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
 import { CREATURES, CREATURE_EXTENT, ORCA_TILT, creatureRadius, whalePitch, type CreatureKind } from "../data/creatures";
 import { BESTIARY } from "../data/bestiary";
+import { SHARK_REST_Y } from "../art/hammerhead";
 import { leviathanSpine } from "../data/leviathan";
 import { routesFrom, PORTALS, type Portal, type Endpoint, type Side } from "../data/routes";
 import {
@@ -80,6 +81,7 @@ import {
   SPEECH_WRAP_EXTRA,
   PX_PER_M,
   SUB_DOCK_OFFSET,
+  SHARK_SONAR_RANGE,
   DOCK_RANGE,
 HOIST_HEIGHT,
 HOIST_LOWER_TIME,
@@ -94,7 +96,7 @@ HOIST_RELEASE,
 } from "../config";
 import { clamp, damp, money, waveY, wrapBubble } from "../util";
 import { Lighting } from "../render/lighting";
-import { SonarOutline, SonarShape, type ShapeSprite } from "../render/sonarOutline";
+import { FishVision, SonarOutline, SonarShape, type ShapeSprite } from "../render/sonarOutline";
 import { renderScene } from "../render/scene";
 import { UI } from "../ui/ui";
 
@@ -158,7 +160,7 @@ export interface Popup {
   life: number;
 }
 
-const WRECK_SONAR_RADIUS: Record<WreckKind, number> = { sloop: 250, galleon: 450, containers: 400, freighter: 1400 };
+const WRECK_SONAR_RADIUS: Record<WreckKind, number> = { sloop: 250, galleon: 450, containers: 400, freighter: 1400, titanic: 1400 };
 
 export interface Blip {
   x: number;
@@ -233,6 +235,8 @@ const SPOT_NOTES: Partial<Record<CreatureKind, { key: string; text: string; colo
 type WreckReason = CreatureKind | "pressure" | "oxygen";
 
 const SUB_HALF_WIDTH = 66;
+/** How far the hammerhead's body reaches from its center along its length and across its thickness, for bumping into terrain. */
+const SHARK_REACH = { length: 50, thickness: 13.75 };
 const SWING_REST = 3;
 const SWING_MAX = 45;
 const SWING_LENGTH = 115;
@@ -266,6 +270,8 @@ const CLAW_OPEN_TO = 0.8;
 const CLAW_MOUNT = { x: 2, y: 24 };
 /** Seagulls are heard within three island widths (an island is about 500 px across). */
 const GULL_EARSHOT = 1500;
+const CRUISE_OFFER_AFTER = 5;
+const CRUISE_OFFER_LINGER = 5;
 const SINK_START = 5;
 const SINK_RAMP = 60;
 const SINK_MIN_RAMP = 0.55;
@@ -302,9 +308,27 @@ const CHALLENGER_TILT = 0.026;
 /** How far the huge Ulysses leans (radians, about 6 degrees at most) and how quickly it settles into the lean, against 0.35 and 6 for the other skins. */
 const ULYSSES_TILT = 0.1;
 const ULYSSES_TILT_RATE = 1.2;
+/** An animal skin pitches this share of the angle it heads at: straight up or down gives 75 degrees and a 45 degree diagonal about 37, against 20 at most for the subs. */
+const ANIMAL_PITCH = 5 / 6;
 /** How far the upright Challenger skin reaches from its center, in px, matching its drawing. */
 const CHALLENGER_REACH = { half: 60, above: 72, below: 81 };
 const POSE_FALL = 0.8;
+/** How fast the hammerhead tank's floor hatch slides, as fractions of a full slide per second. */
+const HATCH_SPEED = 1 / 0.3;
+/** The hammerhead is docked once its center is this far above the water line of the tank. */
+const SHARK_DOCK_DEPTH = 36;
+/** How often the markers for still things are refreshed for the hammerhead's night vision, in seconds. */
+const SHARK_SCAN_INTERVAL = 0.15;
+/** Depth in meters where the hammerhead's night vision starts, and the meters over which it fades fully in. */
+/** The share of a full battery each kind of prey the hammerhead eats refills, and the charge above which it is too full to eat. */
+const SHARK_PREY_ENERGY: Partial<Record<CreatureKind, number>> = { fish: 0.1, squid: 0.5 };
+const SHARK_FULL = 0.95;
+/** How much faster the hammerhead's tail beats at full boost: 1 is 100% faster, twice the normal speed. */
+/** Seconds after launch before the hammerhead's depth lock switches on, so it dives in naturally first, and then glides to a stop. */
+const SHARK_AUTO_HOLD_DELAY = 1;
+const SHARK_BOOST_TAIL = 1;
+const SHARK_VISION_DEPTH = 1500;
+const SHARK_VISION_FADE = 60;
 
 const WELCOMES = [
   "Welcome back!",
@@ -437,6 +461,7 @@ export class Game {
   blips: Blip[] = [];
   sonarOutline = new SonarOutline();
   sonarShape = new SonarShape();
+  fishVision = new FishVision();
   /** Pings still fading, oldest first: where each started, when, and how far each ray went before hitting rock (-1 for none). */
   sonarPings: {
     x: number;
@@ -448,6 +473,19 @@ export class Game {
     scanned: number;
   }[] = [];
   sonar = { timer: 1, ring: -1 };
+  private sharkScan = 0;
+  /** The hammerhead's tail clock: runs faster while boosting. */
+  sharkPhase = 0;
+
+  /** How strongly the hammerhead's night vision shows, 0 above 1,500 m to 1 a little below. */
+  get sharkVision() {
+    return this.isShark && this.mode === "diving" ? clamp((this.depthM - SHARK_VISION_DEPTH) / SHARK_VISION_FADE, 0, 1) : 0;
+  }
+
+  /** The hammerhead skin has no arm, propeller sound or lights, and sees by a constant sonar outline. */
+  get isShark() {
+    return this.save.skin === "hammerhead";
+  }
   shake = 0;
   implode: { t: number; x: number; y: number } | null = null;
   debris: {
@@ -496,6 +534,8 @@ export class Game {
   private saveTimer = 0;
   /** How upright the Challenger skin stands: 0 lying on the ship, 1 upright in the water. */
   subPose = 0;
+  /** How far the hammerhead tank's floor hatch has slid open, 0 shut (hoisted) to 1 open (in the water). */
+  hatch = 0;
   /** How far the Challenger's boom lights have swung up, 0 to 1, while the sub climbs. */
   boomLift = 0;
   /** How far the Challenger's boom lights have swung out, 0 folded to 1 extended; they follow the lights switching on. */
@@ -506,6 +546,18 @@ export class Game {
   private exploredZone = -1;
   private batteryWarned = false;
   depthHeld = false;
+  /** Cruise control: -1 rising, 1 sinking, 0 off. */
+  cruise: -1 | 0 | 1 = 0;
+  /** The direction offered after holding up or down, 0 when none. */
+  cruiseOffer: -1 | 0 | 1 = 0;
+  private cruiseHeld = 0;
+  private cruiseHeldDir = 0;
+  private cruiseOfferLeft = 0;
+  private cruiseAge = 0;
+  private cruiseStill = 0;
+  private cruiseNeedsRelease = false;
+  /** Set at launch for the hammerhead: the depth lock switches on by itself as soon as it is under the surface. */
+  private autoHold = false;
   private holdY = 0;
   private holdRate = 6;
   private holdSteering = false;
@@ -536,9 +588,9 @@ export class Game {
     this.ui = new UI(this);
   }
 
-  /** The upgrades in effect: everything maxed while the Ulysses is worn, otherwise what was bought. */
+  /** The upgrades in effect: everything maxed while the Ulysses or the hammerhead is worn, otherwise what was bought. */
   get up(): Loadout {
-    if (this.save.skin === "ulysses") return this.maxedUp;
+    if (this.save.skin === "ulysses" || this.isShark) return this.maxedUp;
     const eq = this.save.equipped;
     if (!Object.keys(eq).length) return this.save.upgrades;
     return Object.fromEntries(
@@ -562,15 +614,15 @@ export class Game {
     return this.save.upgrades;
   }
   private readonly maxedUp = Object.fromEntries(UPGRADE_ORDER.map((id) => [id, UPGRADES[id].levels.length - 1])) as Loadout;
-  /** The air gear in effect: all of it while the Ulysses is worn. */
+  /** The air gear in effect: all of it while the Ulysses is worn, and all but the dive weights (it has nowhere to hang them) for the hammerhead. */
   get gear() {
-    const all = this.save.skin === "ulysses";
+    const all = this.save.skin === "ulysses" || this.isShark;
     const off = this.save.gearOff;
     return {
       candles: all ? GEAR.candles.max : Math.max(0, this.save.candles - this.save.candlesOff),
       scrubbers: all || (this.save.scrubbers && !off.scrubbers),
       electrolysis: all || (this.save.electrolysis && !off.electrolysis),
-      weights: all || (this.save.weights && !off.weights),
+      weights: this.isShark ? false : all || (this.save.weights && !off.weights),
       radio: all || (this.save.radio && !off.radio),
     };
   }
@@ -593,16 +645,25 @@ export class Game {
   }
   /** How far the sub's body reaches sideways, up and down from its center, for bumping into terrain; the tall Challenger skin reaches further up and down once it stands. */
   private get subHalf() {
+    if (this.isShark) return this.sharkReach(true);
     if (this.save.skin === "ulysses") return ULYSSES_REACH.half;
     return this.save.skin === "challenger" ? SUB_HALF_WIDTH + (CHALLENGER_REACH.half - SUB_HALF_WIDTH) * this.subPose : SUB_HALF_WIDTH;
   }
   private get subAbove() {
+    if (this.isShark) return this.sharkReach(false);
     if (this.save.skin === "ulysses") return ULYSSES_REACH.above;
     return this.save.skin === "challenger" ? 24 + (CHALLENGER_REACH.above - 24) * this.subPose : 24;
   }
   private get subBelow() {
+    if (this.isShark) return this.sharkReach(false);
     if (this.save.skin === "ulysses") return ULYSSES_REACH.below;
     return this.save.skin === "challenger" ? 26 + (CHALLENGER_REACH.below - 26) * this.subPose : 26;
+  }
+  /** The shark's slim body as a box that turns with its pitch: sideways when it is level, up and down when it points steeply. */
+  private sharkReach(sideways: boolean, tilt = this.sub.tilt) {
+    const c = Math.abs(Math.cos(tilt));
+    const n = Math.abs(Math.sin(tilt));
+    return sideways ? SHARK_REACH.length * c + SHARK_REACH.thickness * n : SHARK_REACH.length * n + SHARK_REACH.thickness * c;
   }
   /** The propeller level that sets speed and boost: the Challenger skin always has the stock one, whatever was bought. */
   get propellerLevel() {
@@ -613,7 +674,7 @@ export class Game {
     return this.up.propeller >= 1;
   }
   get depthRating() {
-    return this.save.skin === "ulysses" ? ULYSSES_DEPTH_RATING : this.save.skin === "challenger" ? CHALLENGER_DEPTH_RATING : STATS.depthRating[this.up.plating];
+    return this.save.skin === "ulysses" ? ULYSSES_DEPTH_RATING : this.isShark ? SHARK_DEPTH_RATING : this.save.skin === "challenger" ? CHALLENGER_DEPTH_RATING : STATS.depthRating[this.up.plating];
   }
   get maxOxygen() {
     return STATS.oxygen[this.up.oxygen];
@@ -767,7 +828,7 @@ export class Game {
     const x = diving ? this.sub.x : this.ship.x;
     const y = diving ? this.sub.y : 0;
     const spot = STATS.light[this.up.light];
-    const lit = spot ? spot.range * this.lampLevel : 0;
+    const lit = this.isShark ? SHARK_SONAR_RANGE : spot ? spot.range * this.lampLevel : 0;
     const [dim, full] = this.world.def.darkness;
     const dark =
       this.debugFast || !diving
@@ -970,6 +1031,7 @@ export class Game {
     this.ui.toast(`New creature: ${CREATURES[kind].name} · ${this.save.seen.length}/${BESTIARY.length} in the catalog`);
     if (this.save.seen.length >= BESTIARY.length && !this.save.achievements.includes("bestiary")) {
       this.save.achievements.push("bestiary");
+      if (this.unlockSkin("hammerhead")) this.ui.toast(`Unlocked: ${SKINS.hammerhead.name} · equip it in Settings`);
       setTimeout(() => this.ui.showAchievement("Achievement unlocked: Marine Biologist", "Every animal spotted and added to the catalog."), 2500);
     }
     this.persist();
@@ -984,6 +1046,58 @@ export class Game {
   }
 
   /** Lets both weights go: they drop away with a burst of bubbles, and the sub shoots upward. */
+  private stopCruise(why: string) {
+    if (!this.cruise) return;
+    this.cruise = 0;
+    this.audio.play("menuTick");
+    this.say(why, "#9AA7C2");
+  }
+
+  private updateCruise(dt: number, a: { x: number; y: number }, airborne: boolean) {
+    const s = this.sub;
+    const dir = Math.abs(a.y) > 0.5 ? Math.sign(a.y) : 0;
+    const blocked = this.world.inCave(s.x) || s.battery <= 0 || this.atSurface || airborne;
+    if (this.cruise) {
+      this.cruiseAge += dt;
+      const manual = Math.abs(a.y) > 0.1;
+      if (!manual) this.cruiseNeedsRelease = false;
+      if (manual && !this.cruiseNeedsRelease) return this.stopCruise("Cruise off");
+      if (s.battery <= 0) return this.stopCruise("Cruise off: battery empty");
+      if (this.world.inCave(s.x)) return this.stopCruise("Cruise off: no cruising in caves");
+      if (this.cruise < 0 && (this.atSurface || airborne)) return this.stopCruise("Cruise off: surfaced");
+      if (this.cruise > 0 && this.depthM > this.depthRating - 30)
+        return this.stopCruise("Cruise off: near depth limit");
+      this.cruiseStill = Math.abs(s.vy) < 6 && this.cruiseAge > 0.6 ? this.cruiseStill + dt : 0;
+      if (this.cruiseStill > 0.5) return this.stopCruise("Cruise off: blocked");
+    }
+    if (this.cruise || blocked) {
+      this.cruiseHeld = 0;
+      this.cruiseOffer = 0;
+    } else {
+      if (dir && dir === this.cruiseHeldDir) this.cruiseHeld += dt;
+      else this.cruiseHeld = 0;
+      this.cruiseHeldDir = dir;
+      if (this.cruiseHeld >= CRUISE_OFFER_AFTER) {
+        this.cruiseOffer = dir as -1 | 1;
+        this.cruiseOfferLeft = CRUISE_OFFER_LINGER;
+      } else if (this.cruiseOffer && !dir && (this.cruiseOfferLeft -= dt) <= 0) this.cruiseOffer = 0;
+      else if (this.cruiseOffer && dir && dir !== this.cruiseOffer) this.cruiseOffer = 0;
+    }
+    if (!this.input.pressed("cruise")) return;
+    if (this.cruise) return this.stopCruise("Cruise off");
+    if (blocked) return;
+    const want = this.cruiseOffer || (Math.abs(s.vy) > 20 ? (Math.sign(s.vy) as -1 | 1) : -1);
+    this.cruise = want;
+    this.cruiseOffer = 0;
+    this.cruiseHeld = 0;
+    this.cruiseAge = 0;
+    this.cruiseStill = 0;
+    this.cruiseNeedsRelease = Math.abs(a.y) > 0.1;
+    this.depthHeld = false;
+    this.audio.play("chime1");
+    this.say(want < 0 ? "Cruising up" : "Cruising down", "#9CF2C4");
+  }
+
   private releaseDepth() {
     this.depthHeld = false;
     this.audio.play("menuTick");
@@ -1042,6 +1156,11 @@ export class Game {
     this.boomLift += (climb - this.boomLift) * damp(5, dt);
     const out = this.mode === "diving" && this.lampOn && this.up.light > 0 ? 1 : 0;
     this.boomOut += clamp(out - this.boomOut, -BOOM_SPEED * dt, BOOM_SPEED * dt);
+    const shark = this.save.skin === "hammerhead";
+    this.sharkPhase += dt * (1 + SHARK_BOOST_TAIL * this.subBoost);
+    const hatchTo = shark && this.mode === "diving" ? 1 : 0;
+    this.hatch += clamp(hatchTo - this.hatch, -HATCH_SPEED * dt, HATCH_SPEED * dt);
+    if (shark && this.mode === "diving") this.hoist = Math.max(0, this.hoist - dt / HOIST_LOWER_TIME);
     if (this.mode === "docked") {
       this.subPose = 0;
       return;
@@ -1154,7 +1273,7 @@ export class Game {
     const wantDark = this.world.def.space || daylight(this.day).night > 0.5 || deep;
     this.uiDark += ((wantDark ? 1 : 0) - this.uiDark) * damp(2.5, dt);
     this.audio.setPropeller(
-      this.driving || this.depthHeld,
+      !this.isShark && (this.driving || this.depthHeld),
       this.driving ? 1 + BOOST_ENGINE_VOLUME * this.subBoost : HOLD_MOTOR_VOLUME,
       1 + BOOST_ENGINE_PITCH * this.subBoost,
     );
@@ -1365,13 +1484,17 @@ export class Game {
     }
     const s = this.sub;
     s.x = x;
-    s.y = this.hoistedY();
+    s.y = this.hoistedY() + (this.save.skin === "hammerhead" ? SHARK_REST_Y : 0);
     s.vy = 150;
     s.vx = this.ship.vx * 0.5;
     if (this.save.skin === "challenger") s.facing = this.ship.facing > 0 ? -1 : 1;
     this.ship.vx = 0;
     this.batteryWarned = false;
     this.depthHeld = false;
+    this.cruise = 0;
+    this.cruiseOffer = 0;
+    this.cruiseHeld = 0;
+    this.autoHold = this.isShark;
     this.holdHinted = false;
     this.sonar = { timer: 0.6, ring: -1 };
     this.sonarPings = [];
@@ -1477,7 +1600,7 @@ export class Game {
     const s = this.sub;
     return (
       s.diveTime > 1.5 &&
-      s.y < 50 &&
+      s.y < (this.save.skin === "hammerhead" ? SHARK_DOCK_DEPTH : 50) &&
       Math.abs(s.x - (this.ship.x + SUB_DOCK_OFFSET * this.ship.facing)) < DOCK_RANGE
     );
   }
@@ -1576,6 +1699,8 @@ export class Game {
       this.unlockNote = null;
     }
     const a = inp.axis();
+    this.updateCruise(dt, a, s.y < SURFACE_Y);
+    if (this.cruise) a.y = this.cruise;
     const moving = Math.hypot(a.x, a.y) > 0.1;
     const cranks = inp.takeCranks();
     const boosting = inp.isDown("boost") && this.canBoost && s.battery > 0 && moving;
@@ -1599,6 +1724,17 @@ export class Game {
       const next = modes[(modes.indexOf(this.save[key]) + 1) % modes.length];
       this.setSwitch(key, next);
       this.audio.play("menuTick");
+    }
+    if (this.autoHold) {
+      if (inp.pressed("hold")) this.autoHold = false;
+      else if (!this.depthHeld && !this.atSurface && !airborne && s.battery > 0 && s.diveTime > SHARK_AUTO_HOLD_DELAY) {
+        this.autoHold = false;
+        this.depthHeld = true;
+        this.holdY = s.y;
+        this.holdRate = 6;
+        this.holdSteering = true;
+        this.say("Depth locked", "#9CF2C4");
+      }
     }
     if (this.depthHeld && (s.battery <= 0 || s.y < SURFACE_Y)) this.releaseDepth();
     else if (inp.pressed("hold")) {
@@ -1629,7 +1765,6 @@ export class Game {
       const m = Math.hypot(dx, dy) || 1;
       s.vx += (dx / m) * 75 * cranks;
       s.vy += ((airborne ? Math.max(0, dy) : dy) / m) * 75 * cranks;
-      this.emitPropBubbles(2, 6);
     }
 
     if (this.weightsOn) s.vy += WEIGHTS.pull * dt;
@@ -1753,8 +1888,11 @@ export class Game {
     const lean =
       this.save.skin === "challenger"
         ? clamp(s.vy / 240, -1, 1) * CHALLENGER_TILT + clamp((s.vx * s.facing) / 400, -1, 1) * CHALLENGER_TILT
-        : clamp(s.vy / 240, -1, 1) * (this.save.skin === "ulysses" ? ULYSSES_TILT : 0.35);
-    s.tilt += (lean - s.tilt) * damp(this.save.skin === "ulysses" ? ULYSSES_TILT_RATE : 6, dt);
+        : this.isShark
+          ? this.animalLean(a)
+          : clamp(s.vy / 240, -1, 1) * (this.save.skin === "ulysses" ? ULYSSES_TILT : 0.35);
+    const tilt = s.tilt + (lean - s.tilt) * damp(this.save.skin === "ulysses" ? ULYSSES_TILT_RATE : 6, dt);
+    if (!this.isShark || this.debugFast || !this.world.inCave(s.x) || !this.world.caveHit(s.x, s.y, this.sharkReach(true, tilt), this.sharkReach(false, tilt), this.sharkReach(false, tilt))) s.tilt = tilt;
     const spin =
       moving && s.battery > 0 ? 0.6 + sp * 0.012 : this.depthHeld ? 0.08 : cranks ? 0.4 : 0;
     s.prop += spin * dt * 10;
@@ -1854,7 +1992,7 @@ export class Game {
       batteryFrac,
       0.5,
       this.halfBattery,
-      "Battery is at 50%!",
+      this.isShark ? "Energy is at 50%! Eat a fish to recharge" : "Battery is at 50%!",
       "#D9A21E",
     );
     this.lowAir = this.sayAtLevel(
@@ -1879,6 +2017,7 @@ export class Game {
     }
 
     s.invuln = Math.max(0, s.invuln - dt);
+    if (this.isShark && !this.world.def.catalog) this.eatFish();
     for (const c of this.world.creatures) {
       if (this.debugFast || this.world.def.catalog || c.state === "dead") continue;
       if (this.save.skin === "ulysses") continue;
@@ -1909,7 +2048,7 @@ export class Game {
       }
     }
 
-    if (this.claw.t < 0 && this.input.pressed("dive")) {
+    if (!this.isShark && this.claw.t < 0 && this.input.pressed("dive")) {
       if (s.battery > 0) this.fireClaw(a);
       else this.denyClaw();
     }
@@ -1990,6 +2129,7 @@ export class Game {
 
   /** Where the claw's mount and tip are in the world, how far its arm is out (0 to 1) and how open its jaws are (1 open, 0 shut). Idle, only the mount shows. */
   clawState() {
+    if (this.isShark) return null;
     const c = this.claw;
     const s = this.sub;
     const cos = Math.cos(s.tilt);
@@ -2171,6 +2311,7 @@ export class Game {
     const sunk = s.hull <= 0 || !c;
     if (!sunk) s.hull--;
     this.flicker = FLICKER_TIME;
+    if (c) this.stopCruise("Cruise off: hit");
     if (c || !sunk) this.audio.hit();
     s.invuln = 2;
     this.shake = 0.45;
@@ -2611,7 +2752,7 @@ export class Game {
       (this.surfaceDark ? LAMP_ON_DEPTH_NIGHT : openDay ? LAMP_ON_DEPTH_OPEN : LAMP_ON_DEPTH_DAY) -
         (this.lampOn ? SWITCH_SLACK : 0);
     const mode = this.save.lamp;
-    const lampWanted = diving && this.up.light > 0 && (mode === "auto" ? auto : mode === "on");
+    const lampWanted = diving && !this.isShark && this.up.light > 0 && (mode === "auto" ? auto : mode === "on");
     if (lampWanted !== this.lampOn) {
       this.lampOn = lampWanted;
       this.audio.play("lightSwitch");
@@ -2640,7 +2781,7 @@ export class Game {
     const sonarAuto = depth > sonarDepth - (this.sonarOnline ? SWITCH_SLACK : 0);
     const sonarMode = this.save.sonar;
     const online =
-      diving && this.up.sonar > 0 && (sonarMode === "auto" ? sonarAuto : sonarMode === "on");
+      diving && !this.isShark && this.up.sonar > 0 && (sonarMode === "auto" ? sonarAuto : sonarMode === "on");
     if (online && !this.sonarOnline) {
       this.sonar.timer = Math.min(this.sonar.timer, 0.6);
       this.say("Sonar activated!", "#4FC98E");
@@ -2651,6 +2792,7 @@ export class Game {
   }
 
   private updateSonar(dt: number) {
+    if (this.isShark) return this.scanAsShark(dt);
     const level = this.up.sonar;
     this.sonarPings = this.sonarPings.filter(
       (p) => this.t - p.start < 1 / SONAR_RING_SPEED + p.linger,
@@ -2688,6 +2830,52 @@ export class Game {
     });
     this.pinged.clear();
     this.audio.play("sonar");
+  }
+
+  /** How far the animal skin leans: by the keys held while steering (so only straight up or down reaches the full pitch), by its drift otherwise, and not at all while it is hardly moving. */
+  private animalLean(a: { x: number; y: number }) {
+    const s = this.sub;
+    const steering = Math.hypot(a.x, a.y) > 0.1;
+    const angle = steering ? Math.atan2(a.y, Math.abs(a.x)) : Math.atan2(s.vy, Math.abs(s.vx));
+    return angle * ANIMAL_PITCH * clamp(Math.hypot(s.vx, s.vy) / 100, 0, 1);
+  }
+
+  /** The hammerhead eats the fish and squid it overlaps, refilling battery, but only while the battery is at 95% or less. */
+  private eatFish() {
+    const s = this.sub;
+    if (s.battery > this.maxBattery * SHARK_FULL) return;
+    const fish = this.world.creatures;
+    for (let i = fish.length - 1; i >= 0; i--) {
+      const c = fish[i];
+      const energy = SHARK_PREY_ENERGY[c.kind];
+      if (!energy || c.state === "dead") continue;
+      if (!this.creatureCircles(c).some(([x, y, r]) => (x - s.x) ** 2 + (y - s.y) ** 2 < (r + SUB_RADIUS) ** 2)) continue;
+      fish.splice(i, 1);
+      s.battery = Math.min(this.maxBattery, s.battery + this.maxBattery * energy);
+      this.audio.play("bite");
+      this.audio.play("chime1");
+      if (s.battery > this.maxBattery * SHARK_FULL) return;
+    }
+  }
+
+  /** Night vision draws rock and animals live in the scene; this only refreshes the markers for still things like wrecks and bones. */
+  private scanAsShark(dt: number) {
+    this.sonar.ring = -1;
+    this.sonarPings = [];
+    if (this.sharkVision <= 0) {
+      this.blips = [];
+      return;
+    }
+    if ((this.sharkScan -= dt) > 0) return;
+    this.sharkScan = SHARK_SCAN_INTERVAL;
+    this.sonarPings = [
+      { x: this.sub.x, y: this.sub.y, start: this.t, range: SHARK_SONAR_RANGE, linger: 1.2, hits: [], scanned: 0 },
+    ];
+    this.blips = [];
+    this.pinged.clear();
+    this.sonar.ring = SHARK_SONAR_RANGE;
+    this.markSonarContacts();
+    this.sonar.ring = -1;
   }
 
   /** How dark the water is at the sub's depth, 0 near the surface to 1 well into the dark. */
@@ -2734,7 +2922,7 @@ export class Game {
     const reach = this.sonar.ring;
     const hit = (x: number, y: number, radius: number) =>
       Math.hypot(x - ping.x, y - ping.y) - radius <= reach;
-    for (const c of this.world.creatures) {
+    for (const c of this.isShark ? [] : this.world.creatures) {
       const harmful = CREATURES[c.kind].harmful;
       if (c.state === "dead" || this.pinged.has(c) || (!harmful && this.up.sonar < 3)) continue;
       if (hit(c.x, c.y, creatureRadius(c))) {
@@ -2959,7 +3147,7 @@ export class Game {
       const ready = this.inDockPosition();
       const down = ready || this.sub.y < (this.reelDir > 0 ? HOOK_DROP_DEPTH : HOOK_RETRACT_DEPTH) * PX_PER_M;
       const dir = down ? -1 : 1;
-      if (dir !== this.reelDir) {
+      if (dir !== this.reelDir && this.save.skin !== "hammerhead") {
         this.reelDir = dir;
         if ((dir < 0 ? this.reel > 0 : this.reel < 1) && this.t - this.reelSoundAt > 0.5) {
           this.reelSoundAt = this.t;
@@ -2973,6 +3161,11 @@ export class Game {
       if (ready) this.hookGrip += (1 - this.hookGrip) * damp(8, dt);
       else if (down) this.hookGrip += (0 - this.hookGrip) * damp(8, dt);
       else if (this.reel >= 1) this.hookGrip = 0;
+      if (this.save.skin === "hammerhead") {
+        this.reel = 0;
+        this.reelDir = 0;
+        this.hookGrip = 1;
+      }
     } else {
       this.reelDir = 0;
       this.reel += (0 - this.reel) * damp(7, dt);
@@ -3115,7 +3308,7 @@ export class Game {
   }
 
   /** Where the hanging sub is, including how far it has swung back from the ship. */
-  private dockedX() {
+  dockedX() {
     return this.ship.x + this.ship.facing * (SUB_DOCK_OFFSET - (this.swing.gap - SWING_REST));
   }
 
@@ -3126,7 +3319,7 @@ export class Game {
     );
   }
 
-  private hoistedY() {
+  hoistedY() {
     const h = this.hoist;
     return -2 + this.shipBob - HOIST_HEIGHT * h * h * (3 - 2 * h);
   }

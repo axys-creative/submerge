@@ -66,6 +66,7 @@ const WRECKS = [
   { kind: 'galleon', gap: 1300 },
   { kind: 'containers', gap: 1000 },
   { kind: 'freighter', gap: 3200 },
+  { kind: 'titanic', gap: 3000 },
 ] as const;
 /** One column per species group, left to right; the kinds in a column stack top to bottom. */
 const CREATURE_COLUMNS: CreatureKind[][] = [

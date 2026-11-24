@@ -535,6 +535,24 @@ kbd.tap-b {
   font-size: 13px;
 }
 
+.cruise-pill {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 68px);
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(24, 120, 90, 0.92);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(10, 18, 50, 0.35);
+}
+
 .toast {
   position: absolute;
   left: 50%;
@@ -937,7 +955,7 @@ textarea:focus {
 }
 
 .splash-overlay {
-  background: radial-gradient(ellipse at 50% 100%, #14407a, #060d24 70%);
+  background: radial-gradient(ellipse 90% 80% at 50% 0%, #1f6aa8, #14407a 25%, #060d24 75%);
   overflow: hidden;
   transition: opacity 1s ease 0.1s;
 }
@@ -1581,6 +1599,14 @@ textarea:focus {
 .debug-upgrades:hover {
   transform: none;
   transition-delay: 0s;
+}
+
+#ui > .debug-upgrades {
+  transition: transform 0.25s ease 0.25s, opacity 0.6s ease;
+}
+
+#ui > .debug-upgrades:hover {
+  transition-delay: 0s, 0s;
 }
 
 .debug-upgrades::before {
@@ -2268,7 +2294,8 @@ body:not(.is-touch) #ui .depth-meter {
 }
 
 #ui.ui-dark .card.menu .skin-row,
-#ui.ui-dark .card.menu .bestiary li {
+#ui.ui-dark .card.menu .bestiary li,
+#ui.ui-dark .card.menu .chips li {
   background: #16224a;
 }
 
@@ -2567,9 +2594,17 @@ body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
   background: var(--sun-dark);
 }
 
-.inv-total {
-  margin-top: 12px;
-  text-align: right;
+.card .inv-total {
+  margin-top: 32px;
+  text-align: left;
+}
+
+.card.inventory {
+  padding-bottom: 32px;
+}
+
+.card.inventory .card-head {
+  margin-bottom: 12px;
 }
 
 .trash {
@@ -3110,6 +3145,7 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
   display: flow-root;
   margin-inline: -4px;
   padding-inline: 4px;
+  padding-bottom: 8px;
   transition: block-size 0.5s ease, content-visibility 0.5s allow-discrete;
 }
 

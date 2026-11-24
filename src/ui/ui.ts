@@ -154,6 +154,7 @@ export class UI {
         </div>
       </div>
       <div class="prompt" id="prompt" hidden></div>
+      <button class="cruise-pill" id="cruise-pill" type="button" hidden></button>
       <div class="ctl-hint" id="ctl-hint" hidden><div class="ctl-panel"><div class="ctl-msg" id="ctl-msg"></div><div class="ctl-rows" id="ctl-body"></div></div><button class="ctl-btn" type="button" aria-label="Controls">${infoIcon}</button></div>
       <div class="toast" id="toast" hidden></div>
       <div class="touch" id="touch" hidden>
@@ -162,6 +163,7 @@ export class UI {
         <div class="touch-buttons">
           <button class="round-btn crank" data-act="crankJ" hidden>U</button>
           <button class="round-btn crank" data-act="crankK" hidden>I</button>
+          <button class="round-btn secondary" id="btn-cruise" data-act="cruise" hidden></button>
           <button class="round-btn secondary" id="btn-drop" data-act="drop" hidden>Drop</button>
           <button class="round-btn secondary" id="btn-radio" data-act="radio" hidden>Radio</button>
           <button class="round-btn secondary" id="btn-spot" data-act="action" hidden>Shop</button>
@@ -266,6 +268,7 @@ export class UI {
     }, true);
     $(this.root, "#purse").addEventListener("click", () => this.openInventory());
     $(this.root, "#dm-depth").addEventListener("click", () => this.game.input.tap("hold"));
+    $(this.root, "#cruise-pill").addEventListener("click", () => this.game.input.tap("cruise"));
     this.root
       .querySelectorAll<HTMLElement>(".seg")
       .forEach((seg) => new ResizeObserver(() => this.placeThumb(seg)).observe(seg));
@@ -552,13 +555,13 @@ export class UI {
     );
     this.meter("air", s.oxygen / g.maxOxygen);
     this.meter("batt", s.battery / g.maxBattery);
-    this.set("switches", `${g.up.light}|${g.up.sonar}|${g.save.lamp}|${g.save.sonar}`, () => {
+    this.set("switches", `${g.up.light}|${g.up.sonar}|${g.save.lamp}|${g.save.sonar}|${g.isShark}`, () => {
       for (const [key, owned] of [
         ["lamp", g.up.light],
         ["sonar", g.up.sonar],
       ] as const) {
         const seg = $(this.root, `#${key}-seg`);
-        seg.hidden = owned < 1;
+        seg.hidden = owned < 1 || g.isShark;
         seg
           .querySelectorAll<HTMLButtonElement>("[data-mode]")
           .forEach((b) => b.classList.toggle("on", b.dataset.mode === g.save[key]));
@@ -583,6 +586,17 @@ export class UI {
       if (!trash) return;
       el.textContent = `Trash Gathered: ${trash.got}/${trash.total}${trash.earned && trash.got >= trash.total ? " ✓" : ""}`;
       el.classList.toggle("done", trash.got >= trash.total);
+    });
+
+    const cruiseDir = g.cruise || (diving ? g.cruiseOffer : 0);
+    const cruiseLabel = cruiseDir ? `${g.cruise ? "Cruising" : "Cruise"} ${cruiseDir < 0 ? "↑" : "↓"}` : "";
+    this.set("cruise", `${cruiseLabel}|${g.cruise}|${this.touch}`, () => {
+      const pill = $(this.root, "#cruise-pill");
+      pill.hidden = !cruiseLabel || this.touch;
+      pill.innerHTML = g.cruise ? `${cruiseLabel} · <kbd>C</kbd> to stop` : `${cruiseLabel} · <kbd>C</kbd>`;
+      const b = $(this.root, "#btn-cruise");
+      b.hidden = !cruiseLabel || !this.touch;
+      b.textContent = g.cruise ? "Stop" : cruiseLabel;
     });
 
     const spot = g.dockSpot();
@@ -657,10 +671,11 @@ export class UI {
       ? [
           [k("←", "↑", "↓", "→") + " or " + k("WASD"), "Steer"],
           ...(g.canBoost ? [[k("Shift"), "Boost"] as [string, string]] : []),
+          [k("C"), "Cruise up or down"],
           ...(g.gear.radio ? [[k("R"), "Call the ship"] as [string, string]] : []),
-          ...(g.up.light > 0 ? [[k("L"), "Toggle spotlight"] as [string, string]] : []),
-          ...(g.up.sonar > 0 ? [[k("O"), "Toggle sonar"] as [string, string]] : []),
-          [k("Space"), "Mechanical arm"],
+          ...(g.up.light > 0 && !g.isShark ? [[k("L"), "Toggle spotlight"] as [string, string]] : []),
+          ...(g.up.sonar > 0 && !g.isShark ? [[k("O"), "Toggle sonar"] as [string, string]] : []),
+          ...(g.isShark ? [] : [[k("Space"), "Mechanical arm"] as [string, string]]),
           [k("E") + " or " + k("/"), "Lock depth"],
           ...(g.weightsOn ? [[k("Q") + " or " + k("."), "Drop weights"] as [string, string]] : []),
         ]
@@ -1590,7 +1605,7 @@ export class UI {
     return UPGRADE_ORDER.map((id) => {
       const def = UPGRADES[id];
       const lvl = g.owned[id];
-      const worn = g.save.skin === "ulysses" ? lvl : g.up[id];
+      const worn = g.save.skin === "ulysses" || g.isShark ? lvl : g.up[id];
       const text = (i: number) => `${def.levels[i].name} · ${def.levels[i].effect}`;
       const pips = def.levels
         .map(
@@ -1704,33 +1719,14 @@ export class UI {
           </details>
         </details>
                 <details class="acc">
-          <summary>Achievements</summary>
-          <ul class="ach">${ZONES.map((z, i) => ({ z, i }))
-            .filter(({ z }) => z.trash)
-            .map(({ z, i }) => {
-              const done = g.save.achievements.includes(`trash-${i}`);
-              const here =
-                i === g.save.zone && g.trashStatus
-                  ? ` · ${g.trashStatus.got}/${g.trashStatus.total} now`
-                  : "";
-              return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Squeaky Clean</b><span>${esc(z.name)}: clear every piece of trash${done ? "" : here}</span></li>`;
-            })
-            .join("")}${(() => {
-            const done = g.save.achievements.includes("upgraded");
-            return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Fully Loaded</b><span>Max out every upgrade and own all the gear, including the oxygen candles and dive weights</span></li>`;
-          })()}${(() => {
-            const done = g.save.achievements.includes("bestiary");
-            return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Marine Biologist</b><span>Spot every animal and fill the catalog${done ? "" : ` · ${g.save.seen.length}/${BESTIARY.length}`}</span></li>`;
-          })()}</ul>
-        </details>
-        <details class="acc">
           <summary>Sound</summary>
           <label class="sound-row"><input type="checkbox" id="sound-on" ${g.audio.muted ? "" : "checked"}> Sound on</label>
           <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}" style="--p:${Math.round(g.audio.volume * 100)}%"></label>
-          <label class="sound-row">Music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}" style="--p:${Math.round(g.audio.musicVolume * 100)}%"></label>
+          <label class="sound-row">World music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}" style="--p:${Math.round(g.audio.musicVolume * 100)}%"></label>
+          <label class="sound-row">Submarine music volume <input type="range" id="sub-music-volume" min="0" max="100" value="${Math.round(g.audio.subMusicVolume * 100)}" style="--p:${Math.round(g.audio.subMusicVolume * 100)}%"></label>
         </details>
         <details class="acc" id="catalog-acc">
-          <summary>Catalog</summary>
+          <summary>Game progress</summary>
           <details class="subacc" id="upgrades-acc">
             <summary>Upgrades</summary>
             <p class="muted">Collect treasure on your dives, then sell it at island shops to earn money. Spend it there on upgrades for your sub. Different shops stock different upgrades, so visit more than one.</p>
@@ -1743,29 +1739,52 @@ export class UI {
             <p class="key"><span class="dot ok"></span>Harmless <span class="dot bad"></span>Dangerous</p>
             <ul class="bestiary">${this.bestiaryList()}</ul>
           </details>
-        </details>
-        <details class="acc" id="skins-acc">
-          <summary>Skins</summary>
-          <div class="skin-list" id="skin-list">${this.skinList()}</div>
+          <details class="subacc" id="skins-acc">
+            <summary>Skins</summary>
+            <div class="skin-list" id="skin-list">${this.skinList()}</div>
+          </details>
+          <details class="subacc">
+            <summary>Achievements</summary>
+            <ul class="ach">${ZONES.map((z, i) => ({ z, i }))
+              .filter(({ z }) => z.trash)
+              .map(({ z, i }) => {
+                const done = g.save.achievements.includes(`trash-${i}`);
+                const here =
+                  i === g.save.zone && g.trashStatus
+                    ? ` · ${g.trashStatus.got}/${g.trashStatus.total} now`
+                    : "";
+                return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Squeaky Clean</b><span>${esc(z.name)}: clear every piece of trash${done ? "" : here}</span></li>`;
+              })
+              .join("")}${(() => {
+              const done = g.save.achievements.includes("upgraded");
+              return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Fully Loaded</b><span>Max out every upgrade and own all the gear, including the oxygen candles and dive weights</span></li>`;
+            })()}${(() => {
+              const done = g.save.achievements.includes("bestiary");
+              return `<li class="${done ? "done" : ""}"><b>${done ? "✓" : "○"} Marine Biologist</b><span>Spot every animal and fill the catalog${done ? "" : ` · ${g.save.seen.length}/${BESTIARY.length}`}</span></li>`;
+            })()}</ul>
+          </details>
         </details>
         <details class="acc">
-          <summary>Save code</summary>
-          <p class="muted">Your game saves in this browser automatically. Copy this code to back it up or move it to another device.</p>
-          <textarea id="save-out" readonly rows="3">${exportCode(g.save)}</textarea>
-          <div class="row"><button class="btn small blue" data-act="copy">Copy code</button><span class="muted" id="copy-msg"></span></div>
-        </details>
-        <details class="acc">
-          <summary>Load a save code</summary>
-          <textarea id="save-in" rows="3" placeholder="Paste a code that starts with SUBMERGE1-"></textarea>
-          <div class="row"><button class="btn small blue" data-act="load">Load game</button><span class="error" id="load-msg"></span></div>
-        </details>
-        <details class="acc">
-          <summary>Start over</summary>
-          <div class="row"><button class="btn small ghost" data-act="new">New game</button></div>
-          <div class="confirm" hidden>
-            <p>This erases your saved sub, money and upgrades in this browser.</p>
-            <div class="row"><button class="btn small danger" data-act="erase">Erase and start over</button><button class="btn small ghost" data-act="cancel">Cancel</button></div>
-          </div>
+          <summary>Game status</summary>
+          <details class="subacc">
+            <summary>Save code</summary>
+            <p class="muted">Your game saves in this browser automatically. Copy this code to back it up or move it to another device.</p>
+            <textarea id="save-out" readonly rows="3">${exportCode(g.save)}</textarea>
+            <div class="row"><button class="btn small blue" data-act="copy">Copy code</button><span class="muted" id="copy-msg"></span></div>
+          </details>
+          <details class="subacc">
+            <summary>Load a save code</summary>
+            <textarea id="save-in" rows="3" placeholder="Paste a code that starts with SUBMERGE1-"></textarea>
+            <div class="row"><button class="btn small blue" data-act="load">Load game</button><span class="error" id="load-msg"></span></div>
+          </details>
+          <details class="subacc">
+            <summary>Start over</summary>
+            <div class="row"><button class="btn small ghost" data-act="new">New game</button></div>
+            <div class="confirm" hidden>
+              <p>This erases your saved sub, money and upgrades in this browser.</p>
+              <div class="row"><button class="btn small danger" data-act="erase">Erase and start over</button><button class="btn small ghost" data-act="cancel">Cancel</button></div>
+            </div>
+          </details>
         </details>
         <details class="acc">
           <summary>Credits</summary>
@@ -1784,8 +1803,7 @@ export class UI {
     this.modal.querySelectorAll<HTMLCanvasElement>("canvas[data-kind]").forEach((c) => this.drawCreatureThumb(c));
     this.modal.querySelectorAll<HTMLDetailsElement>("details.acc, details.subacc").forEach((d) =>
       d.addEventListener("toggle", () => {
-        if (d.open && d.classList.contains("acc")) for (const o of [skinsAcc, catalogAcc]) if (o !== d) o.open = false;
-        const preview = skinsAcc.open || (catalogAcc.open && upgradesAcc.open);
+                const preview = catalogAcc.open && (skinsAcc.open || upgradesAcc.open);
         this.modal.classList.toggle("skins-open", preview);
         this.game.skinPreview = preview;
       }),
@@ -1809,6 +1827,7 @@ export class UI {
       if (el.type === "range") el.style.setProperty("--p", `${el.value}%`);
       if (el.id === "volume") g.audio.setVolume(Number(el.value) / 100);
       if (el.id === "music-volume") g.audio.setMusicVolume(Number(el.value) / 100);
+      if (el.id === "sub-music-volume") g.audio.setSubMusicVolume(Number(el.value) / 100);
       if (el.id === "sound-on") g.audio.setMuted(!el.checked);
     };
     this.modal.onclick = async (e) => {

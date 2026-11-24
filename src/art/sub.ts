@@ -1,6 +1,7 @@
 import type { Loadout } from '../data/upgrades';
 import type { SkinId } from '../data/skins';
 import { rrect } from '../util';
+import { drawCameraShark, drawSharkTankBack, drawSharkTankFront, SHARK_EYE, SHARK_LAMP, SHARK_REST_Y, SHARK_SIZE, TANK_HOOK } from './hammerhead';
 import { drawLostSubSkin, LOST_PORTHOLE } from './lostSub';
 import { drawChallenger, challengerPoint, challengerLamp, challengerViewport, challengerWeights, challengerBoomTips, CHALLENGER_GLASS, CHALLENGER_RIM, CHALLENGER_HOOK, CHALLENGER_BASE } from './challenger';
 import { clipOutUlyssesFront, drawUlysses, ULYSSES_SCALE, ULYSSES_WEIGHTS, ULYSSES_DOME, ULYSSES_HOOK, ULYSSES_LAMP, ULYSSES_REAR_LAMP } from './ulysses';
@@ -36,7 +37,7 @@ export const sternStretch = (cargo: number) => STERN_STRETCH[cargo];
 export const LAMP = { x: 30, y: 31 };
 export const REAR_LAMP = { x: -50, y: 26 };
 /** Where the front spotlight sits: the fixed spot, or on the Challenger skin the tip of its upper boom. */
-export const lampFor = (skin: SkinId, pose = 1) => (skin === 'challenger' ? challengerLamp(pose) : skin === 'ulysses' ? ULYSSES_LAMP : LAMP);
+export const lampFor = (skin: SkinId, pose = 1) => (skin === 'challenger' ? challengerLamp(pose) : skin === 'ulysses' ? ULYSSES_LAMP : skin === 'hammerhead' ? SHARK_LAMP : LAMP);
 export { challengerBoomTips, challengerViewport, challengerWeights };
 /** Where the Challenger skin's bubbles rise from: its base, in the sub's local space. */
 export const challengerBase = (pose: number) => challengerPoint(CHALLENGER_BASE.x, CHALLENGER_BASE.y, pose, false);
@@ -64,7 +65,7 @@ export const ANCHOR = { x: -4, y: -51 };
 const ANCHOR_CAPSULE = { x: -4, y: -38 };
 const ANCHOR_GATE = { x: -4, y: -26 };
 const ANCHOR_LOST = { x: -4, y: -27 };
-export const anchorFor = (skin: SkinId, pose = 0, lying = true) => (skin === 'challenger' ? challengerPoint(CHALLENGER_HOOK.x, CHALLENGER_HOOK.y, pose, lying) : skin === 'capsule' ? ANCHOR_CAPSULE : skin === 'oceangate' ? ANCHOR_GATE : skin === 'sm13' ? ANCHOR_LOST : skin === 'ulysses' ? ULYSSES_HOOK : ANCHOR);
+export const anchorFor = (skin: SkinId, pose = 0, lying = true) => (skin === 'challenger' ? challengerPoint(CHALLENGER_HOOK.x, CHALLENGER_HOOK.y, pose, lying) : skin === 'capsule' ? ANCHOR_CAPSULE : skin === 'oceangate' ? ANCHOR_GATE : skin === 'sm13' ? ANCHOR_LOST : skin === 'ulysses' ? ULYSSES_HOOK : skin === 'hammerhead' ? TANK_HOOK : ANCHOR);
 
 /** Draws the sub facing right, centered on the origin, about 140 px long. */
 /** Where the two dive weights hang, as x offsets in the sub's local space. */
@@ -237,7 +238,7 @@ function drawCandles(ctx: CanvasRenderingContext2D, count: number) {
   }
 }
 
-export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, prop: number, alarm = false, weights = false, crush = 0, gear?: AirGear, facing = 1, skin: SkinId = 'standard', pose = 1, lying = false, boom = 1) {
+export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, prop: number, alarm = false, weights = false, crush = 0, gear?: AirGear, facing = 1, skin: SkinId = 'standard', pose = 1, lying = false, boom = 1, hatch = 0) {
   const p = PLATING[up.plating];
   const capsule = skin === 'capsule';
   const gate = skin === 'oceangate';
@@ -260,6 +261,22 @@ export function drawSub(ctx: CanvasRenderingContext2D, up: Loadout, t: number, p
 
   if (skin === 'challenger') {
     part('hull', () => drawChallenger(ctx, pose, lying, boom, weights ? drawWeight : null));
+    ctx.restore();
+    return;
+  }
+  if (skin === 'hammerhead') {
+    part('hull', () => {
+      if (!lying) {
+        drawCameraShark(ctx, prop, alarm);
+        return;
+      }
+      drawSharkTankBack(ctx, t);
+      ctx.save();
+      ctx.translate(0, SHARK_REST_Y + Math.sin(t * 1.3) * 2.5);
+      drawCameraShark(ctx, t);
+      ctx.restore();
+      drawSharkTankFront(ctx, hatch);
+    });
     ctx.restore();
     return;
   }
@@ -903,6 +920,7 @@ export function drawGlassCracks(ctx: CanvasRenderingContext2D, progress: number,
   else if (skin === 'oceangate') ctx.translate(GATE_ORB.x + 3, GATE_ORB.y);
   else if (skin === 'sm13') ctx.translate(LOST_PORTHOLE.x, LOST_PORTHOLE.y);
   else if (skin === 'ulysses') ctx.translate(ULYSSES_DOME.x, ULYSSES_DOME.y);
+  else if (skin === 'hammerhead') ctx.translate(SHARK_EYE.x, SHARK_EYE.y);
   else ctx.translate(CAPSULE_VIEWPORT.x, CAPSULE_VIEWPORT.y);
   const k = standard ? 0.45 : skin === 'ulysses' ? 0.225 * ULYSSES_SCALE : 0.225;
   ctx.scale(k, k);
@@ -934,7 +952,7 @@ export function drawGlassCracks(ctx: CanvasRenderingContext2D, progress: number,
 
 /** Faint glow on the nose glass and side porthole, so an unlit sub still shows in dark water. */
 export function glassGlow(ctx: CanvasRenderingContext2D, amount: number, skin: SkinId = 'standard', pose = 1) {
-  if (amount <= 0) return;
+  if (amount <= 0 || skin === 'hammerhead') return;
   ctx.save();
   ctx.globalAlpha = Math.min(1, amount);
   ctx.fillStyle = '#C6F4FF';
