@@ -1153,20 +1153,22 @@ export class World {
       if (maxY < minY + 10) continue;
       const y = spec.kind === 'stingray' ? this.floorAt(x) - 50 : rand(r, minY, maxY);
       if (this.iceHit(x, y, 300, 160, 160)) continue;
-      const n = spec.kind === 'fish' ? 4 + Math.floor(r() * 4) : 1;
+      const n = spec.group ? Math.floor(rand(r, spec.group[0], spec.group[1] + 1)) : spec.kind === 'fish' ? 4 + Math.floor(r() * 4) : 1;
       const tint = r();
       const facing = r() < 0.5 ? 1 : -1;
       for (let i = 0; i < n; i++) {
+        const spread = spec.group ? 1 : 0;
+        const cy = Math.min(Math.max(y + (spread ? rand(r, -130, 130) : 0), minY), Math.max(minY, this.floorAt(x) - 60));
         this.creatures.push({
           kind: spec.kind,
-          x: x + rand(r, -50, 50),
-          y: y + rand(r, -30, 30),
+          x: x + (spread ? rand(r, -260, 260) : rand(r, -50, 50)),
+          y: spread ? cy : y + rand(r, -30, 30),
           vx: 0,
           vy: 0,
           facing,
           heading: facing,
           angle: -Math.PI / 2,
-          homeY: y,
+          homeY: spread ? cy : y,
           minY,
           maxY: spec.maxDepth * PX_PER_M,
           speed: rand(r, 45, 75),
@@ -1174,7 +1176,7 @@ export class World {
           dying: 0,
           timer: rand(r, 0, 2),
           phase: r() * 10,
-          tint,
+          tint: spread ? r() : tint,
           nextDive: rand(r, 15, 70),
           plan: null,
         });

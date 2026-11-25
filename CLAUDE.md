@@ -17,7 +17,7 @@ Each upgrade has `stock` slots in `src/data/upgrades.ts`, one per purchasable le
 | 5 Abyssal Plains | Palm Atoll | Battery, Sonar, Electrolysis Unit |
 | 5 Abyssal Plains | Trench Pier | Plating, Bumpers, dive weights |
 
-Abyssal Plains is 39,600 px wide (the minimap scrolls): a 1500 m mountain with a small peak near the surface under Palm Atoll and the Trench Pocket cave on its east side, a wide flat plain about 3800 m deep with the Titanic wreck (`titanic`, x 20000), then two bumpy trenches in the east (about 4400 m and 4900 m), the portal stone on the floor of the deeper one. The floor is `ABYSSAL_FLOOR` in `src/data/zones.ts`.
+Abyssal Plains is 39,600 px wide (the minimap scrolls): a 1500 m mountain with a peak about 100 m down under Palm Atoll and a lower one about 180 m down between the two islands and the Trench Pocket cave on its east side, a wide flat plain about 3800 m deep with the Titanic wreck (`titanic`, x 20000), then two bumpy trenches in the east (about 4400 m and 4900 m), the portal stone on the floor of the deeper one. The floor is `ABYSSAL_FLOOR` in `src/data/zones.ts`.
 
 Air gear is set by `gear` on the island in `src/data/zones.ts`, and the dive weights by `weights`.
 

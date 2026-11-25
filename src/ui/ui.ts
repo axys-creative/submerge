@@ -63,6 +63,7 @@ const DIM_KEY = "submerge.ui.v1";
 /** How long the controls pill stays open on its own. */
 const CONTROLS_HINT_MS = 8000;
 const MAP_PIN_KEY = "submerge.map-pinned.v1";
+const ZONE_DIST_KEY = "submerge.zone-distance.v1";
 const MAX_TEST_LEVEL = 3;
 const DEV_KEY = "submerge-dev";
 const devModeOn = () => {
@@ -154,7 +155,6 @@ export class UI {
         </div>
       </div>
       <div class="prompt" id="prompt" hidden></div>
-      <button class="cruise-pill" id="cruise-pill" type="button" hidden></button>
       <div class="ctl-hint" id="ctl-hint" hidden><div class="ctl-panel"><div class="ctl-msg" id="ctl-msg"></div><div class="ctl-rows" id="ctl-body"></div></div><button class="ctl-btn" type="button" aria-label="Controls">${infoIcon}</button></div>
       <div class="toast" id="toast" hidden></div>
       <div class="touch" id="touch" hidden>
@@ -174,13 +174,13 @@ export class UI {
         </div>
       </div>
       <div class="depth-meter away" id="depth-meter">
-        <div class="panel dm-tag" id="dm-current"></div>
+        <div class="dm-prev-wrap" id="dm-prev-wrap"><div class="dm-prev-clip"><div class="panel dm-tag dm-zone" id="dm-prev"></div></div></div>
         <div class="dm-track" id="dm-track">
           <div class="dm-frame"><div class="dm-scale" id="dm-scale">${this.depthMeterBands()}<div class="dm-warn" id="dm-warn"></div><div class="dm-crush" id="dm-crush"></div><div class="dm-limit" id="dm-limit"></div></div></div>
           <div class="dm-labels" id="dm-labels">${this.depthMeterLabels()}</div>
-          <div class="dm-marker"><b class="dm-depth" id="dm-depth">0 m</b><div class="dial-pop" id="pop-hold"><h4>Depth lock</h4><p>Press <kbd>E</kbd> or <kbd>?</kbd>, or click the reading, to hold your depth. It uses battery. Steer up or down to move, and it holds your new depth; press again to release.</p></div><div class="panel dm-tag dm-safe" id="dm-limit-tag"></div></div>
+          <div class="dm-marker"><div class="panel dm-tag dm-here" id="dm-here"></div><b class="dm-depth" id="dm-depth">0 m</b><div class="dial-pop" id="pop-hold"><h4>Depth lock</h4><p>Press <kbd>E</kbd> or <kbd>?</kbd>, or click the reading, to hold your depth. It uses battery. Steer up or down to move, and it holds your new depth; press again to release.</p></div><div class="panel dm-tag dm-safe" id="dm-limit-tag"></div></div>
         </div>
-        <div class="dm-foot"><div class="panel dm-tag" id="dm-next"></div></div>
+        <div class="dm-foot"><div class="panel dm-tag dm-zone" id="dm-next"></div></div>
       </div>
       <canvas class="minimap" id="minimap" width="440" height="220"></canvas>
       <div class="map-hot"></div>
@@ -268,7 +268,16 @@ export class UI {
     }, true);
     $(this.root, "#purse").addEventListener("click", () => this.openInventory());
     $(this.root, "#dm-depth").addEventListener("click", () => this.game.input.tap("hold"));
-    $(this.root, "#cruise-pill").addEventListener("click", () => this.game.input.tap("cruise"));
+    for (const id of ["#dm-prev", "#dm-next"])
+      $(this.root, id).addEventListener("click", (e) => {
+        const tag = e.currentTarget as HTMLElement;
+        tag.classList.remove("pop");
+        void tag.offsetWidth;
+        tag.classList.add("pop");
+        this.game.audio.play("menuTick");
+        this.zoneDistance = !this.zoneDistance;
+        localStorage.setItem(ZONE_DIST_KEY, this.zoneDistance ? "1" : "0");
+      });
     this.root
       .querySelectorAll<HTMLElement>(".seg")
       .forEach((seg) => new ResizeObserver(() => this.placeThumb(seg)).observe(seg));
@@ -450,16 +459,28 @@ export class UI {
       $(this.root, "#dm-depth").classList.toggle("danger", over);
     });
     this.set("dm-zone", String(zone), () => {
-      $(this.root, "#dm-current").textContent = DEPTH_ZONES[zone].name;
+      const here = $(this.root, "#dm-here");
+      here.textContent = DEPTH_ZONES[zone].name;
+      here.classList.remove("swap");
+      void here.offsetWidth;
+      here.classList.add("swap");
     });
     const next = DEPTH_ZONES[zone + 1];
+    const meters = (m: number) => (Math.ceil(m / 10) * 10).toLocaleString();
+    const up = zone > 0 ? DEPTH_ZONES[zone - 1] : null;
+    const exact = this.zoneDistance;
     this.set(
-      "dm-next",
-      next ? `${next.name}|${Math.ceil((next.from - depth) / 10) * 10}` : "last",
+      "dm-edges",
+      `${zone}|${exact}|${next ? meters(next.from - depth) : ""}|${up ? meters(depth - DEPTH_ZONES[zone].from) : ""}`,
       () => {
-        const el = $(this.root, "#dm-next");
-        el.textContent = next
-          ? `${next.name} in ${(Math.ceil((next.from - depth) / 10) * 10).toLocaleString()} m`
+        const prev = $(this.root, "#dm-prev");
+        const wrap = $(this.root, "#dm-prev-wrap");
+        wrap.classList.toggle("open", !!up);
+        if (up) prev.textContent = exact ? `${up.name} ${meters(depth - DEPTH_ZONES[zone].from)} m up` : `${up.name} above`;
+        $(this.root, "#dm-next").textContent = next
+          ? exact
+            ? `${next.name} in ${meters(next.from - depth)} m`
+            : `${next.name} below`
           : DEPTH_ZONES[zone].name;
       },
     );
@@ -467,6 +488,7 @@ export class UI {
 
   // ---- HUD ---------------------------------------------------------------
 
+  private zoneDistance = localStorage.getItem(ZONE_DIST_KEY) !== "0";
   private zenLevels = new Array<number>(ZEN_BARS).fill(0);
   private zenBarEls: HTMLElement[] = [];
 
@@ -591,9 +613,6 @@ export class UI {
     const cruiseDir = g.cruise || (diving ? g.cruiseOffer : 0);
     const cruiseLabel = cruiseDir ? `${g.cruise ? "Cruising" : "Cruise"} ${cruiseDir < 0 ? "↑" : "↓"}` : "";
     this.set("cruise", `${cruiseLabel}|${g.cruise}|${this.touch}`, () => {
-      const pill = $(this.root, "#cruise-pill");
-      pill.hidden = !cruiseLabel || this.touch;
-      pill.innerHTML = g.cruise ? `${cruiseLabel} · <kbd>C</kbd> to stop` : `${cruiseLabel} · <kbd>C</kbd>`;
       const b = $(this.root, "#btn-cruise");
       b.hidden = !cruiseLabel || !this.touch;
       b.textContent = g.cruise ? "Stop" : cruiseLabel;
@@ -722,10 +741,18 @@ export class UI {
         : "Battery empty! Tap <kbd class=\"tap\">U</kbd><kbd class=\"tap tap-b\">I</kbd> back and forth to crank";
     if (g.depthM > g.depthRating) return `Too deep! Rise above ${g.depthRating} m`;
     if (s.oxygen < g.maxOxygen * 0.25) return "Air running low! Head for the surface";
-    if (g.weightsOn && s.diveTime < 7)
-      return this.touch
-        ? "Tap Drop to let go of your weights"
-        : "<kbd>Q</kbd> or <kbd>.</kbd> Drop your weights to rise fast";
+    const cruiseDir = g.cruise || g.cruiseOffer;
+    const cruiseTip =
+      cruiseDir && !this.touch
+        ? `${g.cruise ? `Cruising ${cruiseDir < 0 ? "↑" : "↓"} · <kbd>C</kbd> to stop` : `<kbd>C</kbd> Cruise ${cruiseDir < 0 ? "↑" : "↓"}`}`
+        : "";
+    if (g.weightsOn && (s.diveTime < 7 || g.cruise < 0)) {
+      const drop = this.touch
+        ? "Tap Drop to let go of your weights and rise faster"
+        : "<kbd>Q</kbd> or <kbd>.</kbd> Drop your weights to rise faster";
+      return cruiseTip ? `${cruiseTip} · ${drop}` : drop;
+    }
+    if (cruiseTip) return cruiseTip;
     if (s.diveTime < 4 && g.save.stats.dives <= 2) return "Return to the ship to dock and recharge";
     return "";
   }
@@ -937,8 +964,12 @@ export class UI {
     const total = Math.round(g.maxOxygen * stretch);
     this.set(
       "pop-air",
-      `${air}|${total}|${g.candlesLeft}|${save.candles}|${save.scrubbers}|${save.electrolysis}|${s.battery > 0}|${g.up.oxygen}`,
+      `${air}|${total}|${g.candlesLeft}|${save.candles}|${save.scrubbers}|${save.electrolysis}|${s.battery > 0}|${g.up.oxygen}|${g.isShark}`,
       () => {
+        if (g.isShark) {
+          $(this.root, "#pop-air").innerHTML = "<h4>Oxygen</h4>" + row("Unlimited air, since you're a shark.");
+          return;
+        }
         const lines = [
           `<h4>Oxygen · ${esc(tank.name)}</h4>`,
           row(`<b>${air} s</b> of air left, out of ${total} s.`),
@@ -979,8 +1010,12 @@ export class UI {
     const range = Math.round(s.battery / PX_PER_M);
     this.set(
       "pop-batt",
-      `${Math.round(range / 10)}|${g.maxBattery}|${save.electrolysis}|${save.scrubbers}|${g.up.battery}|${g.up.light}|${g.up.sonar}|${g.depthHeld}|${g.weightsOn}|${g.lampOn}|${g.sonarOnline}`,
+      `${Math.round(range / 10)}|${g.maxBattery}|${save.electrolysis}|${save.scrubbers}|${g.up.battery}|${g.up.light}|${g.up.sonar}|${g.depthHeld}|${g.weightsOn}|${g.lampOn}|${g.sonarOnline}|${g.isShark}`,
       () => {
+        if (g.isShark) {
+          $(this.root, "#pop-batt").innerHTML = "<h4>Energy</h4>" + row("Consume fish to increase your energy.");
+          return;
+        }
         const lines = [
           `<h4>Battery · ${esc(cell.name)}</h4>`,
           row(
@@ -1721,9 +1756,9 @@ export class UI {
                 <details class="acc">
           <summary>Sound</summary>
           <label class="sound-row"><input type="checkbox" id="sound-on" ${g.audio.muted ? "" : "checked"}> Sound on</label>
-          <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}" style="--p:${Math.round(g.audio.volume * 100)}%"></label>
-          <label class="sound-row">World music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}" style="--p:${Math.round(g.audio.musicVolume * 100)}%"></label>
-          <label class="sound-row">Submarine music volume <input type="range" id="sub-music-volume" min="0" max="100" value="${Math.round(g.audio.subMusicVolume * 100)}" style="--p:${Math.round(g.audio.subMusicVolume * 100)}%"></label>
+          <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}" style="--p:${Math.round(g.audio.volume * 100)}%"><span class="range-val">${Math.round(g.audio.volume * 100)}%</span></label>
+          <label class="sound-row">World music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}" style="--p:${Math.round(g.audio.musicVolume * 100)}%"><span class="range-val">${Math.round(g.audio.musicVolume * 100)}%</span></label>
+          <label class="sound-row">Submarine music volume <input type="range" id="sub-music-volume" min="0" max="100" value="${Math.round(g.audio.subMusicVolume * 100)}" style="--p:${Math.round(g.audio.subMusicVolume * 100)}%"><span class="range-val">${Math.round(g.audio.subMusicVolume * 100)}%</span></label>
         </details>
         <details class="acc" id="catalog-acc">
           <summary>Game progress</summary>
@@ -1824,7 +1859,11 @@ export class UI {
     };
     this.modal.oninput = (e) => {
       const el = e.target as HTMLInputElement;
-      if (el.type === "range") el.style.setProperty("--p", `${el.value}%`);
+      if (el.type === "range") {
+        el.style.setProperty("--p", `${el.value}%`);
+        const val = el.nextElementSibling;
+        if (val?.classList.contains("range-val")) val.textContent = `${el.value}%`;
+      }
       if (el.id === "volume") g.audio.setVolume(Number(el.value) / 100);
       if (el.id === "music-volume") g.audio.setMusicVolume(Number(el.value) / 100);
       if (el.id === "sub-music-volume") g.audio.setSubMusicVolume(Number(el.value) / 100);

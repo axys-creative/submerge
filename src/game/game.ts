@@ -293,6 +293,8 @@ const RADIO_MAX_Y = 100;
 /** Seconds into the radio sound when it ends. */
 const RADIO_FX_END = 9;
 const RADIO_SHIP_SPEED = 280;
+/** The called ship boosts until it is this close to the sub, in px. */
+const RADIO_BOOST_STOP = 1500;
 /** How quickly the camera eases while zooming for a zone's `shipZoom`, slower than the usual 1.6 so the pull-back is gentle. */
 /** Seconds in a zone between one extra seaweed or shell growing in. */
 const EXTRA_GROW_SECONDS = 60;
@@ -1575,7 +1577,9 @@ export class Game {
     const f = ship.facing;
     const tx = mountFor(f);
     const prevVx = ship.vx;
-    const want = f * clamp((tx - ship.x) * f * 2.2, 0, RADIO_SHIP_SPEED);
+    const boosting = (tx - ship.x) * f > RADIO_BOOST_STOP;
+    this.boost += ((boosting ? 1 : 0) - this.boost) * damp(boosting ? 2.5 : 5, dt);
+    const want = f * clamp((tx - ship.x) * f * 2.2, 0, RADIO_SHIP_SPEED * (1 + (BOOST_SPEED - 1) * this.boost));
     ship.vx += (want - ship.vx) * damp(3.5, dt);
     if (ship.vx * f < 0) ship.vx = 0;
     const x = ship.x + ship.vx * dt;
@@ -3143,7 +3147,7 @@ export class Game {
     this.foam = this.foam.filter((p) => p.life > 0);
     if (this.mode !== "docked") {
       if (!this.radioCall) this.shipPitch *= Math.exp(-3 * dt);
-      this.boost = 0;
+      if (!this.radioCall) this.boost = 0;
       const ready = this.inDockPosition();
       const down = ready || this.sub.y < (this.reelDir > 0 ? HOOK_DROP_DEPTH : HOOK_RETRACT_DEPTH) * PX_PER_M;
       const dir = down ? -1 : 1;

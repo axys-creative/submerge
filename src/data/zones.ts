@@ -9,6 +9,8 @@ export interface CreatureSpawn {
   kind: CreatureKind;
   /** For fish this is the number of schools. */
   count: number;
+  /** Makes each spawn a loose cluster of this many (min, max) animals instead of a single one, so `count` is the number of clusters. */
+  group?: [number, number];
   minDepth: number;
   maxDepth: number;
 }
@@ -113,17 +115,19 @@ const smooth = (x: number, from: number, to: number) => {
   return u * u * (3 - 2 * u);
 };
 
-/** Abyssal Plains is 39600 px wide: one big mountain (1500 m) with a small peak near the surface under the first island and the cave on its east side, a wide flat plain about 3800 m deep with the Titanic, then two bumpy trenches in the east (about 4400 m and 4900 m, the portal stone in the deeper). */
+/** Abyssal Plains is 39600 px wide: one big mountain (1500 m) with two peaks, one about 100 m down under the first island and a lower one about 180 m down between the islands, and the cave on its east side, a wide flat plain about 3800 m deep with the Titanic, then two bumpy trenches in the east (about 4400 m and 4900 m, the portal stone in the deeper). */
 const ABYSSAL_FLOOR = Array.from({ length: 133 }, (_, k) => {
   const x = k * 300;
   const i = k;
   const shelf = smooth(x, 11500, 15000);
-  const peak = 1 - smooth(Math.abs(x - 1000), 300, 1800);
+  const peak1 = 1 - smooth(Math.abs(x - 1000), 300, 1500);
+  const peak2 = 1 - smooth(Math.abs(x - 2700), 300, 1500);
+  const lift = Math.max(peak1 * 1400, peak2 * 1320);
   const trench1 = smooth(x, 30500, 32000) * (1 - smooth(x, 33500, 34800));
   const trench2 = smooth(x, 35400, 36800) * (1 - 0.6 * smooth(x, 38500, 39600));
   const amp = 5 + 30 * (1 - shelf) + 32 * smooth(x, 29500, 31000);
-  const bumps = amp * (0.6 * Math.sin(i * 1.9) + 0.5 * Math.sin(i * 3.1 + 1) + 0.4 * Math.sin(i * 5.3 + 2));
-  const base = 1500 + 2300 * shelf - peak * 1200 + trench1 * 600 + trench2 * 1100;
+  const bumps = amp * (1 - Math.min(1, lift / 1400) * 0.8) * (0.6 * Math.sin(i * 1.9) + 0.5 * Math.sin(i * 3.1 + 1) + 0.4 * Math.sin(i * 5.3 + 2));
+  const base = 1500 + 2300 * shelf - lift + trench1 * 600 + trench2 * 1100;
   return Math.round(base + bumps);
 });
 
@@ -354,11 +358,12 @@ export const ZONES: ZoneDef[] = [
     trash: 12,
     creatures: [
       { kind: 'fish', count: 10, minDepth: 5, maxDepth: 250 },
-      { kind: 'jelly', count: 7, minDepth: 40, maxDepth: 350 },
+      { kind: 'jelly', count: 3, minDepth: 40, maxDepth: 350 },
+      { kind: 'jelly', count: 1, group: [7, 9], minDepth: 40, maxDepth: 350 },
       { kind: 'hammerhead', count: 4, minDepth: 25, maxDepth: 320 },
       { kind: 'shark', count: 2, minDepth: 40, maxDepth: 320 },
       { kind: 'squid', count: 3, minDepth: 180, maxDepth: 420 },
-      { kind: 'jelly', count: 8, minDepth: 450, maxDepth: 880 },
+      { kind: 'jelly', count: 1, group: [7, 9], minDepth: 450, maxDepth: 880 },
       { kind: 'moonjelly', count: 3, minDepth: 100, maxDepth: 600 },
       { kind: 'manta', count: 2, minDepth: 60, maxDepth: 300 },
       { kind: 'whaleshark', count: 2, minDepth: 30, maxDepth: 300 },
@@ -423,7 +428,8 @@ export const ZONES: ZoneDef[] = [
     trash: 18,
     creatures: [
       { kind: 'fish', count: 12, minDepth: 5, maxDepth: 200 },
-      { kind: 'jelly', count: 18, minDepth: 60, maxDepth: 700 },
+      { kind: 'jelly', count: 6, minDepth: 60, maxDepth: 700 },
+      { kind: 'jelly', count: 2, group: [7, 9], minDepth: 60, maxDepth: 700 },
       { kind: 'moonjelly', count: 5, minDepth: 100, maxDepth: 700 },
       { kind: 'hammerhead', count: 4, minDepth: 25, maxDepth: 350 },
       { kind: 'shark', count: 4, minDepth: 40, maxDepth: 350 },
@@ -480,18 +486,19 @@ export const ZONES: ZoneDef[] = [
     items: 0,
     creatures: [
       { kind: 'fish', count: 9, minDepth: 20, maxDepth: 400 },
-      { kind: 'jelly', count: 24, minDepth: 300, maxDepth: 1300 },
+      { kind: 'jelly', count: 8, minDepth: 300, maxDepth: 1300 },
+      { kind: 'jelly', count: 3, group: [7, 9], minDepth: 300, maxDepth: 1300 },
       { kind: 'moonjelly', count: 9, minDepth: 300, maxDepth: 1300 },
-      { kind: 'squid', count: 15, minDepth: 500, maxDepth: 1300 },
-      { kind: 'angler', count: 36, minDepth: 1000, maxDepth: 3700 },
-      { kind: 'whale', count: 9, minDepth: 400, maxDepth: 1100 },
+      { kind: 'squid', count: 5, minDepth: 500, maxDepth: 1300 },
+      { kind: 'angler', count: 12, minDepth: 1000, maxDepth: 3700 },
+      { kind: 'whale', count: 3, minDepth: 400, maxDepth: 1100 },
       { kind: 'mobydick', count: 1, minDepth: 400, maxDepth: 1100 },
-      { kind: 'orca', count: 15, minDepth: 60, maxDepth: 450 },
-      { kind: 'orcacalf', count: 9, minDepth: 60, maxDepth: 450 },
-      { kind: 'manta', count: 9, minDepth: 100, maxDepth: 800 },
-      { kind: 'bluewhale', count: 9, minDepth: 25, maxDepth: 300 },
-      { kind: 'colossal', count: 9, minDepth: 1000, maxDepth: 1450 },
-      { kind: 'bigfin', count: 15, minDepth: 1050, maxDepth: 1300 },
+      { kind: 'orca', count: 5, minDepth: 60, maxDepth: 450 },
+      { kind: 'orcacalf', count: 3, minDepth: 60, maxDepth: 450 },
+      { kind: 'manta', count: 3, minDepth: 100, maxDepth: 800 },
+      { kind: 'bluewhale', count: 3, minDepth: 25, maxDepth: 300 },
+      { kind: 'colossal', count: 3, minDepth: 1000, maxDepth: 1450 },
+      { kind: 'bigfin', count: 3, minDepth: 1050, maxDepth: 1300 },
     ],
     islands: [
       { x: 850, name: 'Palm Atoll', gear: ['electrolysis'] },
