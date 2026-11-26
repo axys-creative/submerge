@@ -484,20 +484,22 @@ export class AudioManager {
   }
 
   /** Depth sounds (hull creaks) while moving through the pressure zones, at irregular distances rather than fixed depths; the final plating is rarer, every 200 to 300 m. */
-  depthSounds(depthFrac: number, y: number, dt: number, final = false) {
+  depthSounds(depthFrac: number, y: number, dt: number, final = false, sideways = false) {
     this.depthTimer -= dt;
     const moved = Math.abs(y - this.depthY);
     this.depthY = y;
+    if (sideways) return;
     if (depthFrac < DEPTH_1_FROM) {
       this.depthTravel = 0;
       return;
     }
     this.depthTravel += moved;
     if (this.depthTravel < this.depthNext || this.depthTimer > 0) return;
-    this.play(depthFrac >= DEPTH_2_FROM ? "depth2" : "depth1", 0.7 + Math.random() * 0.3);
+    const deep = depthFrac >= DEPTH_2_FROM;
+    this.play(deep ? "depth2" : "depth1", 0.7 + Math.random() * 0.3);
     this.depthTravel = 0;
-    this.depthNext = final ? 2000 + Math.random() * 1000 : 80 + Math.random() * 200;
-    this.depthTimer = 2.5;
+    this.depthNext = final ? 2000 + Math.random() * 1000 : (80 + Math.random() * 200) * (deep ? 2 : 1);
+    this.depthTimer = deep && !final ? 5 : 2.5;
   }
 
   setVolume(v: number) {

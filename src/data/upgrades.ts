@@ -78,7 +78,7 @@ export const STATS = {
   /** Meters before the depth rating where the first "too deep" warning appears, per plating level. */
   deepWarning: [20, 40, 60, 250],
   oxygen: [30, 60, 120, 480],
-  battery: [8000, 16000, 30000, 240000],
+  battery: [8000, 16000, 64000, 240000],
   maxHull: [0, 1, 2, 3],
   /** How many items the hold carries, per cargo level. */
   cargo: [10, 25],

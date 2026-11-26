@@ -1068,7 +1068,7 @@ export function renderScene(g: Game) {
   const power = g.lightPower;
   const lit = !!spot && power > 0.02 && g.lampLevel > 0.02;
   const reach = 0.35 + 0.65 * power;
-  const fade = Math.min(1, power * 2.5) * g.lampLevel * alive;
+  const fade = Math.min(1, power * 1.25) * g.lampLevel * alive;
   const sway = Math.sin((g.lampClock / SWAY_PERIOD) * Math.PI * 2);
   const aimed = (g.lampPitch + g.lampSway * sway) * DEG;
   const frontDown = aimed + (Math.PI / 2 - s.tilt - aimed) * g.lampDown;

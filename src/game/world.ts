@@ -28,7 +28,7 @@ const FLOOR_SOFTNESS = 25;
 const CORAL_SPACING = 150;
 const ITEM_SPACING = 160;
 /** The most grown-in seaweed and shells lying in a zone at once. */
-const EXTRA_CAP = 10;
+const EXTRA_CAP = 3;
 /** Loot slot numbers: cave loot takes 0 and up, then floor items and wreck chests start here. */
 export const FLOOR_SLOT = 100;
 export const CHEST_SLOT = 500;
@@ -992,12 +992,12 @@ export class World {
     return this.items.reduce((n, it) => n + (it.trash !== undefined && !it.alive ? 1 : 0), 0);
   }
 
-  /** Brings back up to `n` collected items of a kind; with `avoid` each reappears on the floor outside that x range. Returns the slots it revived. */
+  /** Brings back up to `n` collected open-sea floor items of a kind (never cave loot or wreck chests); with `avoid` each reappears on the floor outside that x range. Returns the slots it revived. */
   regrow(kind: ItemKind, n: number, avoid?: { x0: number; x1: number }) {
     const slots: number[] = [];
     for (const it of this.items) {
       if (slots.length >= n) break;
-      if (it.alive || it.kind !== kind || it.cave === undefined || it.x === 0 || it.salvage || it.wreck >= 0 || it.trash !== undefined) continue;
+      if (it.alive || it.kind !== kind || it.cave === undefined || it.cave < FLOOR_SLOT || it.cave >= CHEST_SLOT || it.x === 0 || it.salvage || it.wreck >= 0 || it.trash !== undefined) continue;
       if (avoid && !this.placeFar(it, avoid)) continue;
       it.alive = true;
       slots.push(it.cave);

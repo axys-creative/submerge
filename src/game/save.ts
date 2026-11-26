@@ -182,7 +182,7 @@ export function sanitize(raw: any): SaveData | null {
   }
   for (let z = 0; z < ZONES.length; z++) {
     const t = raw.caveLoot?.[z];
-    if (Array.isArray(t)) s.caveLoot[z] = [...new Set(t.map((n: unknown) => Math.floor(num(n, 0, 99, -1))).filter((n: number) => n >= 0))].slice(0, 1000);
+    if (Array.isArray(t)) s.caveLoot[z] = [...new Set(t.map((n: unknown) => Math.floor(num(n, 0, 999, -1))).filter((n: number) => n >= 0))].slice(0, 1000);
   }
   for (const key of ['regrowHeld', 'regrowDue'] as const) {
     for (let z = 0; z < ZONES.length; z++) {

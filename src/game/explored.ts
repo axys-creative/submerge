@@ -17,6 +17,12 @@ export class Explored {
     } catch {}
   }
 
+  has(x: number, y: number) {
+    const i = Math.floor(x / CELL);
+    const j = Math.floor(Math.max(0, y) / CELL);
+    return i >= 0 && i < this.cols && j < this.rows && this.cells[j * this.cols + i] === 1;
+  }
+
   reveal(x: number, y: number, r: number) {
     const cx = x / CELL;
     const cy = Math.max(0, y) / CELL;

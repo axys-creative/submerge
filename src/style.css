@@ -866,6 +866,13 @@ textarea:focus {
   text-shadow: 0 6px 0 var(--coral), 0 12px 24px rgba(10, 18, 50, 0.4);
 }
 
+@media (orientation: landscape) and (max-height: 520px) {
+  .logo {
+    font-size: clamp(40px, 15vh, 64px);
+    text-shadow: 0 4px 0 var(--coral), 0 8px 16px rgba(10, 18, 50, 0.4);
+  }
+}
+
 .tagline {
   margin: 0;
   font-size: 19px;
@@ -3435,6 +3442,9 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
   body.is-touch .minimap-tab {
     left: 50%;
     margin-left: -75px;
+    transform-origin: center bottom;
+  }
+  .is-touch #ui .minimap {
     transform-origin: center bottom;
   }
   .is-touch #ui .minimap-tab {

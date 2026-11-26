@@ -47,7 +47,11 @@ export const FROZEN = 5;
 /** The lowest bought level (counting from 0) of each upgrade that opens the way into Frozen Expanse. */
 export const FROZEN_REQUIRES: Loadout = { plating: 2, oxygen: 2, battery: 2, propeller: 1, cargo: 1, hull: 2, light: 2, sonar: 2 };
 
+/** Frozen Expanse is still in progress: no route leads there, only the dev panel's zone stepper. */
+const FROZEN_HIDDEN = true;
+
 export const frozenOpen = (owned: Loadout) =>
+  !FROZEN_HIDDEN &&
   (Object.keys(FROZEN_REQUIRES) as (keyof Loadout)[]).every((id) => owned[id] >= FROZEN_REQUIRES[id]);
 
 const same = (a: Endpoint, b: Endpoint) => a.zone === b.zone && a.side === b.side;

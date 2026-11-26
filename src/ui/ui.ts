@@ -611,11 +611,19 @@ export class UI {
     });
 
     const cruiseDir = g.cruise || (diving ? g.cruiseOffer : 0);
-    const cruiseLabel = cruiseDir ? `${g.cruise ? "Cruising" : "Cruise"} ${cruiseDir < 0 ? "↑" : "↓"}` : "";
-    this.set("cruise", `${cruiseLabel}|${g.cruise}|${this.touch}`, () => {
+    const arrow = (d: number) => (d < 0 ? "←" : "→");
+    const cruiseLabel = g.shipCruise
+      ? `Cruising ${arrow(g.shipCruise)}`
+      : g.mode === "docked"
+        ? `Cruise ${arrow(g.ship.facing)}`
+        : cruiseDir
+        ? `${g.cruise ? "Cruising" : "Cruise"} ${cruiseDir < 0 ? "↑" : "↓"}`
+        : "";
+    const cruising = g.cruise || g.shipCruise;
+    this.set("cruise", `${cruiseLabel}|${cruising}|${this.touch}`, () => {
       const b = $(this.root, "#btn-cruise");
       b.hidden = !cruiseLabel || !this.touch;
-      b.textContent = g.cruise ? "Stop" : cruiseLabel;
+      b.textContent = cruising ? "Stop" : cruiseLabel;
     });
 
     const spot = g.dockSpot();
@@ -701,7 +709,8 @@ export class UI {
       : [
           [k("←", "→") + " or " + k("A", "D"), "Sail"],
           [k("Shift"), "Boost"],
-          [k("Space"), "Dive"],
+          [k("C"), "Cruise left or right"],
+          [k("Space") + " or " + k("↓"), "Dive"],
           [k("E") + " or " + k("Enter"), "Shop, map"],
         ];
     this.set("ctl-body", rows.join("|"), () => {
@@ -732,7 +741,7 @@ export class UI {
       if (spot?.kind === "portal") return `${this.touch ? "" : "<kbd>Enter</kbd> or <kbd>E</kbd> "}Enter the portal`;
       if (spot?.kind === "sail")
         return `${this.touch ? "" : "<kbd>Enter</kbd> or <kbd>E</kbd> "}Open the route map`;
-      return this.touch ? "Drag to sail · Tap Dive to launch" : "";
+      return "";
     }
     const s = g.sub;
     if (s.battery <= 0)
@@ -1732,7 +1741,8 @@ export class UI {
             <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd>"} to sail the ship.</li>
             <li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while sailing to boost.</li>
-            <li>${this.touch ? "Tap <b>Dive</b>" : "Press <kbd>Space</kbd>"} to drop the sub. Drive back up to the ship to dock, recharge and repair.</li>
+            <li>${this.touch ? "Tap <b>Cruise</b>" : "Press <kbd>C</kbd>"} while sailing to set auto cruise. The ship keeps going until you steer or ${this.touch ? "tap <b>Stop</b>" : "press <kbd>C</kbd> again"}.</li>
+            <li>${this.touch ? "Tap <b>Dive</b>" : "Press <kbd>Space</kbd> or <kbd>↓</kbd>"} to drop the sub. Drive back up to the ship to dock, recharge and repair.</li>
             <li>Sail next to an island and ${this.touch ? "tap <b>Shop</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to sell your haul and buy upgrades.</li>
             <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
             </ul>
@@ -1742,7 +1752,7 @@ export class UI {
             <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>"} to steer. The spotlight follows where you head.</li>
             <li>${this.touch ? "Tap <b>Grab</b>" : "Press <kbd>Space</kbd>"} to reach out with the claw. Hold a direction to aim it, and use it to grab treasure you can't reach.</li>
-            <li>Below about 5 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>?</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on). Steering up or down lets go.</li>
+            <li>Below about 5 m the sub starts to sink. ${this.touch ? "Tap the depth reading beside the gauge" : "Press <kbd>E</kbd> or <kbd>?</kbd>, or click the depth reading beside the gauge,"} to hold your depth (it uses battery, and more with the weights on).</li>
             ${g.canBoost ? `<li>${this.touch ? "Hold <b>Boost</b>" : "Hold <kbd>Shift</kbd> or <kbd>,</kbd>"} while steering to boost. It drains the battery fast.</li>` : ""}
             ${g.gear.radio ? `<li>${this.touch ? "Tap <b>Radio</b>" : "Press <kbd>R</kbd>"} at the surface to call the ship over to you.</li>` : ""}
             ${g.save.weights ? `<li>${this.touch ? "Tap <b>Drop</b>" : "Press <kbd>Q</kbd> or <kbd>.</kbd>"} to drop the dive weights for a quick ride up.</li>` : ""}
@@ -1802,23 +1812,20 @@ export class UI {
         <details class="acc">
           <summary>Game status</summary>
           <details class="subacc">
-            <summary>Save code</summary>
+            <summary>Save game</summary>
             <p class="muted">Your game saves in this browser automatically. Copy this code to back it up or move it to another device.</p>
             <textarea id="save-out" readonly rows="3">${exportCode(g.save)}</textarea>
             <div class="row"><button class="btn small blue" data-act="copy">Copy code</button><span class="muted" id="copy-msg"></span></div>
           </details>
           <details class="subacc">
-            <summary>Load a save code</summary>
+            <summary>Load game</summary>
             <textarea id="save-in" rows="3" placeholder="Paste a code that starts with SUBMERGE1-"></textarea>
             <div class="row"><button class="btn small blue" data-act="load">Load game</button><span class="error" id="load-msg"></span></div>
           </details>
           <details class="subacc">
-            <summary>Start over</summary>
-            <div class="row"><button class="btn small ghost" data-act="new">New game</button></div>
-            <div class="confirm" hidden>
-              <p>This erases your saved sub, money and upgrades in this browser.</p>
-              <div class="row"><button class="btn small danger" data-act="erase">Erase and start over</button><button class="btn small ghost" data-act="cancel">Cancel</button></div>
-            </div>
+            <summary>New game</summary>
+            <p>This erases your saved sub, money and upgrades in this browser.</p>
+            <div class="row"><button class="btn small danger" data-act="erase">Erase and start over</button><button class="btn small ghost" data-act="cancel">Cancel</button></div>
           </details>
         </details>
         <details class="acc">
@@ -1931,8 +1938,7 @@ export class UI {
         this.close();
         this.toast("Save loaded");
       }
-      if (act === "new") $(this.modal, ".confirm").hidden = false;
-      if (act === "cancel") $(this.modal, ".confirm").hidden = true;
+      if (act === "cancel") target.closest("details")?.removeAttribute("open");
       if (act === "erase") {
         g.newGame();
         this.close();

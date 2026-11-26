@@ -3,7 +3,7 @@ import { BONE_KINDS, type BoneKind } from "../art/bones";
 import { debrisColors } from "../art/sub";
 import { kelpHeight } from "../art/scenery";
 import { Input } from "./input";
-import { World, MAX_SLOPE, type Creature, type ItemInst } from "./world";
+import { World, FLOOR_SLOT, CHEST_SLOT, MAX_SLOPE, type Creature, type ItemInst } from "./world";
 import { updateWreckFx } from "./wreckfx";
 import { updateCreature } from "./creatures";
 import { DAY_SECONDS, NOON, START_DAY, daylight } from "../render/daylight";
@@ -15,7 +15,7 @@ import { ULYSSES_REACH, ULYSSES_TAIL, ULYSSES_WEIGHTS } from "../art/ulysses";
 import { weightMounts, WEIGHT_Y, GATE_THRUSTER_BUBBLES, challengerBase, challengerWeights } from "../art/sub";
 import { ITEMS, ITEM_KINDS, REGROW_KINDS, type ItemKind } from "../data/items";
 import { ZONES, type WreckKind } from "../data/zones";
-import { SKINS, SHARK_DEPTH_RATING, CAPSULE_DEATHS, ULYSSES_ZONE, ULYSSES_DIVE_ZOOM, ULYSSES_DEPTH_RATING, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
+import { SKINS, SHARK_DEPTH_RATING, CAPSULE_DEATHS, ULYSSES_ZONE, ULYSSES_UNLOCKABLE, ULYSSES_DIVE_ZOOM, ULYSSES_DEPTH_RATING, CHALLENGER_DEPTH_RATING, type SkinId } from "../data/skins";
 import { CREATURES, CREATURE_EXTENT, ORCA_TILT, creatureRadius, whalePitch, type CreatureKind } from "../data/creatures";
 import { BESTIARY } from "../data/bestiary";
 import { SHARK_REST_Y } from "../art/hammerhead";
@@ -270,7 +270,9 @@ const CLAW_OPEN_TO = 0.8;
 const CLAW_MOUNT = { x: 2, y: 24 };
 /** Seagulls are heard within three island widths (an island is about 500 px across). */
 const GULL_EARSHOT = 1500;
+const CRUISE_LIMIT_M = 25;
 const CRUISE_OFFER_AFTER = 5;
+const REGROW_PER_VISIT = 3;
 const CRUISE_OFFER_LINGER = 5;
 const SINK_START = 5;
 const SINK_RAMP = 60;
@@ -558,6 +560,9 @@ export class Game {
   private cruiseAge = 0;
   private cruiseStill = 0;
   private cruiseNeedsRelease = false;
+  /** Surface cruise control: -1 sailing left, 1 sailing right, 0 off. */
+  shipCruise: -1 | 0 | 1 = 0;
+  private shipCruiseNeedsRelease = false;
   /** Set at launch for the hammerhead: the depth lock switches on by itself as soon as it is under the surface. */
   private autoHold = false;
   private holdY = 0;
@@ -696,7 +701,7 @@ export class Game {
   /** 0..1 spotlight strength: follows the battery, or the hand crank once the battery is dead. */
   get lightPower() {
     const s = this.sub;
-    return Math.max(Math.min(1, s.battery / this.maxBattery / 0.5), s.crankLight);
+    return Math.max(Math.min(1, s.battery / this.maxBattery / 0.2), s.crankLight);
   }
   /** Rides the waves while the sub floats at the surface. */
   get surfaceBob() {
@@ -941,7 +946,7 @@ export class Game {
     if (!due) return;
     for (const k of REGROW_KINDS as ("seaweed" | "shell")[]) {
       if (!due[k]) continue;
-      const slots = world.regrow(k, due[k]!, avoid);
+      const slots = world.regrow(k, Math.min(due[k]!, REGROW_PER_VISIT), avoid);
       due[k]! -= slots.length;
       const taken = this.save.caveLoot[zone];
       if (taken) this.save.caveLoot[zone] = taken.filter((s) => !slots.includes(s));
@@ -1055,20 +1060,46 @@ export class Game {
     this.say(why, "#9AA7C2");
   }
 
+  /** Inside a headland's rock, as opposed to open water above it. */
+  private underground() {
+    return this.world.inCave(this.sub.x) && this.sub.y > this.world.floorAt(this.sub.x) + 20;
+  }
+
+  /** Which limit the sub is within CRUISE_LIMIT_M of in the cruise direction: the surface, the depth rating, or sea floor already on the map. */
+  private cruiseLimit(dir: -1 | 1) {
+    const s = this.sub;
+    const margin = CRUISE_LIMIT_M * PX_PER_M;
+    if (dir < 0) return s.y < margin ? "close to the surface" : null;
+    if (this.depthM > this.depthRating - CRUISE_LIMIT_M) return "deep";
+    const floor = this.world.clearFloorAt(s.x, this.subHalf);
+    if (floor - this.subBelow - s.y < margin && this.explored?.has(s.x, floor)) return "close to the sea floor";
+    return null;
+  }
+
+  private cruiseToDepthLock() {
+    const s = this.sub;
+    this.cruise = 0;
+    this.depthHeld = true;
+    this.holdY = s.y;
+    this.holdRate = 6;
+    this.holdSteering = true;
+    this.audio.play("menuTick");
+    this.say("Cruise off: depth locked", "#9CF2C4");
+  }
+
   private updateCruise(dt: number, a: { x: number; y: number }, airborne: boolean) {
     const s = this.sub;
     const dir = Math.abs(a.y) > 0.5 ? Math.sign(a.y) : 0;
-    const blocked = this.world.inCave(s.x) || s.battery <= 0 || this.atSurface || airborne;
+    const blocked = this.underground() || s.battery <= 0 || this.atSurface || airborne;
     if (this.cruise) {
       this.cruiseAge += dt;
       const manual = Math.abs(a.y) > 0.1;
       if (!manual) this.cruiseNeedsRelease = false;
       if (manual && !this.cruiseNeedsRelease) return this.stopCruise("Cruise off");
       if (s.battery <= 0) return this.stopCruise("Cruise off: battery empty");
-      if (this.world.inCave(s.x)) return this.stopCruise("Cruise off: no cruising in caves");
+      if (this.underground()) return this.stopCruise("Cruise off: no cruising in caves");
       if (this.cruise < 0 && (this.atSurface || airborne)) return this.stopCruise("Cruise off: surfaced");
-      if (this.cruise > 0 && this.depthM > this.depthRating - 30)
-        return this.stopCruise("Cruise off: near depth limit");
+      if (this.cruiseLimit(this.cruise)) return this.cruiseToDepthLock();
       this.cruiseStill = Math.abs(s.vy) < 6 && this.cruiseAge > 0.6 ? this.cruiseStill + dt : 0;
       if (this.cruiseStill > 0.5) return this.stopCruise("Cruise off: blocked");
     }
@@ -1087,8 +1118,14 @@ export class Game {
     }
     if (!this.input.pressed("cruise")) return;
     if (this.cruise) return this.stopCruise("Cruise off");
-    if (blocked) return;
-    const want = this.cruiseOffer || (Math.abs(s.vy) > 20 ? (Math.sign(s.vy) as -1 | 1) : -1);
+    if (this.underground()) return this.say("No cruising in caves", "#9AA7C2");
+    if (s.battery <= 0) return this.say("No battery to cruise", "#9AA7C2");
+    if (airborne) return;
+    const heading = Math.abs(s.vy) > 20 ? (Math.sign(s.vy) as -1 | 1) : this.atSurface ? 1 : -1;
+    const want = (dir || this.cruiseOffer || heading) as -1 | 1;
+    if (want < 0 && this.atSurface) return this.say("Already at the surface", "#9AA7C2");
+    const limit = this.cruiseLimit(want);
+    if (limit) return this.say(`Too ${limit} to cruise ${want < 0 ? "up" : "down"}`, "#9AA7C2");
     this.cruise = want;
     this.cruiseOffer = 0;
     this.cruiseHeld = 0;
@@ -1366,8 +1403,35 @@ export class Game {
     this.updateCamera(dt);
   }
 
+  private stopShipCruise(why: string) {
+    if (!this.shipCruise) return;
+    this.shipCruise = 0;
+    this.audio.play("menuTick");
+    this.say(why, "#9AA7C2");
+  }
+
+  /** Surface cruise control: C sails the ship left or right on its own until a key, C or the end of the sea. Returns the steering to use, or 0 for none. */
+  private updateShipCruise(raw: number) {
+    const held = Math.abs(raw) > 0.2;
+    if (this.shipCruise) {
+      if (!held) this.shipCruiseNeedsRelease = false;
+      if (held && !this.shipCruiseNeedsRelease) this.stopShipCruise("Cruise off");
+    }
+    if (this.input.pressed("cruise")) {
+      if (this.shipCruise) this.stopShipCruise("Cruise off");
+      else {
+        this.shipCruise = held ? (Math.sign(raw) as -1 | 1) : (this.ship.facing as -1 | 1);
+        this.shipCruiseNeedsRelease = held;
+        this.audio.play("chime1");
+        this.say(this.shipCruise < 0 ? "Cruising left" : "Cruising right", "#9CF2C4");
+      }
+    }
+    return this.shipCruise;
+  }
+
   private updateDocked(dt: number) {
-    const ax = this.input.axis().x;
+    const raw = this.input.axis().x;
+    const ax = this.updateShipCruise(raw) || raw;
     if (Math.abs(ax) > 0.2) this.ship.facing = ax > 0 ? 1 : -1;
     const prevVx = this.ship.vx;
     const boosting = this.input.isDown("boost") && Math.abs(ax) > 0.2;
@@ -1396,6 +1460,7 @@ export class Game {
     this.ship.x = clamp(x, lo, hi);
     if (this.ship.x !== x) {
       this.ship.vx = 0;
+      if (this.shipCruise) this.stopShipCruise("Cruise off: end of the line");
       if (shelf && this.ship.x !== SHIP_MARGIN && this.ship.x !== this.world.width - SHIP_MARGIN && !this.said.has("ice")) {
         this.said.add("ice");
         this.say("An ice shelf blocks the way. Take the sub and dive underneath it!", "#6CC5F0");
@@ -1470,6 +1535,7 @@ export class Game {
   launch() {
     if (this.mode !== "docked") return;
     this.mode = "diving";
+    this.shipCruise = 0;
     this.radioCall = false;
     this.hookGrip = 0;
     this.alarmed = false;
@@ -1964,6 +2030,7 @@ export class Game {
       s.y,
       dt,
       this.up.plating === UPGRADES.plating.levels.length - 1,
+      Math.abs(s.vx) > Math.abs(s.vy),
     );
     this.pinSpeech(
       "rudders",
@@ -2723,7 +2790,7 @@ export class Game {
     }
     if (it.trash !== undefined) this.noteTrash(it.trash);
     if (it.cave !== undefined) (this.save.caveLoot[this.save.zone] ??= []).push(it.cave);
-    if (REGROW_KINDS.includes(it.kind) && it.cave !== undefined && !it.salvage) {
+    if (REGROW_KINDS.includes(it.kind) && it.cave !== undefined && it.cave >= FLOOR_SLOT && it.cave < CHEST_SLOT && !it.salvage) {
       const held = (this.save.regrowHeld[this.save.zone] ??= {});
       const k = it.kind as "seaweed" | "shell";
       held[k] = (held[k] ?? 0) + 1;
@@ -2749,7 +2816,7 @@ export class Game {
   private updateGear(dt: number) {
     const depth = this.mode === "diving" ? this.depthM : 0;
     const diving = this.mode === "diving";
-    const inCave = diving && this.world.inCave(this.sub.x) && this.sub.y > this.world.floorAt(this.sub.x) + 20;
+    const inCave = diving && this.underground();
     const openDay = !this.surfaceDark && !inCave;
     const auto =
       depth >
@@ -2770,9 +2837,11 @@ export class Game {
     }
     const a = this.input.axis();
     const steering = diving && Math.hypot(a.x, a.y) > 0.1;
-    const down = diving && a.y > 0.1;
+    const pushDown = diving && a.y > 0.1;
+    const cruiseDown = diving && this.cruise > 0 && Math.abs(a.x) <= 0.1;
+    const down = pushDown || cruiseDown;
     this.downHeld = down ? this.downHeld + dt : 0;
-    if (down) this.lampAim = LAMP_PITCH_DOWN;
+    if (pushDown || (cruiseDown && this.downHeld >= LAMP_HOLD_TIME)) this.lampAim = LAMP_PITCH_DOWN;
     else if (steering) this.lampAim = LAMP_PITCH_FORWARD;
     this.lampPitch += (this.lampAim - this.lampPitch) * damp(LAMP_AIM_RATE, dt);
     const straightDown = this.downHeld >= LAMP_HOLD_TIME;
@@ -3026,7 +3095,7 @@ export class Game {
       this.persist();
       this.ui.toast(`Welcome to ${this.world.def.name}`);
       if (this.world.def.space && this.unlockSkin("sm13")) this.unlockNote = "sm13";
-      if (this.save.zone === ULYSSES_ZONE && this.save.stats.deaths === 0 && this.unlockSkin("ulysses")) this.unlockNote = "ulysses";
+      if (ULYSSES_UNLOCKABLE && this.save.zone === ULYSSES_ZONE && this.save.stats.deaths === 0 && this.unlockSkin("ulysses")) this.unlockNote = "ulysses";
       if (this.world.def.space && !this.said.has("arrive")) {
         this.said.add("arrive");
         this.say("What is this place? Where are we?", "#E5484D");

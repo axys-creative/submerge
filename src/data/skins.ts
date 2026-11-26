@@ -8,6 +8,8 @@ export const CHALLENGER_DEPTH_RATING = 11050;
 
 /** Zone index of Abyssal Plains, the last real zone: arriving there with no wrecks unlocks the Ulysses. */
 export const ULYSSES_ZONE = 4;
+/** Off while the unlock is being redesigned; the test panel still equips it. */
+export const ULYSSES_UNLOCKABLE = false;
 
 /** The Ulysses is built to go anywhere: the safe depth in meters while it is worn, the same as the Deepsea Challenger's. */
 export const ULYSSES_DEPTH_RATING = 11050;
