@@ -2793,7 +2793,14 @@ export class Game {
       if (!--left[it.kind]!) delete left[it.kind];
       if (!Object.keys(left).length) this.save.salvage = null;
     }
-    if (it.trash !== undefined) this.noteTrash(it.trash);
+    if (it.trash !== undefined) {
+      this.noteTrash(it.trash);
+      if (!this.save.trashTip) {
+        this.save.trashTip = true;
+        this.persist();
+        this.ui.showTrashTip();
+      }
+    }
     if (it.cave !== undefined) (this.save.caveLoot[this.save.zone] ??= []).push(it.cave);
     if (REGROW_KINDS.includes(it.kind) && it.cave !== undefined && it.cave >= FLOOR_SLOT && it.cave < CHEST_SLOT && !it.salvage) {
       const held = (this.save.regrowHeld[this.save.zone] ??= {});

@@ -70,6 +70,8 @@ export interface SaveData {
   candleClaimed: number[];
   /** The ship radio, a thank-you for cleaning up Coral Gardens: it calls the ship to a surfaced sub. */
   radio: boolean;
+  /** Whether the one-time pointer at the trash tracker has been shown. */
+  trashTip: boolean;
   /** Owned gear the player has switched off in settings. */
   gearOff: Partial<Record<GearToggle, true>>;
   /** How many of the carried oxygen candles are switched off in settings. */
@@ -127,6 +129,7 @@ export function newSave(): SaveData {
     seen: [],
     candleClaimed: [],
     radio: false,
+    trashTip: false,
     gearOff: {},
     candlesOff: 0,
     stats: { dives: 0, earned: 0, deepest: 0, deaths: 0 },
@@ -216,6 +219,7 @@ export function sanitize(raw: any): SaveData | null {
     ? [...new Set<number>(raw.candleClaimed.map((n: unknown) => Math.floor(num(n, -1, 99, -1))).filter((n: number) => TRASH_GIFTS[n] === 'candle'))]
     : [0, 2].filter((z) => s.achievements.includes(`trash-${z}`) && s.candles >= z + 1);
   s.radio = raw.radio === true;
+  s.trashTip = raw.trashTip === true || Object.values(s.trash).some((l) => l.length > 0);
   s.candlesOff = Math.floor(num(raw.candlesOff, 0, GEAR.candles.max, 0));
   for (const id of GEAR_TOGGLES) if (raw.gearOff?.[id] === true) s.gearOff[id] = true;
   s.stats.dives = Math.floor(num(raw.stats?.dives, 0, 1e9, 0));

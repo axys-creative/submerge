@@ -1970,7 +1970,7 @@ textarea:focus {
 }
 
 .is-touch .vitals {
-  width: 128px;
+  width: 172px;
   padding: 6px 8px;
 }
 
@@ -2599,20 +2599,6 @@ body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
   color: #14245a;
 }
 
-.is-touch .seg {
-  flex-wrap: wrap;
-}
-
-.is-touch .seg span {
-  flex: 0 0 100%;
-  padding: 0 4px;
-  font-size: 9px;
-}
-
-.is-touch .seg button {
-  padding: 3px 5px;
-}
-
 .card a {
   color: var(--sea-dark);
   font-weight: 700;
@@ -2670,9 +2656,35 @@ body:not(.is-touch) .vitals:has(#sonar-seg > span:hover) #pop-sonar {
 }
 
 .trash {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
   font-weight: 700;
   color: var(--ink-soft);
+}
+
+.trash svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: currentColor;
+}
+
+.trash.pulse {
+  animation: trash-flash 0.8s ease;
+}
+
+.trash.pulse svg {
+  animation: trash-pop 0.8s ease;
+}
+
+@keyframes trash-flash {
+  35% { color: var(--mint-dark); }
+}
+
+@keyframes trash-pop {
+  35% { transform: scale(1.4); }
 }
 
 .trash.done {
@@ -3418,7 +3430,7 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
   display: contents;
 }
 
-/* Phones in landscape: light and sonar sit to the right of the vitals, and the minimap moves to the bottom middle */
+/* Phones in landscape: light and sonar sit to the right of the vitals, */
 @media (orientation: landscape) and (max-height: 520px) {
   body.is-touch .vitals:has(.seg:not([hidden], .away)) {
     width: auto;
@@ -3437,18 +3449,6 @@ body:not(.is-touch) #ui.map-unpinned:has(.map-hot:hover, .minimap:hover, .minima
     align-content: start;
     gap: 6px;
     min-width: 96px;
-  }
-  body.is-touch .minimap,
-  body.is-touch .minimap-tab {
-    left: 50%;
-    margin-left: -75px;
-    transform-origin: center bottom;
-  }
-  .is-touch #ui .minimap {
-    transform-origin: center bottom;
-  }
-  .is-touch #ui .minimap-tab {
-    transform-origin: center calc(100% + 75px);
   }
 }
 
@@ -3471,10 +3471,126 @@ body.is-touch .card.menu .skin-row {
 
 /* ---- Interface size (settings) ---- */
 
-:is(.hud, .depth-meter, .minimap, .minimap-tab, .map-hot, .touch-buttons, .ctl-hint) {
-  zoom: var(--ui-scale, 1);
+.hud {
+  zoom: var(--ui-hud, 1);
+}
+
+.depth-meter {
+  zoom: var(--ui-depth, 1);
+}
+
+:is(.minimap, .minimap-tab, .map-hot, .ctl-hint) {
+  zoom: var(--ui-map, 1);
+}
+
+.touch-buttons {
+  zoom: var(--ui-touch, 1);
 }
 
 .stick {
-  scale: var(--ui-scale, 1);
+  scale: var(--ui-touch, 1);
+}
+
+.overlay.tip-overlay {
+  display: block;
+  background: none;
+  overflow: hidden;
+}
+
+.tip-spot {
+  position: absolute;
+  border-radius: 12px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 100vmax rgba(10, 18, 50, 0.65);
+  pointer-events: none;
+  animation: tip-fade 0.5s ease both;
+}
+
+.tip-card {
+  animation: tip-card-in 0.45s ease 0.45s both;
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  width: min(320px, calc(100% - 32px));
+}
+
+.tip-card h2 {
+  font-size: 20px;
+}
+
+.tip-card p {
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+.tip-card .row {
+  margin-top: 18px;
+}
+
+@keyframes tip-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes tip-card-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip-spot,
+  .tip-card {
+    animation: none;
+  }
+}
+
+/* ---- Minimap position (settings): bottom centre instead of bottom left ---- */
+
+#ui.map-center :is(.minimap, .minimap-tab) {
+  left: 50%;
+  margin-left: -130px;
+  transform-origin: center bottom;
+}
+
+#ui.map-center .minimap-tab {
+  transform-origin: center calc(100% + 130px);
+}
+
+.is-touch #ui.map-center :is(.minimap, .minimap-tab) {
+  margin-left: -75px;
+}
+
+.is-touch #ui.map-center .minimap-tab {
+  transform-origin: center calc(100% + 75px);
+}
+
+body:not(.is-touch) #ui.map-center.map-unpinned .map-hot {
+  left: 50%;
+  margin-left: -133px;
+}
+
+#ui.map-center .ctl-hint {
+  bottom: auto;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  z-index: 5;
+}
+
+#ui.map-center .ctl-panel {
+  bottom: auto;
+  top: 17px;
+  padding: 30px 18px 14px;
+  -webkit-mask: radial-gradient(circle at 50% 0, transparent 21px, #000 21.5px);
+  mask: radial-gradient(circle at 50% 0, transparent 21px, #000 21.5px);
+  transform: translate(-50%, -8px);
+  transform-origin: top center;
+}
+
+#ui.map-center .ctl-hint:is(.open, .has-msg, :hover, :focus-within) .ctl-panel {
+  transform: translate(-50%, 0);
+}
+
+body:not(.is-touch) #ui.map-center .prompt {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 232px * var(--ui-map, 1));
+}
+
+#ui.touch-hidden .touch {
+  display: none;
 }

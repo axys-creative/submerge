@@ -2,6 +2,7 @@ import lockIcon from "../assets/icons/icon-lock.svg?raw";
 import infoIcon from "../assets/icons/icon-info.svg?raw";
 import zenIcon from "../assets/icons/icon-zen.svg?raw";
 import pinIcon from "../assets/icons/icon-pin.svg?raw";
+import trashIcon from "../assets/icons/icon-trash.svg?raw";
 import shopkeeper from "../assets/svgs/shopkeeper.svg?raw";
 import type { Game } from "../game/game";
 import { ZEN_BARS } from "../game/audio";
@@ -64,7 +65,17 @@ const DIM_KEY = "submerge.ui.v1";
 const CONTROLS_HINT_MS = 8000;
 const MAP_PIN_KEY = "submerge.map-pinned.v1";
 const ZONE_DIST_KEY = "submerge.zone-distance.v1";
-const UI_SCALE_KEY = "submerge.ui-scale.v1";
+const UI_SCALE_KEY = "submerge.ui-scale.v2";
+const TOUCH_HIDDEN_KEY = "submerge.touch-hidden.v1";
+const MAP_POS_KEY = "submerge.map-pos.v1";
+const UI_SCALE_OLD_KEY = "submerge.ui-scale.v1";
+const UI_GROUPS = [
+  { id: "hud", label: "Dials and top bar" },
+  { id: "depth", label: "Depth meter" },
+  { id: "map", label: "Minimap" },
+  { id: "touch", label: "Touch controls" },
+] as const;
+type UiGroup = (typeof UI_GROUPS)[number]["id"];
 const UI_SCALE_MIN = 50;
 const UI_SCALE_MAX = 150;
 const MAX_TEST_LEVEL = 3;
@@ -79,7 +90,7 @@ const devModeOn = () => {
 
 const LOGO = `${import.meta.env.BASE_URL}axys-logo.svg`;
 
-type ModalKind ="title" | "shop" | "menu" | "message" | "map" | "inventory";
+type ModalKind ="title" | "shop" | "menu" | "message" | "map" | "inventory" | "tip";
 
 const $ = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) =>
   root.querySelector(sel) as T;
@@ -103,10 +114,16 @@ const SHOP_GREETINGS = [
 ];
 
 export class UI {
-  touch = false;
+  private touchDetected = false;
+  private touchHidden = false;
+  /** True while touch controls are in use; false on keyboard devices or when the player hides them. */
+  get touch() {
+    return this.touchDetected && !this.touchHidden;
+  }
   private modalKind: ModalKind | null = null;
   private root: HTMLElement;
   private modal: HTMLElement;
+  private lastTrash = "";
   private closeTimer: ReturnType<typeof setTimeout> | undefined;
   private cache = new Map<string, string>();
   private toastTimer = 0;
@@ -350,20 +367,90 @@ export class UI {
       this.toast(pinned ? "Minimap pinned" : this.touch ? "Minimap hidden: tap its label to show it" : "Minimap unpinned: hover to reveal it");
     });
     try {
-      this.setUiScale(Number(localStorage.getItem(UI_SCALE_KEY) ?? 100));
+      const saved = JSON.parse(localStorage.getItem(UI_SCALE_KEY) ?? "null");
+      const old = Number(localStorage.getItem(UI_SCALE_OLD_KEY));
+      for (const { id } of UI_GROUPS) this.setUiScale(id, saved?.[id] ?? (old || 100), false);
+    } catch {}
+    let mapCenter = matchMedia("(orientation: landscape) and (max-height: 520px) and (pointer: coarse)").matches;
+    try {
+      const pos = localStorage.getItem(MAP_POS_KEY);
+      if (pos) mapCenter = pos === "center";
+    } catch {}
+    this.setMapCenter(mapCenter, false);
+    try {
+      this.setTouchHidden(localStorage.getItem(TOUCH_HIDDEN_KEY) === "1", false);
     } catch {}
     this.setupTouch();
     this.showSplash();
   }
 
-  private uiScale = 1;
-  private setUiScale(percent: number) {
-    const p = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Number.isFinite(percent) ? percent : 100));
-    this.uiScale = p / 100;
-    this.root.style.setProperty("--ui-scale", String(this.uiScale));
+  private setTouchHidden(hidden: boolean, save = true) {
+    this.touchHidden = hidden;
+    this.root.classList.toggle("touch-hidden", hidden);
+    const sw = this.modal.querySelector<HTMLElement>("#touch-controls");
+    sw?.classList.toggle("on", !hidden);
+    sw?.setAttribute("aria-checked", String(!hidden));
+    if (!save) return;
     try {
-      localStorage.setItem(UI_SCALE_KEY, String(p));
+      localStorage.setItem(TOUCH_HIDDEN_KEY, hidden ? "1" : "0");
     } catch {}
+  }
+
+  private mapCenter = false;
+  private setMapCenter(on: boolean, save = true) {
+    this.mapCenter = on;
+    this.root.classList.toggle("map-center", on);
+    this.modal.querySelectorAll<HTMLElement>("[data-map-pos]").forEach((b) => {
+      const active = (b.dataset.mapPos === "center") === on;
+      b.classList.toggle("blue", active);
+      b.classList.toggle("ghost", !active);
+      b.setAttribute("aria-pressed", String(active));
+    });
+    if (!save) return;
+    try {
+      localStorage.setItem(MAP_POS_KEY, on ? "center" : "left");
+    } catch {}
+  }
+
+  private uiScales: Record<UiGroup, number> = { hud: 1, depth: 1, map: 1, touch: 1 };
+  private setUiScale(group: UiGroup, percent: number, save = true) {
+    const p = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Number.isFinite(percent) ? percent : 100));
+    this.uiScales[group] = p / 100;
+    this.root.style.setProperty(`--ui-${group}`, String(p / 100));
+    if (!save) return;
+    try {
+      localStorage.setItem(
+        UI_SCALE_KEY,
+        JSON.stringify(Object.fromEntries(UI_GROUPS.map(({ id }) => [id, Math.round(this.uiScales[id] * 100)]))),
+      );
+    } catch {}
+  }
+
+  private uiMaster() {
+    const v = UI_GROUPS.map(({ id }) => Math.round(this.uiScales[id] * 100));
+    return v.every((x) => x === v[0]) ? v[0] : Math.round(v.reduce((a, b) => a + b, 0) / v.length / 5) * 5;
+  }
+
+  private uiSliderRow(id: string, label: string, value: number, hint = "") {
+    const fill = Math.round(((value - UI_SCALE_MIN) / (UI_SCALE_MAX - UI_SCALE_MIN)) * 100);
+    return `<label class="sound-row">${label}${hint} <input type="range" id="${id}" min="${UI_SCALE_MIN}" max="${UI_SCALE_MAX}" step="5" value="${value}" style="--p:${fill}%"><span class="range-val">${value}%</span></label>`;
+  }
+
+  private syncSlider(id: string, value: number) {
+    const el = this.modal.querySelector<HTMLInputElement>(`#${id}`);
+    if (!el) return;
+    el.value = String(value);
+    el.style.setProperty("--p", `${((value - UI_SCALE_MIN) / (UI_SCALE_MAX - UI_SCALE_MIN)) * 100}%`);
+    const label = el.nextElementSibling;
+    if (label) label.textContent = `${value}%`;
+  }
+
+  private setAllUiScales(percent: number) {
+    for (const { id } of UI_GROUPS) {
+      this.setUiScale(id, percent);
+      this.syncSlider(`ui-scale-${id}`, Math.round(this.uiScales[id] * 100));
+    }
+    this.syncSlider("ui-scale", Math.round(this.uiScales.hud * 100));
   }
 
   private dim = false;
@@ -627,8 +714,16 @@ export class UI {
       const el = $(this.root, "#hud-trash");
       el.hidden = !trash;
       if (!trash) return;
-      el.textContent = `Trash Gathered: ${trash.got}/${trash.total}${trash.earned && trash.got >= trash.total ? " ✓" : ""}`;
+      el.innerHTML = `${trashIcon}<span>Trash Gathered: ${trash.got}/${trash.total}${trash.earned && trash.got >= trash.total ? " ✓" : ""}</span>`;
       el.classList.toggle("done", trash.got >= trash.total);
+      const at = `${g.save.zone}:${trash.got}`;
+      const [zone, got] = this.lastTrash.split(":").map(Number);
+      if (this.lastTrash && zone === g.save.zone && trash.got > got) {
+        el.classList.remove("pulse");
+        void el.offsetWidth;
+        el.classList.add("pulse");
+      }
+      this.lastTrash = at;
     });
 
     const cruiseDir = g.cruise || (diving ? g.cruiseOffer : 0);
@@ -1137,6 +1232,26 @@ export class UI {
     apply(value);
   }
 
+  showTrashTip() {
+    const target = $(this.root, "#hud-trash");
+    const r = target.getBoundingClientRect();
+    const host = this.root.getBoundingClientRect();
+    const pad = 8;
+    this.open(
+      "tip",
+      `<div class="tip-spot" style="left:${r.left - host.left - pad}px;top:${r.top - host.top - pad}px;width:${r.width + pad * 2}px;height:${r.height + pad * 2}px"></div>
+      <div class="card tip-card" style="top:${r.bottom - host.top + pad + 14}px">
+        <h2>Trash tracker</h2>
+        <p>This is where we keep count of the trash we've gathered in each zone. Clear it all for a thank-you gift!</p>
+        <div class="row"><button class="btn big" data-act="close" data-autofocus>Got it</button></div>
+      </div>`,
+      "tip-overlay",
+    );
+    this.modal.onclick = (e) => {
+      if ((e.target as HTMLElement).closest("[data-act=close]")) this.close();
+    };
+  }
+
   showAchievement(title: string, note: string) {
     this.root.querySelector(".achievement-pop")?.remove();
     const el = document.createElement("div");
@@ -1198,8 +1313,8 @@ export class UI {
 
   private setupTouch() {
     const enable = () => {
-      if (this.touch) return;
-      this.touch = true;
+      if (this.touchDetected) return;
+      this.touchDetected = true;
       document.body.classList.add("is-touch");
       $(this.root, "#touch").hidden = false;
       this.cache.clear();
@@ -1216,7 +1331,7 @@ export class UI {
     let ox = 0;
     let oy = 0;
     const move = (e: PointerEvent) => {
-      const R = baseR * this.uiScale;
+      const R = baseR * this.uiScales.touch;
       let dx = e.clientX - ox;
       let dy = e.clientY - oy;
       const m = Math.hypot(dx, dy);
@@ -1224,7 +1339,7 @@ export class UI {
         dx *= R / m;
         dy *= R / m;
       }
-      knob.style.transform = `translate(${dx / this.uiScale}px, ${dy / this.uiScale}px)`;
+      knob.style.transform = `translate(${dx / this.uiScales.touch}px, ${dy / this.uiScales.touch}px)`;
       const dead = m < 8;
       this.game.input.stick.x = dead ? 0 : dx / R;
       this.game.input.stick.y = dead ? 0 : dy / R;
@@ -1795,8 +1910,13 @@ export class UI {
         </details>
         <details class="acc">
           <summary>Interface</summary>
-          <label class="sound-row">Interface size <input type="range" id="ui-scale" min="${UI_SCALE_MIN}" max="${UI_SCALE_MAX}" step="5" value="${Math.round(this.uiScale * 100)}" style="--p:${Math.round(((this.uiScale * 100 - UI_SCALE_MIN) / (UI_SCALE_MAX - UI_SCALE_MIN)) * 100)}%"><span class="range-val">${Math.round(this.uiScale * 100)}%</span></label>
-          <p class="muted">Resizes the dials, depth meter, minimap and touch controls.</p>
+          ${this.uiSliderRow("ui-scale", "Interface size", this.uiMaster())}
+          ${UI_GROUPS.filter(({ id }) => id !== "touch" || this.touch).map(({ id, label }) => this.uiSliderRow(`ui-scale-${id}`, label, Math.round(this.uiScales[id] * 100))).join("\n          ")}
+          <div class="sound-row switch-row"><span>Minimap position</span><span>${[["left", "Bottom left"], ["center", "Bottom center"]]
+            .map(([v, t]) => `<button class="btn small ${(v === "center") === this.mapCenter ? "blue" : "ghost"}" type="button" data-map-pos="${v}" aria-pressed="${(v === "center") === this.mapCenter}">${t}</button>`)
+            .join(" ")}</span></div>
+          ${this.touchDetected ? `<div class="sound-row switch-row"><span>Touch controls</span><button class="dim-switch${this.touchHidden ? "" : " on"}" id="touch-controls" type="button" role="switch" aria-checked="${!this.touchHidden}" aria-label="Touch controls"><span class="dim-knob"></span></button></div>` : ""}
+          <p class="muted">The top slider resizes everything at once. The others resize one part each.</p>
           <button class="btn small ghost" id="ui-scale-reset" type="button">Reset to default</button>
         </details>
         <details class="acc" id="catalog-acc">
@@ -1909,7 +2029,11 @@ export class UI {
         const val = el.nextElementSibling;
         if (val?.classList.contains("range-val")) val.textContent = `${el.value}%`;
       }
-      if (el.id === "ui-scale") this.setUiScale(Number(el.value));
+      if (el.id === "ui-scale") this.setAllUiScales(Number(el.value));
+      else if (el.id.startsWith("ui-scale-")) {
+        this.setUiScale(el.id.slice(9) as UiGroup, Number(el.value));
+        this.syncSlider("ui-scale", this.uiMaster());
+      }
       if (el.id === "volume") g.audio.setVolume(Number(el.value) / 100);
       if (el.id === "music-volume") g.audio.setMusicVolume(Number(el.value) / 100);
       if (el.id === "sub-music-volume") g.audio.setSubMusicVolume(Number(el.value) / 100);
@@ -1932,11 +2056,16 @@ export class UI {
         set("#sub-music-volume", g.audio.subMusicVolume);
         ($(this.modal, "#sound-on") as HTMLInputElement).checked = true;
       }
+      if (target.closest("#touch-controls")) this.setTouchHidden(!this.touchHidden);
+      const mapPos = target.closest<HTMLElement>("[data-map-pos]");
+      if (mapPos) this.setMapCenter(mapPos.dataset.mapPos === "center");
       if (target.closest("#ui-scale-reset")) {
-        this.setUiScale(100);
-        const slider = $(this.modal, "#ui-scale") as HTMLInputElement;
-        slider.value = "100";
-        slider.dispatchEvent(new Event("input", { bubbles: true }));
+        this.setAllUiScales(100);
+        this.setTouchHidden(false);
+        try {
+          localStorage.removeItem(MAP_POS_KEY);
+        } catch {}
+        this.setMapCenter(matchMedia("(orientation: landscape) and (max-height: 520px) and (pointer: coarse)").matches, false);
       }
       const devBtn = target.closest<HTMLElement>("#dev-mode");
       if (devBtn) {

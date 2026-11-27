@@ -605,7 +605,8 @@ export function renderScene(g: Game) {
       drawDimmed(ctx, world.atMouth(d.x, d.y), (c) => drawDeco(c, d.kind, d.size, d.tint, t, buried ? 0 : d.push, space));
       ctx.restore();
     }
-    for (const it of world.items) if (it.alive && !ITEMS[it.kind].cargo && inView(it.x) && !inRock(it.x, it.y)) drawItemAt(it);
+    const nearPlank = (it: (typeof world.items)[number]) => world.deco.some((d) => d.kind === 'plank' && Math.abs(d.x - it.x) < 220 && Math.abs(d.y - it.y) < 220);
+    for (const it of world.items) if (it.alive && !ITEMS[it.kind].cargo && inView(it.x) && !inRock(it.x, it.y) && !nearPlank(it)) drawItemAt(it);
 
     const ground = ctx.createLinearGradient(0, 0, 0, world.floorMax);
     ground.addColorStop(0, def.ground[0]);
@@ -671,7 +672,7 @@ export function renderScene(g: Game) {
       ctx.restore();
     }
 
-    for (const it of world.items) if (it.alive && inView(it.x) && (ITEMS[it.kind].cargo ? !inRock(it.x, it.y) || world.caveShown(it.x, it.y) : inRock(it.x, it.y) && world.caveShown(it.x, it.y))) drawItemAt(it);
+    for (const it of world.items) if (it.alive && inView(it.x) && (ITEMS[it.kind].cargo ? !inRock(it.x, it.y) || world.caveShown(it.x, it.y) : inRock(it.x, it.y) ? world.caveShown(it.x, it.y) : nearPlank(it))) drawItemAt(it);
   }
 
   for (const h of world.hulks) {

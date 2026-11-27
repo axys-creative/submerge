@@ -289,6 +289,16 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
 
   const r = creatureRadius(c);
   if (c.kind === 'shark' && !dead && world.def.caves?.length && (c.state === 'chase' || underground())) {
+    if (world.caveHit(c.x, c.y, r, r * 0.5, r * 0.5)) {
+      const [ox, oy] = world.surfaceNormal(c.x, c.y, [0, -1]);
+      c.x = clamp(c.x + ox * 180 * dt, 60, world.width - 60);
+      c.y = Math.max(c.y + oy * 180 * dt, 40);
+      c.vx = ox * 90;
+      c.vy = oy * 90;
+      c.facing = ox >= 0 ? 1 : -1;
+      c.angle = Math.atan2(oy, ox);
+      return;
+    }
     const nx = clamp(c.x + c.vx * dt, 60, world.width - 60);
     if (world.caveHit(nx, c.y, r, r * 0.5, r * 0.5)) c.vx = 0;
     else c.x = nx;
@@ -322,8 +332,10 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
     c.vy = Math.max(0, c.vy);
   }
   if (c.y > bottom) {
-    c.y += (bottom - c.y) * damp(10, dt);
-    c.vy += (Math.min(c.vy, (bottom - c.y) * 3) - c.vy) * damp(8, dt);
+    const cruise = Math.max(40, Math.hypot(c.vx, c.vy));
+    const climb = Math.max(cruise * 0.5, Math.sqrt(Math.max(0, cruise * cruise - c.vx * c.vx)));
+    c.y += clamp((bottom - c.y) * damp(10, dt), -climb * dt, climb * dt);
+    c.vy += (clamp(Math.min(c.vy, (bottom - c.y) * 3), -climb, climb) - c.vy) * damp(8, dt);
   }
   if (Math.abs(c.vx) > 8) c.facing = c.vx > 0 ? 1 : -1;
 
