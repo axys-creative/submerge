@@ -2136,8 +2136,8 @@ export class UI {
             : next
               ? `<button class="btn small" data-act="buy" data-id="${id}" ${g.save.money < next.cost ? "disabled" : ""}>Buy ${money(next.cost)}</button> <span class="muted">${stock.left} in stock here</span>`
               : `<span class="maxed-tag">Maxed out</span>`;
-          return `<div class="upg ${next ? "" : "maxed"}${!next ? " gray" : ""}${soldOut ? " sold" : ""}" data-id="${id}" tabindex="-1">
-        ${soldOut ? `<span class="sold-banner">Sold out</span>` : ""}
+          return `<div class="upg ${next ? "" : "maxed"}${!next || soldOut ? " sold" : ""}" data-id="${id}" tabindex="-1">
+        ${soldOut || !next ? `<span class="sold-banner">Sold out</span>` : ""}
         <div class="upg-head"><h3>${def.title}</h3><div class="pips">${pips}</div></div>
         ${next ? `<p class="upg-next"><b>${esc(next.name)}</b> · ${esc(next.gain ?? next.effect)}</p>` : `<p class="upg-next">${esc(def.blurb)}</p>`}
         <p class="upg-now">Current: ${esc(now.name)} · ${esc(now.effect)}</p>
@@ -2174,7 +2174,8 @@ export class UI {
         const action = full
           ? `<span class="maxed-tag">Owned</span>`
           : `<button class="btn small" data-act="buyGear" data-id="${id}" ${g.save.money < cost ? "disabled" : ""}>Buy ${money(cost)}</button>`;
-        return `<div class="upg ${full ? "maxed" : ""}" data-id="${id}" tabindex="-1">
+        return `<div class="upg ${full ? "maxed sold" : ""}" data-id="${id}" tabindex="-1">
+        ${full ? `<span class="sold-banner">Sold out</span>` : ""}
         <div class="upg-head"><h3>${gear.name}</h3></div>
         <p class="upg-next">${gear.blurb}</p>
         <p class="upg-now">${now}</p>
@@ -2205,7 +2206,8 @@ export class UI {
     const action = g.save.weights
       ? '<span class="maxed-tag">Owned</span>'
       : `<button class="btn small" data-act="buyWeights" ${g.save.money < WEIGHTS.cost ? "disabled" : ""}>Buy ${money(WEIGHTS.cost)}</button>`;
-    return `<div class="upg ${g.save.weights ? "maxed" : ""}" data-id="weights" tabindex="-1">
+    return `<div class="upg ${g.save.weights ? "maxed sold" : ""}" data-id="weights" tabindex="-1">
+        ${g.save.weights ? `<span class="sold-banner">Sold out</span>` : ""}
         <div class="upg-head"><h3>${WEIGHTS.name}</h3></div>
         <p class="upg-next">${WEIGHTS.blurb} Drop them with ${this.touch ? "the <b>Drop</b> button" : "<kbd>Q</kbd> or <kbd>.</kbd>"}.</p>
         <p class="upg-now">${g.save.weights ? "Strapped on every dive" : "One-time purchase"}</p>

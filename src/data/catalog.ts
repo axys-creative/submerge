@@ -143,7 +143,7 @@ function build() {
           y,
           tagY: y - (TAG_ABOVE[kind] ?? Math.max(CREATURES[kind].radius, 50) + 50),
           tint,
-          label: tints.length > 1 ? `${CREATURES[kind].name} ${row + 1}` : CREATURES[kind].name,
+          label: tints.length > 1 || column.length === 1 ? '' : CREATURES[kind].name,
         });
         y += ROW_GAP;
       });

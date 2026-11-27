@@ -3,7 +3,7 @@ import { ITEMS, ITEM_KINDS, type ItemKind } from '../data/items';
 import { CREATURES, type CreatureKind } from '../data/creatures';
 import { MONSTER_TRAIL, PX_PER_M, SCENERY_DENSITY } from '../config';
 import { BONE_KINDS, BONE_WEIGHTS, type BoneKind } from '../art/bones';
-import { clamp, mulberry32, rand, type Rng } from '../util';
+import { clamp, money, mulberry32, rand, type Rng } from '../util';
 import { CATALOG } from '../data/catalog';
 import { createWreckFx } from './wreckfx';
 import { shelfContains } from '../art/polar';
@@ -19,6 +19,64 @@ function foundIn(kinds: CreatureKind[]) {
   return has.length === spawning.length ? 'all map zones' : has.map((z) => z.n).join(' | ');
 }
 
+/** Compacts zone numbers into "1-3, 5", or "all zones" when every zone with items has it. */
+function zoneList(nums: number[], all: number[]) {
+  if (nums.length === all.length) return 'all zones';
+  const out: string[] = [];
+  for (let i = 0; i < nums.length; ) {
+    let j = i;
+    while (j + 1 < nums.length && nums[j + 1] === nums[j] + 1) j++;
+    out.push(j - i >= 2 ? `${nums[i]}\u2013${nums[j]}` : nums.slice(i, j + 1).join(', '));
+    i = j + 1;
+  }
+  return `${nums.length > 1 ? 'zones' : 'zone'} ${out.join(', ')}`;
+}
+
+/** Short notes on where an item turns up, worked out from the zone data: the open sea floor, caves, wrecks and junk spots. */
+function foundItem(kind: ItemKind): string[] {
+  const d = ITEMS[kind];
+  const zones = ZONES.map((z, i) => ({ z, n: i + 1 })).filter(({ z }) => !z.catalog);
+  if (d.trash) {
+    const junk = zones.filter(({ z }) => (z.trash ?? 0) > 0).map(({ n }) => n);
+    const lines = d.cargo ? [] : [`Junk: ${zoneList(junk, zones.map(({ n }) => n))}`];
+    if (d.cargo || ['canister', 'tire', 'jug', 'can', 'boot', 'bottle', 'sack'].includes(kind)) {
+      const w = zones.filter(({ z }) => z.wrecks.some((x) => (d.cargo ? ['freighter', 'containers'] : ['freighter']).includes(x.kind))).map(({ n }) => n);
+      if (w.length) lines.push(`Wrecks: ${zoneList(w, zones.map(({ n }) => n))}`);
+    }
+    return lines;
+  }
+  const allowed = (n: number, cave: boolean) => {
+    const where = d.where?.[n - 1] ?? 'both';
+    return where === 'both' || where === (cave ? 'cave' : 'floor');
+  };
+  const withItems = zones.filter(({ z }) => z.items > 0 || z.floorLoot?.length);
+  const overlaps = (lo: number, hi: number) => hi >= d.minDepth && lo <= d.maxDepth;
+  const forced = zones.filter(({ z }) => z.floorLoot?.some((f) => f.kind === kind)).map(({ n }) => n);
+  const floor = d.weight > 0 || forced.length ? withItems.filter(({ z, n }) => z.floorLoot?.some((f) => f.kind === kind) || d.weight > 0 && z.items > 0 && allowed(n, false) && overlaps(Math.max(15, Math.min(...z.floor)), Math.min(Math.max(...z.floor), z.lootCap ?? Infinity))).map(({ n }) => n) : [];
+  const cave = zones.filter(({ z, n }) =>
+    (z.caves ?? []).some((c) =>
+      c.passages.some((p) => {
+        if (!p.loot) return false;
+        if (p.kinds) return p.kinds.includes(kind);
+        const depth = Math.min(Math.max(...p.pts.map((q) => q[1])), 890);
+        const w = d.caveWeight ?? d.weight;
+        return allowed(n, true) && w > 0 && !d.wreckOnly && (d.treasure || false) && (!!d.caveWeight || (depth >= d.minDepth && depth <= d.maxDepth));
+      }),
+    ),
+  ).map(({ n }) => n);
+  const wreckKinds: Record<string, ItemKind[]> = { sloop: ['wheel', 'anchor', 'coin'], galleon: ['wheel', 'anchor', 'chest'] };
+  const wreck = zones.filter(({ z }) => z.wrecks.some((w) => wreckKinds[w.kind]?.includes(kind))).map(({ n }) => n);
+  const all = zones.map(({ n }) => n);
+  const lines: string[] = [];
+  if (floor.length) lines.push(`Sea floor: ${zoneList(floor, withItems.map(({ n }) => n))}`);
+  if (cave.length) lines.push(`Caves: ${zoneList(cave, all)}`);
+  if (wreck.length) lines.push(`Wrecks: ${zoneList(wreck, all)}`);
+  if (kind === 'coin') lines.push('Beside some chests');
+  if (cave.length && !floor.length && !wreck.length) lines.push('Only in caves');
+  else if (!cave.length && (floor.length || wreck.length)) lines.push('Not in caves');
+  return lines;
+}
+
 /** The sea floor never rises above this depth in px, so kelp, creatures and the ship stay clear of the surface. */
 const MIN_FLOOR = 15 * PX_PER_M;
 /** How gently the floor eases into MIN_FLOOR instead of flattening abruptly. */
@@ -32,6 +90,8 @@ const EXTRA_CAP = 3;
 /** Loot slot numbers: cave loot takes 0 and up, then floor items and wreck chests start here. */
 export const FLOOR_SLOT = 100;
 export const CHEST_SLOT = 500;
+const CAVE_COIN_SLOT = 300;
+const WRECK_COIN_SLOT = 800;
 
 export interface Salvage {
   zone: number;
@@ -238,13 +298,14 @@ export class World {
   readonly creatures: Creature[] = [];
   readonly deco: Deco[] = [];
   /** Name tags drawn in the world, used by the catalog zone. */
-  readonly labels: { x: number; y: number; text: string }[] = [];
+  readonly labels: { x: number; y: number; text: string; value?: boolean; note?: boolean; harmful?: boolean }[] = [];
   /** Catalog column headings, drawn larger than the name tags. */
-  readonly headers: { x: number; y: number; text: string; sub: string; found: string }[] = [];
+  readonly headers: { x: number; y: number; text: string; sub: string; found: string; harmful: boolean }[] = [];
   private readonly shape: number[];
   readonly caveBlobs: CaveBlob[] = [];
   private readonly rng: Rng;
   private readonly lootRng: Rng;
+  private readonly coinRng: Rng;
   /** The zone's passages with this visit's random shifts applied. */
   private passages: CavePassage[] = [];
 
@@ -283,6 +344,7 @@ export class World {
     this.shape = [layout(), layout(), layout(), layout()].map((v) => v * 100);
     this.rng = mulberry32((Date.now() ^ (index * 7919)) >>> 0);
     this.lootRng = mulberry32((lootSeed ^ (index * 7919)) >>> 0);
+    this.coinRng = mulberry32((lootSeed ^ (index * 104729)) >>> 0);
 
     this.buildCave();
     const cave = this.def.caves?.find((c) => c.abyss);
@@ -305,6 +367,16 @@ export class World {
       it.cave = FLOOR_SLOT + i;
       this.placeItem(it);
       this.items.push(it);
+    }
+    let extra = this.def.items;
+    for (const { kind, count } of this.def.floorLoot ?? []) {
+      for (let i = 0; i < count; i++, extra++) {
+        const it = this.blankItem();
+        it.cave = FLOOR_SLOT + extra;
+        this.placeItem(it, kind);
+        this.items.push(it);
+        if (kind === 'chest' && it.alive) this.coinBeside(it, WRECK_COIN_SLOT + 200 + extra, false, taken);
+      }
     }
     for (const it of this.items) if (it.cave !== undefined && it.cave >= FLOOR_SLOT && taken.includes(it.cave)) it.alive = false;
     this.placeCaveLoot(taken);
@@ -333,6 +405,7 @@ export class World {
         this.placeChest(it, dx);
         it.alive = !taken.includes(it.cave);
         this.items.push(it);
+        if (kind === 'chest') this.coinBeside(it, WRECK_COIN_SLOT + i * 8 + j, false, taken);
       });
     });
     for (const spec of this.def.creatures) for (let i = 0; i < spec.count; i++) this.spawn(spec);
@@ -618,7 +691,7 @@ export class World {
     for (const c of this.def.caves ?? []) {
       const pinned = c.abyss ? null : c.passages[0].pts[0][0];
       for (const p of c.passages) {
-        this.passages.push(c.abyss ? p : {
+        this.passages.push(c.abyss || c.fixed ? p : {
           ...p,
           pts: p.pts.map(([x, m]) => {
             if (x === pinned) return [x, m] as [number, number];
@@ -637,6 +710,18 @@ export class World {
     this.passages.forEach((p, n) => {
       const seed = n * 1.7;
       const pts = p.pts.map(([x, m]) => [x, m * PX_PER_M] as [number, number]);
+      if (pts.length === 1 && p.hole) {
+        const [x, y] = pts[0];
+        const w = (p.r - p.hole) / 2;
+        const mid = p.hole + w;
+        const n = Math.ceil((Math.PI * 2 * mid) / (w * 0.5));
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * Math.PI * 2;
+          const v = wobble(k * 90, seed);
+          this.caveBlobs.push({ x: x + Math.cos(a) * mid, y: y + Math.sin(a) * mid, r: w * (1 + 0.06 * v) });
+        }
+        return;
+      }
       if (pts.length === 1) {
         const [x, y] = pts[0];
         this.caveBlobs.push({ x, y, r: p.r });
@@ -657,7 +742,7 @@ export class World {
         const len = Math.hypot(bx - ax, by - ay);
         for (; next <= dist + len; next += BLOB_SPACING) {
           const u = len ? (next - dist) / len : 0;
-          this.caveBlobs.push({ x: ax + (bx - ax) * u, y: ay + (by - ay) * u, r: Math.max(MIN_TUNNEL_R, r * (1 + 0.17 * wobble(next, seed))) });
+          this.caveBlobs.push({ x: ax + (bx - ax) * u, y: ay + (by - ay) * u, r: p.flat ? r : Math.max(MIN_TUNNEL_R, r * (1 + 0.17 * wobble(next, seed))) });
         }
         dist += len;
       }
@@ -695,8 +780,30 @@ export class World {
         it.y = y - ITEMS[kind].size * 0.45;
         it.alive = !taken.includes(it.cave);
         this.items.push(it);
+        if (kind === 'chest') this.coinBeside(it, CAVE_COIN_SLOT + it.cave, true, taken);
       }
     }
+  }
+
+  /** Half of all chests get a coin pile resting beside them. */
+  private coinBeside(chest: ItemInst, slot: number, cave: boolean, taken: number[]) {
+    const r = this.coinRng;
+    if (r() < 0.5) return;
+    const x = chest.x + (r() < 0.5 ? 1 : -1) * (30 + r() * 16);
+    let y: number;
+    if (cave) {
+      if (this.caveSolid(x, chest.y)) return;
+      y = chest.y;
+      while (y < chest.y + 120 && !this.caveSolid(x, y + 4)) y += 4;
+      if (!this.caveSolid(x, y + 4)) return;
+    } else y = this.floorAt(x);
+    const it = this.blankItem();
+    it.kind = 'coin';
+    it.x = x;
+    it.y = y - ITEMS.coin.size * 0.45;
+    it.cave = slot;
+    it.alive = !taken.includes(slot);
+    this.items.push(it);
   }
 
   private terrainAt(x: number): number {
@@ -848,16 +955,17 @@ export class World {
     const tunnels = this.caveBlobs.filter((b) => !this.abyss || b.y + b.r < this.abyssTop(b.x) - 40);
     const floorBelow = (x: number, y: number) => {
       let g = y;
-      while (g < y + 900 && !this.caveSolid(x, g + 4)) g += 4;
+      while (g < y + 1900 && !this.caveSolid(x, g + 4)) g += 4;
       return g;
     };
+    const noFloor = (g: number, b: { y: number; r: number }) => g >= b.y + Math.max(900, b.r + 80);
     const caveBones = scaled(this.def.caves?.reduce((n, c) => n + (c.bones ?? 0), 0) ?? 0);
     for (let i = 0, placed = 0; placed < caveBones && i < caveBones * 12 && tunnels.length; i++) {
       const b = tunnels[Math.floor(r() * tunnels.length)];
       const x = b.x + rand(r, -b.r * 0.5, b.r * 0.5);
       if (this.caveSolid(x, b.y)) continue;
       const g = floorBelow(x, b.y);
-      if (g >= b.y + 900) continue;
+      if (noFloor(g, b)) continue;
       lay(x, (v) => floorBelow(v, g - 30));
       placed++;
     }
@@ -874,18 +982,20 @@ export class World {
     }
 
     const caveSum = (key: 'stones' | 'starfish') => scaled(this.def.caves?.reduce((n, c) => n + (c[key] ?? 0), 0) ?? 0);
-    this.scatterCave(r, tunnels, floorBelow, 'stone', caveSum('stones'), 0.5, 1.7);
-    this.scatterCave(r, tunnels, floorBelow, 'starfish', caveSum('starfish'), 0.5, 1.6);
+    this.scatterCave(r, tunnels, floorBelow, noFloor, 'stone', caveSum('stones'), 0.5, 1.7);
+    this.scatterCave(r, tunnels, floorBelow, noFloor, 'starfish', caveSum('starfish'), 0.5, 1.6);
   }
 
   /** Scatters decorations over the cave floors, `count` per cave that lists them. */
-  private scatterCave(r: Rng, tunnels: { x: number; y: number; r: number }[], floorBelow: (x: number, y: number) => number, kind: 'stone' | 'starfish', count: number, lo: number, hi: number) {
+  private scatterCave(r: Rng, tunnels: { x: number; y: number; r: number }[], floorBelow: (x: number, y: number) => number, noFloor: (g: number, b: { y: number; r: number }) => boolean, kind: 'stone' | 'starfish', count: number, lo: number, hi: number) {
     for (let i = 0, placed = 0; placed < count && i < count * 12 && tunnels.length; i++) {
-      const b = tunnels[Math.floor(r() * tunnels.length)];
+      const a = tunnels[Math.floor(r() * tunnels.length)];
+      const c = tunnels[Math.floor(r() * tunnels.length)];
+      const b = a.r >= c.r ? a : c;
       const x = b.x + rand(r, -b.r * 0.6, b.r * 0.6);
       if (this.caveSolid(x, b.y)) continue;
       const g = floorBelow(x, b.y);
-      if (g >= b.y + 900) continue;
+      if (noFloor(g, b)) continue;
       const slope = Math.atan2(floorBelow(x + 40, g - 30) - floorBelow(x - 40, g - 30), 80);
       this.deco.push({ kind, x, y: floorBelow(x, g - 30), size: rand(r, lo, hi), phase: r() * 10, tint: r(), push: kind === 'starfish' ? clamp(slope, -0.5, 0.5) : 0, pushV: 0 });
       placed++;
@@ -1037,7 +1147,7 @@ export class World {
     return { kind: 'seaweed', x: 0, y: 0, alive: true, phase: this.rng() * 10, wreck: -1 };
   }
 
-  private placeItem(it: ItemInst) {
+  private placeItem(it: ItemInst, force?: ItemKind) {
     const r = this.lootRng;
     for (let tries = 0; tries < 25; tries++) {
       const x = rand(r, 250, this.width - 250);
@@ -1045,7 +1155,7 @@ export class World {
       if (Math.abs(this.floorAt(x + 20) - this.floorAt(x - 20)) > 20) continue;
       if (this.atMouth(x, floor)) continue;
       if (this.items.some((o) => o !== it && o.alive && Math.abs(o.x - x) < ITEM_SPACING)) continue;
-            const kind = this.pickKind(floor / PX_PER_M);
+            const kind = force ?? this.pickKind(Math.min(floor / PX_PER_M, this.def.lootCap ?? Infinity));
       if (!kind) continue;
       it.kind = kind;
       it.x = x;
@@ -1070,6 +1180,8 @@ export class World {
     for (const k of ITEM_KINDS) {
       const d = ITEMS[k];
       const weight = cave ? d.caveWeight ?? d.weight : d.weight;
+      const where = d.where?.[this.index] ?? 'both';
+      if (where === 'none' || where === (cave ? 'floor' : 'cave')) continue;
       const fits = (cave && d.caveWeight) || (depth >= d.minDepth && depth <= d.maxDepth);
       if (weight > 0 && !(cave && d.wreckOnly) && (!treasureOnly || d.treasure) && fits) {
         pool.push([k, weight]);
@@ -1096,6 +1208,7 @@ export class World {
         it.x = e.x;
         it.y = restY(e.item, y);
         this.items.push(it);
+        this.labels.push({ x: e.x, y: it.y - ITEMS[e.item].size * 0.6 - 14, text: money(ITEMS[e.item].value), value: true });
       }
       for (const kind of e.floating ?? []) {
         const it = this.blankItem();
@@ -1104,10 +1217,13 @@ export class World {
         it.y = y - 90;
         it.drift = { x: it.x, y: it.y, ax: 14, ay: 9, speed: 0.4 };
         this.items.push(it);
+        if (!e.item) this.labels.push({ x: e.x, y: it.y - ITEMS[kind].size * 0.6 - 14, text: money(ITEMS[kind].value), value: true });
       }
       this.labels.push({ x: e.x, y: y + 34, text: e.label });
+      const kind = e.item ?? e.floating?.[0];
+      if (kind) foundItem(kind).forEach((text, i) => this.labels.push({ x: e.x, y: y + 34 + 18 * (i + 1), text, note: true }));
     }
-    for (const col of CATALOG.columns) this.headers.push({ x: col.x, y: CATALOG.headerY, text: col.label, sub: col.zones, found: foundIn(col.kinds) });
+    for (const col of CATALOG.columns) this.headers.push({ x: col.x, y: CATALOG.headerY, text: col.label, sub: col.zones, found: foundIn(col.kinds), harmful: col.kinds.some((k) => CREATURES[k].harmful) });
     for (const e of CATALOG.creatures) {
       const y = e.y;
       for (let i = 0; i < (e.kind === 'fish' ? 5 : 1); i++) {
@@ -1139,7 +1255,7 @@ export class World {
         c.glow = 0.6;
         c.trail = Array.from({ length: MONSTER_TRAIL }, (_, k) => ({ x: c.x - k * 16, y }));
       }
-      this.labels.push({ x: e.x, y: e.tagY, text: e.label });
+      if (e.label) this.labels.push({ x: e.x, y: e.tagY, text: e.label, harmful: CREATURES[e.kind].harmful });
     }
   }
 

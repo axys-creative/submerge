@@ -14,6 +14,7 @@ export type ItemKind =
   | 'anchor'
   | 'wheel'
   | 'pearl'
+  | 'giantpearl'
   | 'goldbar'
   | 'gem'
   | 'diamond'
@@ -39,11 +40,13 @@ export interface ItemDef {
   wreckOnly?: boolean;
   /** Spawn chance inside caves, ignoring depth, instead of `weight`. */
   caveWeight?: number;
+  /** Overrides where random picks may place it in a zone (by zone index); zones not listed allow both the sea floor and caves. */
+  where?: Partial<Record<number, 'none' | 'floor' | 'cave' | 'both'>>;
 }
 
 export const ITEMS: Record<ItemKind, ItemDef> = {
   seaweed: { name: 'Seaweed', value: 5, minDepth: 0, maxDepth: 160, weight: 10, size: 30, treasure: false },
-  shell: { name: 'Conch Shell', value: 8, minDepth: 0, maxDepth: 220, weight: 6, size: 12, treasure: false },
+  shell: { name: 'Conch Shell', value: 16, minDepth: 0, maxDepth: 220, weight: 6, size: 12, treasure: false },
   boot: { name: 'Old Boot', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 19.5, treasure: false, trash: true },
   bottle: { name: 'Message in a Bottle', value: 0, minDepth: 0, maxDepth: 550, weight: 0, size: 19.5, treasure: false, trash: true },
   can: { name: 'Bent Can', value: 0, minDepth: 0, maxDepth: 900, weight: 0, size: 18, treasure: false, trash: true },
@@ -56,9 +59,10 @@ export const ITEMS: Record<ItemKind, ItemDef> = {
   coin: { name: 'Gold Coins', value: 25, minDepth: 20, maxDepth: 900, weight: 7, size: 12, treasure: true },
   anchor: { name: 'Anchor', value: 60, minDepth: 40, maxDepth: 900, weight: 4, size: 34, treasure: true, wreckOnly: true },
   wheel: { name: 'Ship Wheel', value: 90, minDepth: 80, maxDepth: 900, weight: 3, size: 27, treasure: true, wreckOnly: true },
-  pearl: { name: 'Pearl Clam', value: 140, minDepth: 120, maxDepth: 900, weight: 3, size: 14, treasure: true },
-  goldbar: { name: 'Gold Bars', value: 220, minDepth: 180, maxDepth: 900, weight: 2.5, size: 30, treasure: true, wreckOnly: true },
-  gem: { name: 'Sea Sapphire', value: 450, minDepth: 300, maxDepth: 900, weight: 1.5, size: 13, treasure: true },
+  pearl: { name: 'Pearl Clam', value: 180, minDepth: 0, maxDepth: 900, weight: 3, size: 14, treasure: true },
+  giantpearl: { name: 'Giant Pearl Clam', value: 500, minDepth: 0, maxDepth: 900, weight: 1, size: 28, treasure: true, where: { 0: 'none', 1: 'cave' } },
+  goldbar: { name: 'Gold Bars', value: 275, minDepth: 180, maxDepth: 900, weight: 2.5, size: 30, treasure: true, wreckOnly: true },
+  gem: { name: 'Sea Sapphire', value: 750, minDepth: 300, maxDepth: 900, weight: 1.5, size: 13, treasure: true },
   diamond: { name: 'Diamond', value: 1200, minDepth: 0, maxDepth: 0, weight: 0, size: 18, treasure: true },
   idol: { name: 'Sunken Idol', value: 900, minDepth: 450, maxDepth: 900, weight: 1, size: 34, treasure: true, wreckOnly: true },
   chest: { name: 'Treasure Chest', value: 350, minDepth: 0, maxDepth: 0, weight: 0, size: 38, treasure: true, caveWeight: 2 },

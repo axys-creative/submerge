@@ -175,7 +175,7 @@ export const UPGRADES: Record<UpgradeId, UpgradeDef> = {
   propeller: {
     title: "Propeller",
     blurb:
-      "Sail faster and cover more ocean per charge of air. The ship can always boost with Shift; Twin Blade and up let the sub boost too, burning battery for speed.",
+      "Sail and swim faster and cover more ocean per charge of air. The ship can always boost with Shift; Twin Blade and up let the sub boost too, burning battery for speed.",
     stock: [
       { zones: [0], shop: GULL },
       { zones: [3], shop: LAST_LIGHT },

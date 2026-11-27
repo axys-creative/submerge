@@ -295,6 +295,8 @@ const RADIO_MAX_Y = 100;
 /** Seconds into the radio sound when it ends. */
 const RADIO_FX_END = 9;
 const RADIO_SHIP_SPEED = 280;
+/** Farthest the ship's splashes are heard from the sub, in px (200 m). */
+const SHIP_SPLASH_RANGE = 2000;
 /** The called ship boosts until it is this close to the sub, in px. */
 const RADIO_BOOST_STOP = 1500;
 /** How quickly the camera eases while zooming for a zone's `shipZoom`, slower than the usual 1.6 so the pull-back is gentle. */
@@ -709,8 +711,9 @@ export class Game {
     return waveY(this.sub.x, this.t) * 0.9 * clamp(1 - (this.sub.y - 4) / 22, 0, 1);
   }
   get shipBob() {
-    return Math.sin(this.t * 1.3) * 3;
+    return Math.sin(this.t * 1.3) * 3 - Math.abs(Math.sin(this.shipHop)) * 11 * this.boost;
   }
+  private shipHop = 0;
 
   /** Scales the canvas resolution down when frames run slow; 1 is full resolution. */
   private quality = 1;
@@ -1452,7 +1455,7 @@ export class Game {
       );
     }
     this.ship.vx +=
-      (ax * 280 * (1 + (BOOST_SPEED - 1) * this.boost) - this.ship.vx) * damp(2.5 + this.boost, dt);
+      (ax * 280 * STATS.speed[this.propellerLevel] * (1 + (BOOST_SPEED - 1) * this.boost) - this.ship.vx) * damp(Math.abs(ax) > 0.2 ? 2.5 + this.boost : 1.1, dt);
     const x = this.ship.x + this.ship.vx * dt;
     const shelf = this.world.def.polar?.shelf;
     const lo = shelf && this.ship.x > shelf.x1 ? shelf.x1 + ICE_STOP : SHIP_MARGIN;
@@ -1556,7 +1559,6 @@ export class Game {
     s.vy = 150;
     s.vx = this.ship.vx * 0.5;
     if (this.save.skin === "challenger") s.facing = this.ship.facing > 0 ? -1 : 1;
-    this.ship.vx = 0;
     this.batteryWarned = false;
     this.depthHeld = false;
     this.cruise = 0;
@@ -1620,7 +1622,10 @@ export class Game {
   /** Radio: sends the ship sailing over to a sub that is at the surface. */
   private callShip() {
     if (this.radioCall) return this.say("The ship is already on its way!", "#6CC5F0");
-    if (this.sub.y > RADIO_MAX_Y) return this.say("We need to be near the surface to reach the ship.", "#6CC5F0");
+    if (this.sub.y > RADIO_MAX_Y) {
+      this.audio.play("invalid");
+      return this.say("We need to be near the surface to reach the ship.", "#6CC5F0");
+    }
     if (this.shipInView()) return this.say("The ship is right there, no need for the radio!", "#6CC5F0");
     this.radioCall = true;
     this.radioReply = null;
@@ -1645,7 +1650,7 @@ export class Game {
     const prevVx = ship.vx;
     const boosting = (tx - ship.x) * f > RADIO_BOOST_STOP;
     this.boost += ((boosting ? 1 : 0) - this.boost) * damp(boosting ? 2.5 : 5, dt);
-    const want = f * clamp((tx - ship.x) * f * 2.2, 0, RADIO_SHIP_SPEED * (1 + (BOOST_SPEED - 1) * this.boost));
+    const want = f * clamp((tx - ship.x) * f * 2.2, 0, RADIO_SHIP_SPEED * STATS.speed[this.propellerLevel] * (1 + (BOOST_SPEED - 1) * this.boost));
     ship.vx += (want - ship.vx) * damp(3.5, dt);
     if (ship.vx * f < 0) ship.vx = 0;
     const x = ship.x + ship.vx * dt;
@@ -3141,7 +3146,54 @@ export class Game {
     }
   }
 
+  private coastShip(dt: number) {
+    if (dt <= 0) return;
+    const ship = this.ship;
+    this.boost -= this.boost * damp(2.5, dt);
+    if (this.boost < 0.01) this.boost = 0;
+    const prevVx = ship.vx;
+    ship.vx -= ship.vx * damp(1.1, dt);
+    if (Math.abs(ship.vx) < 1) ship.vx = 0;
+    const shelf = this.world.def.polar?.shelf;
+    const lo = shelf && ship.x > shelf.x1 ? shelf.x1 + ICE_STOP : SHIP_MARGIN;
+    const hi = shelf && ship.x < shelf.x0 ? shelf.x0 - ICE_STOP : this.world.width - SHIP_MARGIN;
+    const x = ship.x + ship.vx * dt;
+    ship.x = clamp(x, lo, hi);
+    if (ship.x !== x) ship.vx = 0;
+    const accel = (ship.vx - prevVx) / dt;
+    this.updateSwing(dt, accel);
+    this.shipPitch +=
+      (clamp(-0.035 * Math.abs(ship.vx / 280) - 0.00007 * accel * ship.facing, -0.17, 0.05) - this.shipPitch) * damp(4, dt);
+    if (Math.abs(ship.vx) > 8) this.shipProp += (0.6 + Math.abs(ship.vx) * 0.012) * dt * 10;
+    this.emitWake(dt, Math.abs(ship.vx) / 280);
+  }
+
+  private hopShip(dt: number) {
+    const prev = Math.floor(this.shipHop / Math.PI);
+    this.shipHop += dt * (2.6 + 1.4 * this.boost) * this.boost;
+    if (this.boost > 0.25 && Math.floor(this.shipHop / Math.PI) > prev) {
+      const f = this.ship.facing;
+      for (const x of [this.ship.x + f * 150, this.ship.x - f * 140]) {
+        for (let i = 0; i < 9; i++) {
+          this.foam.push({
+            x: x + (Math.random() - 0.5) * 50,
+            y: waveY(x, this.t) + 2,
+            vx: (Math.random() - 0.5) * 160 + this.ship.vx * 0.3,
+            vy: -(70 + Math.random() * 150) * this.boost,
+            r: 1.6 + Math.random() * 2.2,
+            life: 0.7 + Math.random() * 0.4,
+            max: 1.1,
+            spray: true,
+          });
+        }
+      }
+      const near = this.mode === "docked" ? 1 : 1 - Math.abs(this.ship.x - this.sub.x) / SHIP_SPLASH_RANGE;
+      if (near > 0) this.audio.play("splash", 0.15 * near);
+    }
+  }
+
   private emitWake(dt: number, speed: number) {
+    this.hopShip(dt);
     if (speed < 0.1) return;
     const f = this.ship.facing;
     const stern = this.ship.x - f * 150;
@@ -3215,8 +3267,7 @@ export class Game {
     }
     this.foam = this.foam.filter((p) => p.life > 0);
     if (this.mode !== "docked") {
-      if (!this.radioCall) this.shipPitch *= Math.exp(-3 * dt);
-      if (!this.radioCall) this.boost = 0;
+      if (!this.radioCall) this.coastShip(dt);
       const ready = this.inDockPosition();
       const down = ready || this.sub.y < (this.reelDir > 0 ? HOOK_DROP_DEPTH : HOOK_RETRACT_DEPTH) * PX_PER_M;
       const dir = down ? -1 : 1;
@@ -3345,7 +3396,7 @@ export class Game {
     this.deathGlitch = null;
     this.glitchWait = GLITCH_GAP[0] + Math.random() * (GLITCH_GAP[1] - GLITCH_GAP[0]);
     this.audio.stop("static");
-    if (!keepBeast) {
+    if (!keepBeast && !this.world.def.catalog) {
       this.audio.stop("monster");
       const beasts = this.world.creatures;
       for (let i = beasts.length - 1; i >= 0; i--)

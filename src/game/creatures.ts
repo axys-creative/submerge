@@ -270,8 +270,7 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
       }
       break;
     case 'angler':
-      if (d < 420) steer(c, (dx / d) * 72, (dy / d) * 72, 1.2, dt);
-      else wander(22, 0.8);
+      wander(75, 1.2);
       break;
   }
 

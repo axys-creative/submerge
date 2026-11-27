@@ -19,6 +19,77 @@ function paintShape(ctx: CanvasRenderingContext2D, pass: number, fill: string, l
   }
 }
 
+/** Traces a wavy arc of an ellipse: the scalloped rim of a shell. */
+function scallops(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, from: number, to: number, waves: number, amp: number, rot = 0) {
+  const steps = 40;
+  for (let i = 0; i <= steps; i++) {
+    const a = from + ((to - from) * i) / steps;
+    const w = 1 + amp * Math.sin(((a - from) / (to - from)) * waves * Math.PI * 2);
+    const x = Math.cos(a) * rx * w;
+    const y = Math.sin(a) * ry * w;
+    const px = cx + x * Math.cos(rot) - y * Math.sin(rot);
+    const py = cy + x * Math.sin(rot) + y * Math.cos(rot);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+}
+
+/** An open pearl clam: a tilted back shell with ridged coral lining, a glossy pink lower shell and a pearl resting between. About 36 wide. */
+function drawClam(ctx: CanvasRenderingContext2D) {
+  const LINE = '#9C6B5C';
+  for (const pass of [0, 1]) {
+    const paint = (fill: string, base = true) => paintShape(ctx, pass, fill, LINE, 2.2, base);
+    ctx.beginPath();
+    scallops(ctx, 2, 4, 17, 20, Math.PI * 1.0, Math.PI * 1.95, 5, 0.025, 0.3);
+    ctx.lineTo(16, 8);
+    ctx.quadraticCurveTo(0, 12, -14, 6);
+    ctx.closePath();
+    paint('#E8D6BC');
+    ctx.beginPath();
+    scallops(ctx, 0, 5, 14.5, 17, Math.PI * 1.05, Math.PI * 1.9, 6, 0.04, 0.25);
+    ctx.quadraticCurveTo(10, 7, 0, 8);
+    ctx.quadraticCurveTo(-8, 8, -13, 5);
+    ctx.closePath();
+    paint('#CC5F6B', false);
+    if (pass === 1) {
+      ctx.strokeStyle = 'rgba(120,40,60,0.35)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-9 + i * 3, 6);
+        ctx.quadraticCurveTo(-8 + i * 5, -6, -3 + i * 5, -12 + i * 1.5);
+        ctx.stroke();
+      }
+    }
+    ctx.beginPath();
+    scallops(ctx, 0, 5, 20, 10, Math.PI * 0.02, Math.PI * 0.98, 9, 0.035);
+    ctx.closePath();
+    paint('#DCCDB8');
+    ctx.beginPath();
+    ctx.ellipse(0, 3, 17, 6.5, 0, 0, Math.PI * 2);
+    paint('#F26F7D', false);
+  }
+  ctx.fillStyle = 'rgba(255,200,205,0.55)';
+  ctx.beginPath();
+  ctx.ellipse(-4, 2.5, 8, 2, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(150,50,70,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(-0.5, 3.8, 8, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const g = ctx.createRadialGradient(-2.5, -3.5, 1, -1, -1, 7.5);
+  g.addColorStop(0, '#FFFFFF');
+  g.addColorStop(0.6, '#FBE4EA');
+  g.addColorStop(1, '#EFB5C3');
+  ctx.fillStyle = g;
+  ctx.strokeStyle = 'rgba(150,70,90,0.5)';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.arc(-1, -1.5, 6.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+}
+
 const CARDBOARD_SCALE = 1.25;
 
 function face(ctx: CanvasRenderingContext2D, pts: number[][], fill: string) {
@@ -432,25 +503,12 @@ export function drawItem(ctx: CanvasRenderingContext2D, kind: ItemKind, t: numbe
       ctx.fill();
       break;
     case 'pearl':
-      ctx.scale(0.5, 0.5);
-      for (const pass of [0, 1]) {
-        const paint = (fill: string, base = true) => paintShape(ctx, pass, fill, '#A8506E', 2.4, base);
-        ctx.beginPath();
-        ctx.ellipse(0, 4, 17, 9, 0, 0, Math.PI);
-        ctx.closePath();
-        paint('#E890AE');
-        ctx.beginPath();
-        ctx.ellipse(-2, 0, 17, 9, -0.4, Math.PI, Math.PI * 2);
-        ctx.closePath();
-        paint('#F7BFD2');
-        ctx.beginPath();
-        ctx.arc(3, 1, 6.5, 0, Math.PI * 2);
-        paint('#FFFFFF', false);
-        ctx.beginPath();
-        ctx.arc(5, 3, 3, 0, Math.PI * 2);
-        paint('#DDE5FF', false);
-      }
+    case 'giantpearl': {
+      const k = kind === 'giantpearl' ? 1 : 0.5;
+      ctx.scale(k, k);
+      drawClam(ctx);
       break;
+    }
     case 'goldbar':
       for (const [x, y] of [
         [-10, 9],

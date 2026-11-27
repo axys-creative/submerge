@@ -1439,6 +1439,17 @@ export function renderScene(g: Game) {
   ctx.font = `700 ${18 / view.zoom}px Fredoka, Nunito, sans-serif`;
   ctx.textAlign = 'center';
   ctx.lineJoin = 'round';
+  const dangerDot = (x: number, y: number, harmful: boolean) => {
+    ctx.save();
+    ctx.fillStyle = harmful ? '#E5484D' : '#3DDC84';
+    ctx.strokeStyle = 'rgba(20,36,90,0.9)';
+    ctx.lineWidth = 2.5 / view.zoom;
+    ctx.beginPath();
+    ctx.arc(x, y, 6 / view.zoom, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fill();
+    ctx.restore();
+  };
   if (world.headers.length && !intro) {
     ctx.font = `700 ${17 / view.zoom}px Fredoka, Nunito, sans-serif`;
     ctx.lineWidth = 4 / view.zoom;
@@ -1448,6 +1459,7 @@ export function renderScene(g: Game) {
       if (!inView(h.x, 400)) continue;
       ctx.strokeText(h.text, h.x, h.y);
       ctx.fillText(h.text, h.x, h.y);
+      dangerDot(h.x - ctx.measureText(h.text).width / 2 - 12 / view.zoom, h.y - 6 / view.zoom, h.harmful);
     }
     ctx.font = `600 ${13 / view.zoom}px Fredoka, Nunito, sans-serif`;
     ctx.lineWidth = 3 / view.zoom;
@@ -1459,6 +1471,20 @@ export function renderScene(g: Game) {
       if (!h.found) continue;
       ctx.strokeText(h.found, h.x, h.y + 42 / view.zoom);
       ctx.fillText(h.found, h.x, h.y + 42 / view.zoom);
+    }
+    ctx.font = `700 ${18 / view.zoom}px Fredoka, Nunito, sans-serif`;
+  }
+  if (world.labels.length && !intro) {
+    ctx.font = `700 ${15 / view.zoom}px Fredoka, Nunito, sans-serif`;
+    ctx.lineWidth = 4 / view.zoom;
+    ctx.strokeStyle = 'rgba(20,36,90,0.9)';
+    for (const l of world.labels) {
+      if (!inView(l.x, 200)) continue;
+      ctx.font = `${l.note ? 600 : 700} ${(l.note ? 12 : 15) / view.zoom}px Fredoka, Nunito, sans-serif`;
+      ctx.fillStyle = l.value ? '#FFD65A' : l.note ? '#BFE3FF' : '#FFFFFF';
+      ctx.strokeText(l.text, l.x, l.y);
+      ctx.fillText(l.text, l.x, l.y);
+      if (l.harmful !== undefined) dangerDot(l.x - ctx.measureText(l.text).width / 2 - 11 / view.zoom, l.y - 5 / view.zoom, l.harmful);
     }
     ctx.font = `700 ${18 / view.zoom}px Fredoka, Nunito, sans-serif`;
   }

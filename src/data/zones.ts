@@ -24,6 +24,10 @@ export interface CavePassage {
   loot?: number;
   /** Fixed kinds for the loot, in order, instead of random picks. */
   kinds?: ItemKind[];
+  /** Keeps the walls the same width all along instead of wavering, so the tunnel floor stays level. */
+  flat?: boolean;
+  /** For a round room: leaves a pillar of rock this many px wide in the middle, so the room is a loop around it. */
+  hole?: number;
 }
 
 /** A rocky headland with tunnels carved through it; collision inside x0..x1 uses the tunnels, not just the sea floor. */
@@ -34,6 +38,8 @@ export interface CaveDef {
   /** Raises the sea floor into a headland with steep sides, so the first tunnel can enter its side horizontally. */
   hill: { x: number; half: number; ramp: number; height: number };
   passages: CavePassage[];
+  /** Skips the random shifts of the tunnels each visit, so the layout stays exactly as listed. */
+  fixed?: boolean;
   /** From outside only the mouth of the first passage shows; the rest is drawn once the sub is inside. */
   hidden?: boolean;
   /** Skeleton pieces scattered on the floors of the tunnels above the cavern. */
@@ -71,6 +77,10 @@ export interface ZoneDef {
   /** Depths in meters where the water starts to darken and where it is fully dark. */
   darkness: [number, number];
   items: number;
+  /** Depth in meters past which floor items are chosen as if they lay at this depth, so a deep zone still has loot. */
+  lootCap?: number;
+  /** Fixed numbers of particular items laid on the sea floor wherever it is flat, whatever the depth. */
+  floorLoot?: { kind: ItemKind; count: number }[];
   /** Junk on the sea floor at fixed spots; clearing all of it earns the zone's clean-up achievement. */
   trash?: number;
   creatures: CreatureSpawn[];
@@ -267,7 +277,6 @@ export const ZONES: ZoneDef[] = [
       { kind: 'shark', count: 1, minDepth: 40, maxDepth: 220 },
       { kind: 'stingray', count: 2, minDepth: 10, maxDepth: 100 },
       { kind: 'turtle', count: 3, minDepth: 8, maxDepth: 150 },
-      { kind: 'whaleshark', count: 1, minDepth: 30, maxDepth: 180 },
     ],
     islands: [{ x: 5000, name: 'Pearl Atoll' }],
     wrecks: [{ x: 2800, kind: 'sloop' }],
@@ -451,24 +460,32 @@ export const ZONES: ZoneDef[] = [
     vents: [{ x0: 8450, x1: 8850, count: 4 }, { x0: 7900, x1: 8010, count: 1 }, { x0: 9270, x1: 9390, count: 2 }, { x0: 10000, x1: 11200, count: 3 }, { x0: 11800, x1: 13000, count: 3 }, { x0: 13200, x1: 14200, count: 2 }],
     caves: [{
       name: 'Trench Hollows',
-      stones: 10,
-      x0: 4000,
-      x1: 8000,
-      hill: { x: 7690, half: 0, ramp: 1, height: 0 },
+      stones: 220,
+      fixed: true,
+      x0: 0,
+      x1: 6700,
+      hill: { x: 6450, half: 0, ramp: 1, height: 0 },
       passages: [
-        { pts: [[7690, 1900], [7300, 1900], [6950, 1930], [6600, 1950]], r: 190 },
-        { pts: [[6600, 1950], [6350, 1880], [6050, 1820], [5700, 1800]], r: 190 },
-        { pts: [[6600, 1950], [6450, 2030], [6150, 2090], [5750, 2110]], r: 190 },
-        { pts: [[5700, 1800], [5450, 1830], [5200, 1930], [5000, 1970]], r: 190 },
-        { pts: [[5750, 2110], [5450, 2090], [5200, 2000], [5000, 1970]], r: 190 },
-        { pts: [[5700, 1800], [5720, 1950], [5750, 2110]], r: 95 },
-        { pts: [[5000, 1970], [4700, 1960], [4450, 1905]], r: 190 },
-        { pts: [[6050, 1820], [6050, 1700], [5950, 1650]], r: 95 },
-        { pts: [[6150, 2090], [6150, 2200], [6000, 2265]], r: 95 },
-        { pts: [[7690, 1900]], r: 260 },
-        { pts: [[4400, 1905]], r: 300, loot: 1, kinds: ['diamond'] },
-        { pts: [[5950, 1640]], r: 250 },
-        { pts: [[6000, 2270]], r: 280 },
+        { pts: [[6450, 1462.4], [6000, 1462.4]], r: 190, flat: true },
+        { pts: [[6000, 1462.4], [5500, 1454.4], [5000, 1468.4], [4500, 1453.4], [4000, 1469.4], [3500, 1456.4], [3000, 1467.4], [2700, 1460.4]], r: 190 },
+        { pts: [[5500, 1454.4], [4700, 1362.4], [4100, 1362.4]], r: 190 },
+        { pts: [[4100, 1362.4], [3700, 1362.4]], r: 190 },
+        { pts: [[4100, 1362.4], [3500, 1297.4], [3200, 1297.4]], r: 190 },
+        { pts: [[5000, 1468.4], [4200, 1562.4], [3500, 1562.4]], r: 190 },
+        { pts: [[1900, 1462.4]], r: 900, hole: 300, loot: 1, kinds: ['diamond'] },
+        { pts: [[1350, 1402.4], [800, 1342.4], [550, 1342.4]], r: 190 },
+        { pts: [[1050, 1482.4], [700, 1482.4]], r: 190 },
+        { pts: [[3500, 1362.4]], r: 250, loot: 1, kinds: ['pearl'] },
+        { pts: [[3000, 1297.4]], r: 250, loot: 1 },
+        { pts: [[3300, 1562.4]], r: 280, loot: 1, kinds: ['giantpearl'] },
+        { pts: [[350, 1342.4]], r: 250, loot: 1 },
+        { pts: [[450, 1482.4]], r: 260, loot: 1 },
+        { pts: [[5200, 1462.4], [5100, 1462.4]], r: 190, flat: true, loot: 1, kinds: ['pearl'] },
+        { pts: [[4750, 1458.4], [4650, 1458.4]], r: 190, flat: true, loot: 1, kinds: ['coin'] },
+        { pts: [[4250, 1462.4], [4150, 1462.4]], r: 190, flat: true, loot: 1, kinds: ['pearl'] },
+        { pts: [[3750, 1464.4], [3650, 1464.4]], r: 190, flat: true, loot: 1, kinds: ['gem'] },
+        { pts: [[3250, 1459.4], [3150, 1459.4]], r: 190, flat: true, loot: 1 },
+        { pts: [[2950, 1462.4], [2850, 1462.4]], r: 190, flat: true, loot: 1 },
       ],
     }],
   },
@@ -483,7 +500,8 @@ export const ZONES: ZoneDef[] = [
     water: ['#3E8FD0', '#0A1E4A'],
     ground: ['#B7C6E0', '#3A4468'],
     darkness: [20, 360],
-    items: 0,
+    items: 5,
+    lootCap: 890,
     creatures: [
       { kind: 'fish', count: 9, minDepth: 20, maxDepth: 400 },
       { kind: 'jelly', count: 8, minDepth: 300, maxDepth: 1300 },
@@ -493,6 +511,7 @@ export const ZONES: ZoneDef[] = [
       { kind: 'angler', count: 12, minDepth: 1000, maxDepth: 3700 },
       { kind: 'whale', count: 3, minDepth: 400, maxDepth: 1100 },
       { kind: 'mobydick', count: 1, minDepth: 400, maxDepth: 1100 },
+      { kind: 'shark', count: 3, minDepth: 40, maxDepth: 400 },
       { kind: 'orca', count: 5, minDepth: 60, maxDepth: 450 },
       { kind: 'orcacalf', count: 3, minDepth: 60, maxDepth: 450 },
       { kind: 'manta', count: 3, minDepth: 100, maxDepth: 800 },
@@ -516,7 +535,7 @@ export const ZONES: ZoneDef[] = [
         { pts: [[13700, 3100], [13250, 3095], [12750, 3105], [12250, 3095], [11750, 3105], [11250, 3100]], r: 190 },
         { pts: [[11250, 3102]], r: 330, loot: 1, kinds: ['pearl'] },
         { pts: [[12250, 3095], [12250, 3150], [12050, 3190], [12050, 3240]], r: 190 },
-        { pts: [[12050, 3245]], r: 270 },
+        { pts: [[12050, 3245]], r: 270, loot: 1, kinds: ['giantpearl'] },
         { pts: [[11250, 3100], [11150, 3150], [10950, 3180]], r: 190 },
         { pts: [[10950, 3185]], r: 260, loot: 1, kinds: ['gem'] },
         { pts: [[12750, 3105], [12750, 3060], [12600, 3020], [12600, 2990]], r: 190 },
@@ -540,13 +559,21 @@ export const ZONES: ZoneDef[] = [
     darkness: [25, 420],
     polar: { bergs: [[6000, 0.35], [7100, 0.5], [8000, 0.7], [26800, 1], [28000, 1.1]], iceFrom: 5700, giant: { x: 9000, half: 340 }, shelf: { x0: 11000, x1: 24500, height: 624 }, shipZoom: { at: 10350, zoom: 0.5 }, peaks: 26200, ridges: [10000, 14000] },
     items: 85,
+    floorLoot: [
+      { kind: 'anchor', count: 4 },
+      { kind: 'wheel', count: 3 },
+      { kind: 'goldbar', count: 5 },
+      { kind: 'chest', count: 3 },
+      { kind: 'gem', count: 5 },
+      { kind: 'diamond', count: 2 },
+    ],
     creatures: [
       { kind: 'orca', count: 4, minDepth: 90, maxDepth: 400 },
       { kind: 'orcacalf', count: 2, minDepth: 90, maxDepth: 400 },
       { kind: 'bluewhale', count: 2, minDepth: 25, maxDepth: 300 },
     ],
     islands: [],
-    wrecks: [],
+    wrecks: [{ x: 3400, kind: 'galleon' }],
     kelp: 0,
     rocks: 170,
   },
