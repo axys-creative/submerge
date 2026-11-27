@@ -270,7 +270,7 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
       }
       break;
     case 'angler':
-      wander(75, 1.2);
+      wander(15, 1.2);
       break;
   }
 
@@ -315,14 +315,15 @@ export function updateCreature(c: Creature, dt: number, world: World, target: Ta
   if (world.iceHit(c.x, ny, r * 1.6, r + 20, r + 20)) c.vy = -c.vy * 0.5;
   else c.y = ny;
   const top = c.kind === 'fish' ? 30 : Math.max(40, c.minY * 0.5);
-  const bottom = Math.min(world.clearFloorAt(c.x, r * 2) - r - 12, c.maxY * 1.15);
+  const ahead = world.clearFloorAt(c.x + c.vx * 0.8, r * 2);
+  const bottom = Math.min(Math.min(world.clearFloorAt(c.x, r * 2), ahead) - r - 12, c.maxY * 1.15);
   if (c.y < top) {
     c.y = top;
     c.vy = Math.max(0, c.vy);
   }
   if (c.y > bottom) {
-    c.y = bottom;
-    c.vy = Math.min(0, c.vy);
+    c.y += (bottom - c.y) * damp(10, dt);
+    c.vy += (Math.min(c.vy, (bottom - c.y) * 3) - c.vy) * damp(8, dt);
   }
   if (Math.abs(c.vx) > 8) c.facing = c.vx > 0 ? 1 : -1;
 

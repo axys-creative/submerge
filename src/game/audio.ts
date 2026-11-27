@@ -57,6 +57,8 @@ type Sound = keyof typeof FILES;
 type Scene = "surface" | "dive";
 
 const KEY = "submerge.audio.v2";
+const DEFAULT_VOLUME = 0.25;
+const DEFAULT_MUSIC_VOLUME = 0.15;
 
 const VOLUME: Record<Sound, number> = {
   splash: 0.5,
@@ -195,9 +197,9 @@ export class AudioManager {
   private hitIndex = 0;
   private whaleFarTimer = 4;
   private whaleNearTimer = 0;
-  volume = 0.25;
-  musicVolume = 0.15;
-  subMusicVolume = 0.15;
+  volume = DEFAULT_VOLUME;
+  musicVolume = DEFAULT_MUSIC_VOLUME;
+  subMusicVolume = DEFAULT_MUSIC_VOLUME;
   muted = false;
 
   constructor() {
@@ -500,6 +502,13 @@ export class AudioManager {
     this.depthTravel = 0;
     this.depthNext = final ? 2000 + Math.random() * 1000 : (80 + Math.random() * 200) * (deep ? 2 : 1);
     this.depthTimer = deep && !final ? 5 : 2.5;
+  }
+
+  resetSound() {
+    this.volume = DEFAULT_VOLUME;
+    this.musicVolume = DEFAULT_MUSIC_VOLUME;
+    this.subMusicVolume = DEFAULT_MUSIC_VOLUME;
+    this.setMuted(false);
   }
 
   setVolume(v: number) {

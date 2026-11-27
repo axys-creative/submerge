@@ -43,6 +43,7 @@ export class Input {
       const t = e.target;
       if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
       if (t instanceof HTMLButtonElement && (e.code === 'Enter' || e.code === 'Space')) return;
+      if (t instanceof HTMLElement && t.tagName === 'SUMMARY' && (e.code === 'Enter' || e.code === 'Space' || e.code === 'KeyE')) return;
       e.preventDefault();
       if (e.code === 'KeyE' && !e.repeat) this.tap('hold');
       if (!e.repeat) this.tap(a);

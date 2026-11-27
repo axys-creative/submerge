@@ -17,7 +17,9 @@ Each upgrade has `stock` slots in `src/data/upgrades.ts`, one per purchasable le
 | 5 Abyssal Plains | Palm Atoll | Battery, Sonar, Electrolysis Unit |
 | 5 Abyssal Plains | Trench Pier | Plating, Bumpers, dive weights |
 
-Abyssal Plains is 39,600 px wide (the minimap scrolls): a 1500 m mountain with a peak about 100 m down under Palm Atoll and a lower one about 180 m down between the two islands and the Trench Pocket cave on its east side, a wide flat plain about 3800 m deep with the Titanic wreck (`titanic`, x 20000), then two bumpy trenches in the east (about 4400 m and 4900 m), the portal stone on the floor of the deeper one. The floor is `ABYSSAL_FLOOR` in `src/data/zones.ts`.
+Abyssal Plains is 44,100 px wide (the minimap scrolls): a 1500 m mountain with a peak about 100 m down under Palm Atoll and a lower one about 180 m down between the two islands and the Trench Pocket cave on its east side, a wide flat plain about 3800 m deep with the Titanic wreck (`titanic`, x 20000), then two bumpy trenches in the east (about 4400 m and 4900 m), the portal stone on the floor of the deeper one, then a steep rise to a flat plateau 2320 m down (`ABYSSAL_PLATEAU`) at the far east end. The floor is `ABYSSAL_FLOOR` in `src/data/zones.ts`.
+
+A floating oil rig (`rig` in `src/data/zones.ts`, drawn by `drawRig` in `src/art/rig.ts`) floats over the plateau at the far east end, x 42600: the red lower deck, a flare tower and a crane above the water, three lattice legs over a pontoon about 25 m down, mooring lines to anchors on the plateau, and a riser column down to a wellhead on it. The riser has a rectangular guard frame down its first 500 m and a lamp every 50 m down to 750 m (`RIG_LAMPS`, which also light the dark water). It is scenery only, with no collision.
 
 Air gear is set by `gear` on the island in `src/data/zones.ts`, and the dive weights by `weights`.
 

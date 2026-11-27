@@ -15,6 +15,7 @@ import { drawSharkTankBack, drawSharkTankFront } from '../art/hammerhead';
 import { drawBoostSwirl } from '../art/swirl';
 import { ULYSSES_SCALE } from '../art/ulysses';
 import { drawShip, drawIsland, dockPoles, drawCloud, cloudShape, drawBuoy, drawPortal, drawPortalStone, drawWreck, drawDeco, CRANE_TIP, SHIP_LAMPS } from '../art/scenery';
+import { drawRig, RIG_LAMPS, RIG_RISER } from '../art/rig';
 import { BACKGROUND_KINDS, CREATURE_EXTENT, anglerRelSize } from '../data/creatures';
 import { drawCreature, drawLureBulb, anglerLure, lureGlow, leviathanGlows, drawLeviathanGlows } from '../art/creatures';
 import { drawItem, drawSparkle } from '../art/items';
@@ -474,6 +475,14 @@ export function renderScene(g: Game) {
         ctx.fill();
       }
     }
+  }
+
+  if (def.rig && inView(def.rig.x, 800) && !space) {
+    const rx = def.rig.x;
+    ctx.save();
+    ctx.translate(rx, 0);
+    drawRig(ctx, { t, night, top, bottom, deep: water1, floorAt: (dx) => world.floorAt(rx + dx) });
+    ctx.restore();
   }
 
   if (def.polar && top < 900) drawPolarUnder(ctx, left, right, cam.x, t, water1, night, def.polar.bergs);
@@ -1186,6 +1195,7 @@ export function renderScene(g: Game) {
   for (const b of shipBeams) {
     lights.push({ x: b.x, y: b.y, r: SHIP_BEAM_RANGE, angle: b.angle, spread: SHIP_BEAM_SPREAD, a: lampNight });
   }
+  if (def.rig && inView(def.rig.x, 400)) for (const ly of RIG_LAMPS) lights.push({ x: def.rig.x + RIG_RISER, y: ly, r: 300, a: 0.9 });
   for (const d of world.deco) if (d.kind === 'vent' && inView(d.x, 200)) lights.push({ x: d.x, y: d.y - 40 * d.size, r: 170 * d.size, a: 0.85 });
   const beastGlows: ReturnType<typeof leviathanGlows> = [];
   for (const c of world.creatures) {

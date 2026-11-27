@@ -64,6 +64,9 @@ const DIM_KEY = "submerge.ui.v1";
 const CONTROLS_HINT_MS = 8000;
 const MAP_PIN_KEY = "submerge.map-pinned.v1";
 const ZONE_DIST_KEY = "submerge.zone-distance.v1";
+const UI_SCALE_KEY = "submerge.ui-scale.v1";
+const UI_SCALE_MIN = 50;
+const UI_SCALE_MAX = 150;
 const MAX_TEST_LEVEL = 3;
 const DEV_KEY = "submerge-dev";
 const devModeOn = () => {
@@ -263,6 +266,11 @@ export class UI {
 
     $(this.root, "#btn-menu").addEventListener("click", () => this.openMenu());
     addEventListener("keydown", (e) => {
+      const t = e.target;
+      if (e.code === "KeyE" && !e.repeat && t instanceof HTMLElement && t.tagName === "SUMMARY" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        t.click();
+      }
       this.mapKeys(e);
       this.shopKeys(e);
     }, true);
@@ -341,8 +349,21 @@ export class UI {
       setPinned(!pinned);
       this.toast(pinned ? "Minimap pinned" : this.touch ? "Minimap hidden: tap its label to show it" : "Minimap unpinned: hover to reveal it");
     });
+    try {
+      this.setUiScale(Number(localStorage.getItem(UI_SCALE_KEY) ?? 100));
+    } catch {}
     this.setupTouch();
     this.showSplash();
+  }
+
+  private uiScale = 1;
+  private setUiScale(percent: number) {
+    const p = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Number.isFinite(percent) ? percent : 100));
+    this.uiScale = p / 100;
+    this.root.style.setProperty("--ui-scale", String(this.uiScale));
+    try {
+      localStorage.setItem(UI_SCALE_KEY, String(p));
+    } catch {}
   }
 
   private dim = false;
@@ -1190,11 +1211,12 @@ export class UI {
     const zone = $(this.root, "#stick-zone");
     const stick = $(this.root, "#stick");
     const knob = $(this.root, "#knob");
-    const R = 56;
+    const baseR = 56;
     let id: number | null = null;
     let ox = 0;
     let oy = 0;
     const move = (e: PointerEvent) => {
+      const R = baseR * this.uiScale;
       let dx = e.clientX - ox;
       let dy = e.clientY - oy;
       const m = Math.hypot(dx, dy);
@@ -1202,7 +1224,7 @@ export class UI {
         dx *= R / m;
         dy *= R / m;
       }
-      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      knob.style.transform = `translate(${dx / this.uiScale}px, ${dy / this.uiScale}px)`;
       const dead = m < 8;
       this.game.input.stick.x = dead ? 0 : dx / R;
       this.game.input.stick.y = dead ? 0 : dy / R;
@@ -1747,7 +1769,7 @@ export class UI {
             <li>Sail to the buoy at the end of a zone and ${this.touch ? "tap <b>Map</b>" : "press <kbd>Enter</kbd> or <kbd>E</kbd>"} to open the route map. Pick where to sail next; some ends have more than one route.</li>
             </ul>
           </details>
-          <details class="subacc" open>
+          <details class="subacc">
             <summary>Submarine</summary>
             <ul class="howto">
             <li>${this.touch ? "Drag on the left side of the screen" : "<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>"} to steer. The spotlight follows where you head.</li>
@@ -1769,6 +1791,13 @@ export class UI {
           <label class="sound-row">Sound volume <input type="range" id="volume" min="0" max="100" value="${Math.round(g.audio.volume * 100)}" style="--p:${Math.round(g.audio.volume * 100)}%"><span class="range-val">${Math.round(g.audio.volume * 100)}%</span></label>
           <label class="sound-row">World music volume <input type="range" id="music-volume" min="0" max="100" value="${Math.round(g.audio.musicVolume * 100)}" style="--p:${Math.round(g.audio.musicVolume * 100)}%"><span class="range-val">${Math.round(g.audio.musicVolume * 100)}%</span></label>
           <label class="sound-row">Submarine music volume <input type="range" id="sub-music-volume" min="0" max="100" value="${Math.round(g.audio.subMusicVolume * 100)}" style="--p:${Math.round(g.audio.subMusicVolume * 100)}%"><span class="range-val">${Math.round(g.audio.subMusicVolume * 100)}%</span></label>
+          <button class="btn small ghost" id="sound-reset" type="button">Reset to default</button>
+        </details>
+        <details class="acc">
+          <summary>Interface</summary>
+          <label class="sound-row">Interface size <input type="range" id="ui-scale" min="${UI_SCALE_MIN}" max="${UI_SCALE_MAX}" step="5" value="${Math.round(this.uiScale * 100)}" style="--p:${Math.round(((this.uiScale * 100 - UI_SCALE_MIN) / (UI_SCALE_MAX - UI_SCALE_MIN)) * 100)}%"><span class="range-val">${Math.round(this.uiScale * 100)}%</span></label>
+          <p class="muted">Resizes the dials, depth meter, minimap and touch controls.</p>
+          <button class="btn small ghost" id="ui-scale-reset" type="button">Reset to default</button>
         </details>
         <details class="acc" id="catalog-acc">
           <summary>Game progress</summary>
@@ -1845,7 +1874,14 @@ export class UI {
     this.modal.querySelectorAll<HTMLCanvasElement>("canvas[data-kind]").forEach((c) => this.drawCreatureThumb(c));
     this.modal.querySelectorAll<HTMLDetailsElement>("details.acc, details.subacc").forEach((d) =>
       d.addEventListener("toggle", () => {
-                const preview = catalogAcc.open && (skinsAcc.open || upgradesAcc.open);
+        if (d.open) {
+          d.parentElement
+            ?.querySelectorAll<HTMLDetailsElement>(`:scope > details.${d.className}`)
+            .forEach((o) => {
+              if (o !== d) o.open = false;
+            });
+        }
+        const preview = catalogAcc.open && (skinsAcc.open || upgradesAcc.open);
         this.modal.classList.toggle("skins-open", preview);
         this.game.skinPreview = preview;
       }),
@@ -1867,10 +1903,13 @@ export class UI {
     this.modal.oninput = (e) => {
       const el = e.target as HTMLInputElement;
       if (el.type === "range") {
-        el.style.setProperty("--p", `${el.value}%`);
+        const lo = Number(el.min) || 0;
+        const hi = Number(el.max) || 100;
+        el.style.setProperty("--p", `${((Number(el.value) - lo) / (hi - lo)) * 100}%`);
         const val = el.nextElementSibling;
         if (val?.classList.contains("range-val")) val.textContent = `${el.value}%`;
       }
+      if (el.id === "ui-scale") this.setUiScale(Number(el.value));
       if (el.id === "volume") g.audio.setVolume(Number(el.value) / 100);
       if (el.id === "music-volume") g.audio.setMusicVolume(Number(el.value) / 100);
       if (el.id === "sub-music-volume") g.audio.setSubMusicVolume(Number(el.value) / 100);
@@ -1881,6 +1920,24 @@ export class UI {
       if (target === this.modal) return this.close();
       const act = target.closest<HTMLElement>("[data-act]")?.dataset.act;
       if (act === "resume") this.close();
+      if (target.closest("#sound-reset")) {
+        g.audio.resetSound();
+        const set = (id: string, v: number) => {
+          const el = $(this.modal, id) as HTMLInputElement;
+          el.value = String(Math.round(v * 100));
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        set("#volume", g.audio.volume);
+        set("#music-volume", g.audio.musicVolume);
+        set("#sub-music-volume", g.audio.subMusicVolume);
+        ($(this.modal, "#sound-on") as HTMLInputElement).checked = true;
+      }
+      if (target.closest("#ui-scale-reset")) {
+        this.setUiScale(100);
+        const slider = $(this.modal, "#ui-scale") as HTMLInputElement;
+        slider.value = "100";
+        slider.dispatchEvent(new Event("input", { bubbles: true }));
+      }
       const devBtn = target.closest<HTMLElement>("#dev-mode");
       if (devBtn) {
         const on = !devModeOn();

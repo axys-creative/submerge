@@ -3468,3 +3468,13 @@ body.is-touch .card.menu .skin-row {
   font-size: 13px;
   padding: 8px 10px;
 }
+
+/* ---- Interface size (settings) ---- */
+
+:is(.hud, .depth-meter, .minimap, .minimap-tab, .map-hot, .touch-buttons, .ctl-hint) {
+  zoom: var(--ui-scale, 1);
+}
+
+.stick {
+  scale: var(--ui-scale, 1);
+}

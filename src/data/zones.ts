@@ -87,6 +87,8 @@ export interface ZoneDef {
   /** What each shop sells is set by the stock slots in `src/data/upgrades.ts`. `gear` is the air gear sold only at this island, and `weights` means it also sells the dive weights. */
   islands: { x: number; name: string; weights?: boolean; gear?: Exclude<GearId, 'candles'>[] }[];
   wrecks: { x: number; kind: WreckKind }[];
+  /** A floating oil rig centered on x, moored to the sea floor. */
+  rig?: { x: number };
   /** Vertical cave shafts cut into the sea floor; width in px, depth in meters. */
   shafts?: { name: string; x: number; width: number; depth: number }[];
   caves?: CaveDef[];
@@ -125,8 +127,9 @@ const smooth = (x: number, from: number, to: number) => {
   return u * u * (3 - 2 * u);
 };
 
-/** Abyssal Plains is 39600 px wide: one big mountain (1500 m) with two peaks, one about 100 m down under the first island and a lower one about 180 m down between the islands, and the cave on its east side, a wide flat plain about 3800 m deep with the Titanic, then two bumpy trenches in the east (about 4400 m and 4900 m, the portal stone in the deeper). */
-const ABYSSAL_FLOOR = Array.from({ length: 133 }, (_, k) => {
+/** Abyssal Plains is 39600 px wide: one big mountain (1500 m) with two peaks, one about 100 m down under the first island and a lower one about 180 m down between the islands, and the cave on its east side, a wide flat plain about 3800 m deep with the Titanic, then two bumpy trenches in the east (about 4400 m and 4900 m, the portal stone in the deeper), then a steep rise to a flat plateau 2320 m down at the far east end, where the oil rig drills. */
+const ABYSSAL_PLATEAU = 2320;
+const ABYSSAL_FLOOR = Array.from({ length: 148 }, (_, k) => {
   const x = k * 300;
   const i = k;
   const shelf = smooth(x, 11500, 15000);
@@ -138,7 +141,8 @@ const ABYSSAL_FLOOR = Array.from({ length: 133 }, (_, k) => {
   const amp = 5 + 30 * (1 - shelf) + 32 * smooth(x, 29500, 31000);
   const bumps = amp * (1 - Math.min(1, lift / 1400) * 0.8) * (0.6 * Math.sin(i * 1.9) + 0.5 * Math.sin(i * 3.1 + 1) + 0.4 * Math.sin(i * 5.3 + 2));
   const base = 1500 + 2300 * shelf - lift + trench1 * 600 + trench2 * 1100;
-  return Math.round(base + bumps);
+  const plateau = smooth(x, 38400, 41200);
+  return Math.round((base + bumps) * (1 - plateau) + (ABYSSAL_PLATEAU + bumps * 0.1) * plateau);
 });
 
 /** The sea floor of Frozen Expanse at x px in the zone's original 20000 px layout: 5000 m deep at the west end, rising in a bumpy slope to an average of about 2000 m in the east, with ridges and dips along the way. */
@@ -494,7 +498,7 @@ export const ZONES: ZoneDef[] = [
     islandWidth: 1,
     diveZoom: 0.5,
     map: { x: 255, y: 110 },
-    width: 39600,
+    width: 44100,
     floor: ABYSSAL_FLOOR,
     sky: ['#9FB8E6', '#E6EEFF'],
     water: ['#3E8FD0', '#0A1E4A'],
@@ -524,6 +528,7 @@ export const ZONES: ZoneDef[] = [
       { x: 4500, name: 'Trench Pier', weights: true },
     ],
     wrecks: [{ x: 20000, kind: 'titanic' }],
+    rig: { x: 42600 },
     portalStone: { x: 37700 },
     caves: [{
       name: 'Trench Pocket',
